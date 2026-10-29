@@ -33,6 +33,30 @@ class AddressLocation:
     crs: GeodeticCrs
 
     @property
+    def latitude_degrees(self) -> float:
+        """
+        Latitude of the point.
+
+        Returns
+        -------
+        float
+            Latitude in decimal degrees on ``crs``.
+        """
+        return float(self.coordinate.latitude.degree.flat[0])
+
+    @property
+    def longitude_degrees(self) -> float:
+        """
+        Longitude of the point.
+
+        Returns
+        -------
+        float
+            Longitude in decimal degrees on ``crs``.
+        """
+        return float(self.coordinate.longitude.degree.flat[0])
+
+    @property
     def level(self) -> PositionLevel:
         """
         Granularity of the returned point.

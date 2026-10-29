@@ -26,6 +26,8 @@ class AddressCodec:
     """
     Converter between free-form Japanese addresses, address codes, and coordinates.
 
+    A codec holds one SQLite connection and must be used only in the thread that opened it.
+
     Parameters
     ----------
     repository : TownRepository

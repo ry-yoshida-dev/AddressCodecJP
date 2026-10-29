@@ -232,6 +232,23 @@ def test_reimport_refreshes_matching(tmp_path: Path) -> None:
             _ = codec.encode("台東区浅草")
 
 
+def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> None:
+    master = tmp_path / "master.csv"
+    _ = master.write_text(
+        "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza\n"
+        + "992011,0001000,試験県,,北市,,山田,,\n"
+        + "992020,0001000,試験県,,北市山,,川,,\n",
+        encoding="utf-8",
+    )
+    with AddressCodec.create(":memory:") as codec:
+        _ = codec.import_town_master(master)
+        assert str(codec.encode("北市山田1-2")) == "992011-0001000-1-2"
+        assert str(codec.encode("北市山川1-2")) == "992020-0001000-1-2"
+        assert str(codec.encode("北市山")) == "992020"
+        with pytest.raises(LookupError, match="北市山"):
+            _ = codec.encode("北市山谷1-2")
+
+
 AMBIGUOUS_TOWN_CODES: frozenset[str] = frozenset(
     {
         "042072-0009000",

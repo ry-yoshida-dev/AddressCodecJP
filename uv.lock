@@ -18,10 +18,8 @@ dependencies = [
 dev = [
     { name = "basedpyright" },
     { name = "mypy" },
-    { name = "numpy" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "units" },
 ]
 
 [package.metadata]
@@ -31,10 +29,8 @@ requires-dist = [{ name = "geo-coordinate", git = "https://github.com/ry-yoshida
 dev = [
     { name = "basedpyright", specifier = ">=1.20" },
     { name = "mypy", specifier = ">=1.13" },
-    { name = "numpy", specifier = ">=2.0" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },
-    { name = "units", git = "https://github.com/ry-yoshida-dev/Units.git?rev=61372604eb6f2347258bbf52df7224f590cdfb48" },
 ]
 
 [[package]]

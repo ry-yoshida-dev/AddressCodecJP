@@ -67,7 +67,9 @@ old-style kanji. A stricter tier wins over a looser one.
 A municipality may be written without its prefecture or county (`台東区`), the prefecture
 without `都`/`府`/`県` (`東京千代田区`), and a designated city without its ward
 (`横浜市山下町`). When such a name fits several municipalities (`府中市`), the town name
-decides among them. After the municipality, every reading of oaza, chome, koaza, and lot
+decides among them. The longest municipality name is tried first; when no town of it
+matches the rest, shorter municipality names are tried, and a town name must then confirm
+the municipality. After the municipality, every reading of oaza, chome, koaza, and lot
 numbers is tried. Readings that leave less unparsed text win, then readings that explain more of the
 text by registered names, then stricter comparisons. `LookupError` is raised instead of
 guessing when:
@@ -86,7 +88,8 @@ guessing when:
 address itself, the point of the nearest enclosing area is returned instead, in this order:
 residence (`号`) or sub-parcel → block (`番`) or parcel (`番地`) → town → oaza (for a chome
 or koaza) → municipality → prefecture. `located_code` and `level` tell which area the point
-stands for, and `is_exact` whether it is the address itself.
+stands for, and `is_exact` whether it is the address itself. `latitude_degrees` and
+`longitude_degrees` give the point as floats, and `coordinate` as a `GeoCoordinate`.
 
 Whether `1番2号` is looked up as a residence indication or as a land parcel follows the
 `rsdt_addr_flg` of the town, since residence indication towns also keep parcel numbers.
@@ -120,6 +123,8 @@ In Python, `AddressCodec.create(path)` creates a database for `import_town_maste
 `AddressCodec.open(path)` opens an existing one read-only; it raises `FileNotFoundError`
 for a missing file and `ValueError` for an SQLite file without the town table instead of
 modifying it. Importing again through the same codec refreshes its matching indexes.
+A codec holds one SQLite connection and must be used only in the thread that opened it;
+open one codec per thread instead of sharing it.
 
 ### Representative points
 
@@ -201,18 +206,18 @@ with AddressCodec.open("towns.sqlite3") as codec:
     for address in ["千代田区内幸町1-6-1", "千代田区丸の内1-9-1", "台東区浅草橋"]:
         location = codec.locate(address)
         print(location.located_code, location.level.name, location.is_exact)
-        print(location.coordinate.latitude.degree, location.coordinate.longitude.degree)
+        print(location.latitude_degrees, location.longitude_degrees)
 
     print(codec.locate_code("131016-0001001-6-1", GeodeticCrs.WGS84).crs)
 ```
 
 ```
 131016-0001001-6-1 RESIDENCE True
-[35.66876079] [139.75812148]
+35.66876079 139.75812148
 131016-0011001-9 BLOCK False
-[35.681252] [139.767235]
+35.681252 139.767235
 131067 MUNICIPALITY False
-[35.712607] [139.779984]
+35.712607 139.779984
 EPSG:4326
 ```
 

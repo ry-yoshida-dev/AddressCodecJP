@@ -121,8 +121,8 @@ class CommandLineInterface:
                         str(location.code),
                         str(location.located_code),
                         location.level.name,
-                        f"{location.coordinate.latitude.degree[0]:.9f}",
-                        f"{location.coordinate.longitude.degree[0]:.9f}",
+                        f"{location.latitude_degrees:.9f}",
+                        f"{location.longitude_degrees:.9f}",
                         str(location.crs),
                     ]
                 )

@@ -72,10 +72,10 @@ class TownRepository:
         if not path.is_file():
             raise FileNotFoundError(f"Town database not found: {database_path}.")
         connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-        table_row: tuple[object, ...] | None = connection.execute(
+        table_rows: list[tuple[object, ...]] = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'towns'"
-        ).fetchone()
-        if table_row is None:
+        ).fetchall()
+        if not table_rows:
             connection.close()
             raise ValueError(f"{database_path} is not a town database. Import a town master.")
         return cls(connection)

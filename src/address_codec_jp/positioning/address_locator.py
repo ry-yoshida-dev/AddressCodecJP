@@ -61,7 +61,7 @@ class AddressLocator:
         LookupError
             If neither the code nor any enclosing area has a point.
         """
-        if not self._repository.has_positions:
+        if not self._repository.is_position_imported:
             raise RuntimeError("No positions have been imported. Import position datasets.")
         for candidate in self._candidates(code):
             point = self._find_point(candidate)

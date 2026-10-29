@@ -1,10 +1,8 @@
 import zipfile
 from pathlib import Path
 
-import numpy as np
 import pytest
 from geo_coordinate import GeoCoordinate, GeodeticCrs
-from units import NumericArray
 
 from address_codec_jp import AddressCodec, AddressLocation, PositionLevel
 from address_codec_jp.storage import AbrPositionCsvReader, AbrPositionDataset
@@ -13,11 +11,9 @@ FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*.csv"))
 
 
-def degrees(location: AddressLocation) -> NumericArray:
+def degrees(location: AddressLocation) -> tuple[float, float]:
     """Latitude and longitude of a location in degrees."""
-    return np.concatenate(
-        [location.coordinate.latitude.degree, location.coordinate.longitude.degree]
-    )
+    return (location.latitude_degrees, location.longitude_degrees)
 
 
 @pytest.mark.parametrize(
@@ -76,7 +72,7 @@ def test_locate_on_another_datum(located_codec: AddressCodec) -> None:
     on_jgd2011 = located_codec.locate("千代田区丸の内1-2-3")
     on_tokyo = located_codec.locate("千代田区丸の内1-2-3", GeodeticCrs.TOKYO)
     assert on_tokyo.crs is GeodeticCrs.TOKYO
-    shift = on_jgd2011.coordinate.distance_to(on_tokyo.coordinate).meter[0]
+    shift = float(on_jgd2011.coordinate.distance_to(on_tokyo.coordinate).meter.flat[0])
     assert 300.0 < shift < 600.0
 
 

@@ -26,3 +26,15 @@ class MunicipalityMatch:
     municipalities: list[Municipality]
     remainder: str
     is_ward_omitted: bool
+
+    @property
+    def is_town_required(self) -> bool:
+        """
+        Tell whether a town name must identify the municipality.
+
+        Returns
+        -------
+        bool
+            ``True`` when the ward is omitted or several municipalities share the name.
+        """
+        return self.is_ward_omitted or len(self.municipalities) > 1

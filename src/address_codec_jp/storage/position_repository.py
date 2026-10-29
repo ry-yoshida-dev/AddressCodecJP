@@ -89,6 +89,7 @@ class PositionRepository:
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection: sqlite3.Connection = connection
+        self._is_position_imported: bool = False
 
     def create_schema(self) -> None:
         """Create the position tables if they do not exist."""
@@ -97,25 +98,33 @@ class PositionRepository:
                 _ = self._connection.execute(statement)
 
     @property
-    def has_positions(self) -> bool:
+    def is_position_imported(self) -> bool:
         """
         Tell whether any representative point has been imported.
+
+        A positive answer is cached, because imports only add points.
 
         Returns
         -------
         bool
             ``True`` when the tables exist and hold a prefecture, municipality, or town.
         """
-        table_count_row: tuple[object, ...] | None = self._connection.execute(
+        if not self._is_position_imported:
+            self._is_position_imported = self._query_position_imported()
+        return self._is_position_imported
+
+    def _query_position_imported(self) -> bool:
+        table_count_row = self._fetch_first(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?, ?)",
             self._TABLES,
-        ).fetchone()
+        )
         if table_count_row is None or table_count_row[0] != len(self._TABLES):
             return False
-        row: tuple[object, ...] | None = self._connection.execute(
+        row = self._fetch_first(
             "SELECT EXISTS (SELECT 1 FROM area_positions) "
-            + "OR EXISTS (SELECT 1 FROM town_positions)"
-        ).fetchone()
+            + "OR EXISTS (SELECT 1 FROM town_positions)",
+            (),
+        )
         return row is not None and bool(row[0])
 
     def save_all(self, records: Iterable[PositionRecord]) -> int:
@@ -209,10 +218,10 @@ class PositionRepository:
         RepresentativePoint | None
             Point of the area, or ``None`` when none is imported.
         """
-        row: tuple[object, ...] | None = self._connection.execute(
+        row = self._fetch_first(
             "SELECT longitude, latitude, epsg FROM area_positions WHERE lg_code = ?",
             (lg_code,),
-        ).fetchone()
+        )
         return None if row is None else self._to_point(row)
 
     def find_town(self, lg_code: str, machiaza_id: str) -> TownPosition | None:
@@ -231,11 +240,11 @@ class PositionRepository:
         TownPosition | None
             Position of the town, or ``None`` when none is imported.
         """
-        row: tuple[object, ...] | None = self._connection.execute(
+        row = self._fetch_first(
             "SELECT lot_system, longitude, latitude, epsg FROM town_positions "
             + "WHERE lg_code = ? AND machiaza_id = ?",
             (lg_code, machiaza_id),
-        ).fetchone()
+        )
         if row is None:
             return None
         return TownPosition(
@@ -274,16 +283,24 @@ class PositionRepository:
         """
         block, residence = self._to_number_columns(lot)
         for lot_system in lot_systems:
-            row: tuple[object, ...] | None = self._connection.execute(
+            row = self._fetch_first(
                 "SELECT p.longitude, p.latitude, p.epsg FROM lot_entries AS e "
                 + "JOIN lot_positions AS p USING (lg_code, machiaza_id, lot_system, lot_id) "
                 + "WHERE e.lg_code = ? AND e.machiaza_id = ? AND e.lot_system = ? "
                 + "AND e.block = ? AND e.residence = ? ORDER BY e.lot_id LIMIT 1",
                 (lg_code, machiaza_id, lot_system.value, block, residence),
-            ).fetchone()
+            )
             if row is not None:
                 return self._to_point(row)
         return None
+
+    def _fetch_first(
+        self, statement: str, parameters: Sequence[str | int]
+    ) -> tuple[object, ...] | None:
+        rows: list[tuple[object, ...]] = self._connection.execute(statement, parameters).fetchmany(
+            1
+        )
+        return rows[0] if rows else None
 
     def _to_number_columns(self, lot: LotNumber) -> tuple[int, int]:
         if lot.block is None:

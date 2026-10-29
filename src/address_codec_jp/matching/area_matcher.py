@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Container
 from typing import ClassVar
 
 from address_codec_jp.domain.lot_number import LotNumber
@@ -21,7 +21,9 @@ class AreaMatcher:
     """
     Matcher from a normalized address to the most specific registered area.
 
-    The prefecture or municipality is found by longest prefix. Prefecture and county
+    The prefecture or municipality is found by longest prefix. When no town of the
+    longest municipality matches the rest, shorter municipality names are tried, and a
+    town name must then confirm the municipality. Prefecture and county
     names may be omitted, the prefecture may be written without ``都``/``府``/``県``
     (``東京``), and the ward of a designated city may be omitted (``横浜市山下町``). When
     such a name fits several municipalities, the town name must decide among them. For
@@ -83,35 +85,30 @@ class AreaMatcher:
         RuntimeError
             If the repository contains no towns.
         """
-        municipality_match = self._match_municipality(normalized_address)
-        if municipality_match is None:
+        municipality_matches = self._match_municipalities(normalized_address)
+        if not municipality_matches:
             return self._match_prefecture_only(normalized_address)
-        municipalities = municipality_match.municipalities
-        if not NameIndex.strip_prefix(municipality_match.remainder):
-            if municipality_match.is_ward_omitted or len(municipalities) > 1:
-                raise LookupError(
-                    f"Municipality {municipality_match.name!r} is ambiguous: "
-                    + f"{self._describe_all(municipalities)}. Add the prefecture or ward."
-                )
-            municipality = municipalities[0]
-            return AreaMatch(
-                prefecture=municipality.prefecture,
-                municipality=municipality,
-                town=None,
-                lot=LotNumber(),
-                remainder="",
+        longest_match = municipality_matches[0]
+        if not NameIndex.strip_prefix(longest_match.remainder):
+            return self._match_municipality_only(longest_match)
+        for municipality_match in municipality_matches:
+            is_town_required = (
+                municipality_match.is_town_required or municipality_match is not longest_match
             )
-        return self._match_town(
-            municipalities,
-            municipality_match.remainder,
-            is_town_required=municipality_match.is_ward_omitted or len(municipalities) > 1,
+            interpretations = self._interpret_town(municipality_match, is_town_required)
+            if interpretations:
+                return self._select(municipality_match, interpretations)
+        raise LookupError(
+            f"No town in {self._describe_all(longest_match.municipalities)} matches "
+            + f"{longest_match.remainder!r}."
         )
 
     def _match_prefecture_only(self, text: str) -> AreaMatch:
         index = self._get_prefecture_index()
-        key = self._longest_prefix(self._normalizer.fold(text), index)
-        if key is None:
+        keys = self._matching_prefixes(self._normalizer.fold(text), index)
+        if not keys:
             raise LookupError(f"No prefecture or municipality matches {text!r}.")
+        key = keys[0]
         prefecture = index[key]
         remainder = text[len(key) :]
         if remainder:
@@ -120,30 +117,49 @@ class AreaMatcher:
             prefecture=prefecture, municipality=None, town=None, lot=LotNumber(), remainder=""
         )
 
-    def _match_municipality(self, text: str) -> MunicipalityMatch | None:
+    def _match_municipalities(self, text: str) -> list[MunicipalityMatch]:
         index = self._get_municipality_index()
-        key = self._longest_prefix(self._normalizer.fold(text), index)
-        if key is None:
-            return None
-        return MunicipalityMatch(
-            name=text[: len(key)],
-            municipalities=sorted(index[key], key=lambda municipality: municipality.lg_code),
-            remainder=text[len(key) :],
-            is_ward_omitted=key in self._ward_omitted_keys,
+        return [
+            MunicipalityMatch(
+                name=text[: len(key)],
+                municipalities=sorted(index[key], key=lambda municipality: municipality.lg_code),
+                remainder=text[len(key) :],
+                is_ward_omitted=key in self._ward_omitted_keys,
+            )
+            for key in self._matching_prefixes(self._normalizer.fold(text), index)
+        ]
+
+    def _match_municipality_only(self, municipality_match: MunicipalityMatch) -> AreaMatch:
+        if municipality_match.is_town_required:
+            raise LookupError(
+                f"Municipality {municipality_match.name!r} is ambiguous: "
+                + f"{self._describe_all(municipality_match.municipalities)}. "
+                + "Add the prefecture or ward."
+            )
+        municipality = municipality_match.municipalities[0]
+        return AreaMatch(
+            prefecture=municipality.prefecture,
+            municipality=municipality,
+            town=None,
+            lot=LotNumber(),
+            remainder="",
         )
 
-    def _match_town(
-        self, municipalities: list[Municipality], text: str, is_town_required: bool
-    ) -> AreaMatch:
-        interpretations = [
+    def _interpret_town(
+        self, municipality_match: MunicipalityMatch, is_town_required: bool
+    ) -> list[TownInterpretation]:
+        return [
             interpretation
-            for municipality in municipalities
-            for interpretation in self._interpret_all(municipality, text)
+            for municipality in municipality_match.municipalities
+            for interpretation in self._interpret_all(municipality, municipality_match.remainder)
             if not is_town_required or interpretation.name_length > 0
         ]
-        description = self._describe_all(municipalities)
-        if not interpretations:
-            raise LookupError(f"No town in {description} matches {text!r}.")
+
+    def _select(
+        self, municipality_match: MunicipalityMatch, interpretations: list[TownInterpretation]
+    ) -> AreaMatch:
+        text = municipality_match.remainder
+        description = self._describe_all(municipality_match.municipalities)
         best_key = min(interpretation.ranking_key for interpretation in interpretations)
         best = [item for item in interpretations if item.ranking_key == best_key]
         towns = {(town.lg_code, town.machiaza_id): town for item in best for town in item.towns}
@@ -308,9 +324,8 @@ class AreaMatcher:
     def _fold_name(self, name: str) -> str:
         return self._normalizer.fold(self._normalizer.normalize(name))
 
-    def _longest_prefix(self, text: str, keys: Iterable[str]) -> str | None:
-        matching_keys = [key for key in keys if key and text.startswith(key)]
-        return max(matching_keys, key=len, default=None)
+    def _matching_prefixes(self, text: str, keys: Container[str]) -> list[str]:
+        return [text[:length] for length in range(len(text), 0, -1) if text[:length] in keys]
 
     def _describe(self, municipality: Municipality) -> str:
         return municipality.prefecture_name + municipality.city_name + municipality.ward_name

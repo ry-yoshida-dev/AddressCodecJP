@@ -3,7 +3,8 @@
 ## Overview
 
 Identifies the most specific registered area at the start of a normalized address.
-The prefecture or municipality is found by longest prefix; a name shared by several
+The prefecture or municipality is found by longest prefix, falling back to shorter
+municipality names confirmed by a town name; a name shared by several
 municipalities, such as a designated city without its ward, is resolved by the town
 name. For the rest, every reading
 of oaza, chome, koaza, and lot numbers is built and ranked; ties between different towns
