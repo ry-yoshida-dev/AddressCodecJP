@@ -13,13 +13,9 @@ from address_codec_jp.caching.database_cache import DatabaseCache
 from address_codec_jp.cli.cache_action import CacheAction
 from address_codec_jp.cli.command import Command
 from address_codec_jp.cli.command_arguments import CommandArguments
-from address_codec_jp.cli.coordinate_text import CoordinateText
 from address_codec_jp.cli.enum_argument import EnumArgument
 from address_codec_jp.cli.output_format import OutputFormat
-from address_codec_jp.cli.output_value import OutputValue
 from address_codec_jp.cli.record_writer import RecordWriter
-from address_codec_jp.domain.address_area import AddressArea
-from address_codec_jp.domain.area_source import AreaSource
 from address_codec_jp.download.registry_downloader import RegistryDownloader
 from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
 from address_codec_jp.errors.area_not_found_error import AreaNotFoundError
@@ -30,6 +26,8 @@ from address_codec_jp.formatting.name_script import NameScript
 from address_codec_jp.formatting.numeral_style import NumeralStyle
 from address_codec_jp.registry.import_summary import ImportSummary
 from address_codec_jp.registry_importer import RegistryImporter
+from address_codec_jp.serialization.coordinate_text import CoordinateText
+from address_codec_jp.serialization.result_serializer import ResultSerializer
 
 
 class CommandLineInterface:
@@ -240,6 +238,7 @@ class CommandLineInterface:
         writer: RecordWriter,
         input_text: str,
     ) -> None:
+        serializer = ResultSerializer(codec)
         match command:
             case Command.ENCODE:
                 address_match = codec.match(input_text, is_lot_verified=namespace.is_lot_verified)
@@ -250,18 +249,11 @@ class CommandLineInterface:
                         if address_match.remainder
                         else [str(address_match.code)]
                     ],
-                    {
-                        "code": str(address_match.code),
-                        "level": address_match.code.level.name,
-                        "remainder": address_match.remainder,
-                        "town_name_tier": None
-                        if address_match.town_name_tier is None
-                        else address_match.town_name_tier.name,
-                    },
+                    serializer.match(address_match),
                 )
             case Command.DECODE:
-                address = codec.decode(input_text, self._address_format(namespace))
-                writer.write(input_text, [[address]], {"address": address})
+                fields = serializer.decoded(input_text, self._address_format(namespace))
+                writer.write(input_text, [[str(fields["address"])]], fields)
             case Command.LOCATE:
                 location = codec.locate(input_text, namespace.crs)
                 writer.write(
@@ -276,27 +268,20 @@ class CommandLineInterface:
                             str(location.crs),
                         ]
                     ],
-                    {
-                        "code": str(location.code),
-                        "located_code": str(location.located_code),
-                        "level": location.level.name,
-                        "latitude": location.latitude_degrees,
-                        "longitude": location.longitude_degrees,
-                        "crs": str(location.crs),
-                    },
+                    serializer.location(location),
                 )
             case Command.NEAREST:
                 nearest = codec.find_nearest(
                     self._coordinate_text.parse(input_text), namespace.crs, namespace.max_distance
                 )
                 location = nearest.location
-                address = codec.decode(nearest.code)
+                fields = serializer.nearest(nearest)
                 writer.write(
                     input_text,
                     [
                         [
                             str(nearest.code),
-                            address,
+                            str(fields["address"]),
                             location.level.name,
                             f"{location.latitude_degrees:.9f}",
                             f"{location.longitude_degrees:.9f}",
@@ -304,35 +289,23 @@ class CommandLineInterface:
                             str(location.crs),
                         ]
                     ],
-                    {
-                        "code": str(nearest.code),
-                        "address": address,
-                        "level": location.level.name,
-                        "latitude": location.latitude_degrees,
-                        "longitude": location.longitude_degrees,
-                        "distance_meters": nearest.distance_meters,
-                        "crs": str(location.crs),
-                    },
+                    fields,
                 )
             case Command.POSTAL:
                 address_format = self._address_format(namespace)
-                towns = [
-                    (str(address.code), codec.decode(address.code, address_format))
-                    for address in codec.list_by_postal_code(input_text)
-                ]
-                if not towns:
+                addresses = codec.list_by_postal_code(input_text)
+                if not addresses:
                     raise AddressNotFoundError(f"No town is registered with {input_text!r}.")
-                town_values: list[OutputValue] = [
-                    {"code": code, "address": address} for code, address in towns
-                ]
                 writer.write(
                     input_text,
-                    [[code, address] for code, address in towns],
-                    {"towns": town_values},
+                    [
+                        [str(address.code), codec.decode(address.code, address_format)]
+                        for address in addresses
+                    ],
+                    serializer.towns(addresses, address_format),
                 )
             case Command.AREA:
                 area = codec.find_area(input_text)
-                sources = ",".join(sorted(source.value for source in area.sources))
                 writer.write(
                     input_text,
                     [
@@ -340,17 +313,11 @@ class CommandLineInterface:
                             str(area.code),
                             str(area.located_code),
                             area.level.name,
-                            sources,
+                            serializer.source_names(area),
                             area.shape.to_geojson(),
                         ]
                     ],
-                    {
-                        "code": str(area.code),
-                        "located_code": str(area.located_code),
-                        "level": area.level.name,
-                        "sources": sources,
-                        "geometry": area.shape.to_geojson_geometry(),
-                    },
+                    serializer.area(area, is_geometry_included=True),
                 )
             case Command.AREA_AT:
                 areas = codec.find_areas_at(
@@ -360,26 +327,19 @@ class CommandLineInterface:
                 )
                 if not areas:
                     raise AreaNotFoundError(f"No imported area shape contains {input_text!r}.")
-                rows = [
+                writer.write(
+                    input_text,
                     [
-                        str(area.code),
-                        codec.decode(area.code, self._area_format(area)),
-                        area.level.name,
-                        ",".join(sorted(source.value for source in area.sources)),
-                    ]
-                    for area in areas
-                ]
-                area_values: list[OutputValue] = [
-                    {
-                        "code": code,
-                        "address": address,
-                        "level": level,
-                        "sources": sources,
-                        "geometry": area.shape.to_geojson_geometry(),
-                    }
-                    for (code, address, level, sources), area in zip(rows, areas, strict=True)
-                ]
-                writer.write(input_text, rows, {"areas": area_values})
+                        [
+                            str(area.code),
+                            serializer.area_address(area),
+                            area.level.name,
+                            serializer.source_names(area),
+                        ]
+                        for area in areas
+                    ],
+                    serializer.areas(areas, is_geometry_included=True),
+                )
             case (
                 Command.IMPORT
                 | Command.IMPORT_AREA
@@ -390,10 +350,6 @@ class CommandLineInterface:
                 raise RuntimeError(f"{command.value} is not a query command.")
             case _:
                 assert_never(command)
-
-    def _area_format(self, area: AddressArea) -> AddressFormat:
-        is_parcel = AreaSource.REGISTRY_MAP in area.sources
-        return AddressFormat(lot_style=LotStyle.LAND_PARCEL if is_parcel else LotStyle.AUTOMATIC)
 
     def _address_format(self, namespace: CommandArguments) -> AddressFormat:
         return AddressFormat(

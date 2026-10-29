@@ -11,7 +11,8 @@ census boundaries and land parcel polygons from the registry office maps. A coor
 is mapped back to the nearest address and to the towns and parcels that contain it.
 
 Requires Python 3.12+. Runtime dependencies are
-[GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate), NumPy, and platformdirs.
+[GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate), NumPy, platformdirs, and
+filelock; the optional [web API](#web-api) adds FastAPI and uvicorn (`api` extra).
 
 ### Address code format
 
@@ -183,6 +184,69 @@ Commands read one input per line from standard input when no argument is given, 
 `--output jsonl` writes one JSON object per input. Run `address-codec-jp <command> -h`
 for the options.
 
+## Web API
+
+The `api` extra serves the codec over HTTP
+(`address-codec-jp[api] @ git+https://...`). The service reads a cache prepared
+beforehand and never downloads while handling requests; the application fails at
+start when the cache has not been built.
+
+```dockerfile
+FROM python:3.13-slim
+RUN pip install "address-codec-jp[api] @ git+https://github.com/ry-yoshida-dev/AddressCodecJP.git@<commit>"
+ENV ADDRESS_CODEC_JP_CACHE_DIR=/var/lib/addresses
+ENV ADDRESS_CODEC_JP_API_PUBLISHER="Example Maps Inc."
+RUN address-codec-jp cache prepare --prefecture 13
+CMD ["uvicorn", "--factory", "address_codec_jp.api:ApplicationFactory.from_environment", \
+     "--host", "0.0.0.0", "--workers", "4"]
+```
+
+| Endpoint | Query |
+| --- | --- |
+| `GET /v1/codes?address=` | Encode; `verify_lot=true` checks the lot numbers |
+| `GET /v1/codes/{code}` | Decode; `numeral`, `lot`, `width`, `prefecture`, `county`, `kana`, `postal_code` |
+| `GET /v1/locations?address=`, `GET /v1/codes/{code}/location` | Representative point; `crs` |
+| `GET /v1/nearest?coordinate=lat,lon` | Nearest address; `crs`, `max_distance` |
+| `GET /v1/postal-codes/{postal_code}` | Towns of a postal code; format options as for decoding |
+| `GET /v1/areas?address=`, `GET /v1/codes/{code}/area` | Shape; `geometry=false` omits the GeoJSON |
+| `GET /v1/areas-at?coordinate=lat,lon` | Containing towns; `parcels=true` adds parcels, `geometry=true` adds GeoJSON |
+| `POST /v1/batch` | `{"operation": "locate", "inputs": [...]}` with the same options; per-input `status` on failure |
+| `GET /health` | Readiness and the number of prepared municipalities |
+
+Responses are the fields of the JSON Lines output plus `attribution`, the credits of
+the datasets used. Errors are `{"error", "error_type"}` with status 404 (not found),
+409 (ambiguous, with `candidates`), 400 (`InvalidRequestError`), or 503 (data not
+prepared); any other failure is logged and answered with a generic 500 body.
+OpenAPI documentation is served at `/docs`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ADDRESS_CODEC_JP_API_PUBLISHER` | required | Organization that processes and serves the data, named in every credit |
+| `ADDRESS_CODEC_JP_CACHE_DIR` | user cache directory | Prepared cache |
+| `ADDRESS_CODEC_JP_API_THREADS` | `4` | Worker threads per process, each with its own codec |
+| `ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE` | `1000` | Inputs per batch request |
+| `ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED` | `true` | Reject with 503 a query whose municipality lacks prepared lots or boundaries, instead of falling back to an enclosing area |
+
+Scale with uvicorn worker processes; a worker with four threads took about 100 MB. Run
+`address-codec-jp cache prepare` or `cache refresh` on the same directory to extend or
+update a running service: a replaced database is reopened by each worker thread before
+its next query, so no restart is needed. With coverage required, a nearest address is
+checked against the municipality of the result, and a coordinate outside every
+prepared boundary gives 404.
+
+Serving the data to third parties redistributes it in processed form, which the terms
+of all three sources allow, commercially too: the Address Base Registry under the
+Public Data License 1.0, the census boundaries under the e-Stat terms of use, and the
+registry maps under the 登記所備付地図データ利用規約, which also cover the parcel master
+and parcel points of the Address Base Registry. Each requires the source, the fact that
+the data was processed, and who processed it, and forbids presenting the result as if
+the government made it. `attribution` carries these credits in Japanese, following the
+examples of the terms: the publisher is named in each, and registry maps are credited
+per municipality with the date they were obtained. Parcel points are credited whenever
+the town takes land parcel numbers. The terms of the registry maps forbid identifying
+individuals by combining the data with other information, and the government accepts
+no liability; `/docs` states these conditions to the users of the API.
+
 ## Errors
 
 Every error derives from `AddressCodecError` and from a built-in exception.
@@ -217,6 +281,7 @@ Every error derives from `AddressCodecError` and from a built-in exception.
 ## Development
 
 ```bash
+uv sync --all-extras
 uv run pytest
 uv run ruff check src tests
 uv run mypy src tests

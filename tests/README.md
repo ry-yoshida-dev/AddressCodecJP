@@ -37,4 +37,5 @@ the Ministry of Justice.
 | [test_area.py](test_area.py) | Polygons, shape serialization, boundary and map readers, area import and lookup, boundary downloads and paged catalog searches, areas added by the cache, and the area commands |
 | [test_database_cache.py](test_database_cache.py) | Building, reusing, and failed builds of the default database, lots added on demand, preparation, offline use, expiry and failed expiry refreshes, unpublished files not requested again, concurrent writers, logging, description, refresh, clearing, removal of obsolete files while keeping newer schema versions, and its use by `AddressCodec.open` and the `cache` command |
 | [test_postal_lookup.py](test_postal_lookup.py) | Postal code parsing, towns by postal code, and the `postal` command |
+| [test_api.py](test_api.py) | Web API endpoints, status codes, hidden server faults, coverage of unprepared municipalities, batches, dataset credits, settings, and reopening of a replaced database |
 | [test_round_trip.py](test_round_trip.py) | Property-based decode and encode round trip over the sample towns |

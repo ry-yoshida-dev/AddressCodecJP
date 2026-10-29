@@ -15,9 +15,16 @@ dependencies = [
 [project.scripts]
 address-codec-jp = "address_codec_jp.cli:main"
 
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
 [dependency-groups]
 dev = [
     "basedpyright>=1.20",
+    "httpx2>=2.16.0",
     "hypothesis>=6.170.13",
     "mypy>=1.13",
     "pytest>=8.3",

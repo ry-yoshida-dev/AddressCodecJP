@@ -5,7 +5,8 @@
 Command line front end installed as `address-codec-jp`. Import commands go through
 `RegistryImporter`, and query commands through a read-only `AddressCodec`. Query commands
 read their inputs from the arguments, or line by line from standard input, and write
-tab-separated text or JSON Lines; blank input lines are reported as errors, so JSON Lines
+tab-separated text or JSON Lines, whose fields come from the shared
+[serialization](../serialization/) layer; blank input lines are reported as errors, so JSON Lines
 output stays aligned with the input. Without `--database`, every command uses the
 database of `DatabaseCache`, built on first use.
 
@@ -19,9 +20,7 @@ database of `DatabaseCache`, built on first use.
 | [command.py](command.py) | `Command`: `import`, `import-area`, `download`, `info`, `cache`, `encode`, `decode`, `locate`, `nearest`, `postal`, `area`, and `area-at` sub-commands |
 | [cache_action.py](cache_action.py) | `CacheAction`: `info`, `clear`, `refresh`, or `prepare` of the `cache` command |
 | [output_format.py](output_format.py) | `OutputFormat`: `tsv` or `jsonl` output of query commands |
-| [output_value.py](output_value.py) | `OutputValue`: value types written to JSON Lines |
 | [record_writer.py](record_writer.py) | `RecordWriter`: writes one result or error per input, with the error type and the candidates of an ambiguous address in JSON Lines |
-| [coordinate_text.py](coordinate_text.py) | `CoordinateText`: parses `latitude,longitude` inputs |
 
 ## Examples
 

@@ -28,7 +28,9 @@ area shapes when needed; `AddressCodec.open()` uses it when no path is given.
 | [storage/](storage/) | Versioned SQLite `AddressDatabase`, its transactions, and its town, position, and import log repositories |
 | [positioning/](positioning/) | Representative point lookup with fallback, nearest address search, and datum transformation |
 | [formatting/](formatting/) | Output format options and address rendering |
+| [serialization/](serialization/) | JSON fields of codec results and errors, shared by the command line and the web API |
 | [cli/](cli/) | Command line interface |
+| [api/](api/) | Optional FastAPI web API on a prepared cache (`api` extra) |
 
 ## Examples
 

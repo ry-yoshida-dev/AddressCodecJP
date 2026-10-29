@@ -1,6 +1,8 @@
 import argparse
 from enum import Enum
 
+from address_codec_jp.serialization.enum_name import EnumName
+
 
 class EnumArgument[EnumType: Enum]:
     """
@@ -15,7 +17,7 @@ class EnumArgument[EnumType: Enum]:
     """
 
     def __init__(self, enum_type: type[EnumType]) -> None:
-        self._enum_type: type[EnumType] = enum_type
+        self._enum_name: EnumName[EnumType] = EnumName(enum_type)
 
     @property
     def metavar(self) -> str:
@@ -27,7 +29,7 @@ class EnumArgument[EnumType: Enum]:
         str
             Lowercase member names, such as ``{arabic,kanji}``.
         """
-        return "{" + ",".join(name.lower() for name in self._enum_type.__members__) + "}"
+        return "{" + ",".join(self._enum_name.choices) + "}"
 
     def __call__(self, text: str) -> EnumType:
         """
@@ -48,7 +50,6 @@ class EnumArgument[EnumType: Enum]:
         argparse.ArgumentTypeError
             If no member has the name.
         """
-        member = self._enum_type.__members__.get(text.upper())
-        if member is None:
+        if not self._enum_name.is_member(text):
             raise argparse.ArgumentTypeError(f"invalid choice {text!r}; choose from {self.metavar}")
-        return member
+        return self._enum_name.parse(text)

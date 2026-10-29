@@ -2,8 +2,8 @@ import json
 import sys
 
 from address_codec_jp.cli.output_format import OutputFormat
-from address_codec_jp.cli.output_value import OutputValue
-from address_codec_jp.errors.ambiguous_address_error import AmbiguousAddressError
+from address_codec_jp.serialization.error_serializer import ErrorSerializer
+from address_codec_jp.serialization.json_value import JsonValue
 
 
 class RecordWriter:
@@ -18,8 +18,9 @@ class RecordWriter:
 
     def __init__(self, output_format: OutputFormat) -> None:
         self._output_format: OutputFormat = output_format
+        self._error_serializer: ErrorSerializer = ErrorSerializer()
 
-    def write(self, input_text: str, rows: list[list[str]], fields: dict[str, OutputValue]) -> None:
+    def write(self, input_text: str, rows: list[list[str]], fields: dict[str, JsonValue]) -> None:
         """
         Write the result of one input.
 
@@ -29,7 +30,7 @@ class RecordWriter:
             Input the result belongs to.
         rows : list[list[str]]
             Lines of values written as tab-separated text, usually one.
-        fields : dict[str, OutputValue]
+        fields : dict[str, JsonValue]
             Values written as one JSON object after ``input``.
         """
         match self._output_format:
@@ -55,11 +56,8 @@ class RecordWriter:
             case OutputFormat.TSV:
                 print(f"{input_text}\tERROR: {error}", file=sys.stderr)
             case OutputFormat.JSONL:
-                fields: dict[str, OutputValue] = {
+                fields: dict[str, JsonValue] = {
                     "input": input_text,
-                    "error": str(error),
-                    "error_type": type(error).__name__,
+                    **self._error_serializer.serialize(error),
                 }
-                if isinstance(error, AmbiguousAddressError):
-                    fields["candidates"] = [str(code) for code in error.candidates]
                 print(json.dumps(fields, ensure_ascii=False))
