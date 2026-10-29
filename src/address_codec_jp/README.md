@@ -6,14 +6,15 @@ Public package of AddressCodecJP. `RegistryImporter` imports registry datasets i
 database, and `AddressCodec` is the read-only facade that combines normalization, town
 matching, lot number parsing, formatting, and positioning on that database.
 `DatabaseCache` builds a nationwide town-level database in the user cache directory on
-first use, which `AddressCodec.open()` opens when no path is given.
+first use and adds the blocks, residences, and land parcels of each municipality when
+needed; `AddressCodec.open()` uses it when no path is given.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
 | [address_codec.py](address_codec.py) | `AddressCodec` facade: match, encode, resolve, decode, list_by_postal_code, locate, find_nearest |
-| [database_cache.py](database_cache.py) | `DatabaseCache`: downloads and builds the default town-level database once per schema version |
+| [database_cache.py](database_cache.py) | `DatabaseCache`: builds the default database once per schema version and adds lots per municipality on demand |
 | [registry_importer.py](registry_importer.py) | `RegistryImporter`: identifies registry files by header and imports each atomically, the town master first |
 | [\_\_main\_\_.py](__main__.py) | `python -m address_codec_jp` entry point |
 | [domain/](domain/) | Immutable domain models such as `AddressCode`, `Address`, and `Town` |

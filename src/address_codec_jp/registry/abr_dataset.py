@@ -123,9 +123,30 @@ class AbrDataset(Enum):
         return self is not AbrDataset.TOWN
 
     @property
+    def scopes(self) -> frozenset[DistributionScope]:
+        """
+        Area units the registry distributes the dataset in.
+
+        Returns
+        -------
+        frozenset[DistributionScope]
+            ``scope``, and per municipality as well for the residence indication masters.
+        """
+        match self:
+            case (
+                AbrDataset.BLOCK
+                | AbrDataset.BLOCK_POSITION
+                | AbrDataset.RESIDENCE
+                | AbrDataset.RESIDENCE_POSITION
+            ):
+                return frozenset({DistributionScope.PREFECTURE, DistributionScope.MUNICIPALITY})
+            case _:
+                return frozenset({self.scope})
+
+    @property
     def scope(self) -> DistributionScope:
         """
-        Area unit of the distributed files.
+        Coarsest area unit of the distributed files.
 
         Returns
         -------

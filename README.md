@@ -42,18 +42,15 @@ pip install git+https://github.com/ry-yoshida-dev/AddressCodecJP.git
 No database setup is needed. On first use, `AddressCodec.open()` and the command line
 download the nationwide town master and the prefecture, municipality, and town points
 (about 15 MB) from the ABR download site and build a database (about 180 MB) in the
-user cache directory. Set `ADDRESS_CODEC_JP_CACHE_DIR` to use another directory, e.g. in
-a container image. A new schema version of the library builds its own database.
+user cache directory. The block, residence, and land parcel files of a municipality are
+added the first time an address there is located or verified, or a coordinate near it
+is searched. Set `ADDRESS_CODEC_JP_CACHE_DIR` to use another directory, e.g. in a
+container image, and `ADDRESS_CODEC_JP_BASE_URL` to download from a mirror. A new
+schema version of the library builds its own database.
 
-This database encodes and decodes addresses of every level, but locates them only to
-the town point. Block and residence points of some prefectures are added with
-
-```bash
-address-codec-jp download data --prefecture 13 --import
-```
-
-`--municipality LG_CODE` adds land parcel files, `--database PATH` works on another
-database file, and `info` lists what a database was built from.
+`--database PATH` works on another database file, `download` and `import` fill it
+explicitly, and `info` lists what a database was built from. Land parcel data is
+subject to the terms of use of the registry office maps (登記所備付地図データ利用規約).
 
 ## Examples
 
@@ -93,7 +90,7 @@ with AddressCodec.open() as codec:
 
 `locate` falls back to the nearest enclosing area that has a point; `is_exact` tells
 whether the point is the address itself. Output is from the datasets released in
-October 2026, with the block and residence points of Tokyo added.
+October 2026.
 
 ### Command line
 

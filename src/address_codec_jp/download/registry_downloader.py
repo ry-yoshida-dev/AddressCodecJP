@@ -1,5 +1,7 @@
+import http
 import http.client
 import shutil
+import urllib.error
 import urllib.request
 import urllib.response
 from collections.abc import Sequence
@@ -89,6 +91,34 @@ class RegistryDownloader:
             ),
         ]
 
+    def plan_lots(self, municipality_codes: Sequence[str]) -> list[DistributedFile]:
+        """
+        List the files of the blocks, residences, and land parcels of municipalities.
+
+        Parameters
+        ----------
+        municipality_codes : Sequence[str]
+            Six-digit local government codes of the municipalities.
+
+        Returns
+        -------
+        list[DistributedFile]
+            Block and residence indication files and land parcel files of each
+            municipality, in the order they should be imported.
+
+        Raises
+        ------
+        ValueError
+            If a code is malformed.
+        """
+        return [
+            DistributedFile(dataset, municipality_code)
+            for municipality_code in dict.fromkeys(municipality_codes)
+            for dataset in AbrDataset
+            if dataset.scope is not DistributionScope.NATIONWIDE
+            and DistributionScope.MUNICIPALITY in dataset.scopes
+        ]
+
     def url_of(self, distributed_file: DistributedFile) -> str:
         """
         Build the URL of a file on the download site.
@@ -136,7 +166,47 @@ class RegistryDownloader:
         destination = directory / distributed_file.file_name
         if is_existing_kept and destination.is_file():
             return destination
-        directory.mkdir(parents=True, exist_ok=True)
+        downloaded = self._fetch(distributed_file, destination, is_missing_allowed=False)
+        if downloaded is None:
+            raise RuntimeError(f"{distributed_file.file_name} was neither downloaded nor missing.")
+        return downloaded
+
+    def download_if_distributed(
+        self, distributed_file: DistributedFile, directory: Path
+    ) -> Path | None:
+        """
+        Download one file into a directory unless the site does not distribute it.
+
+        The site has no file for some areas, such as the land parcels of the
+        municipalities of the Northern Territories or of a designated city as a whole.
+
+        Parameters
+        ----------
+        distributed_file : DistributedFile
+            File to download.
+        directory : Path
+            Directory that receives the file under its distributed name. It is created
+            if needed.
+
+        Returns
+        -------
+        Path | None
+            Path of the downloaded file, or ``None`` when the site has no such file.
+
+        Raises
+        ------
+        RegistryDownloadError
+            If the file exists but cannot be fetched or written, or fewer bytes arrive
+            than the server announced. Nothing is left under the final name then.
+        """
+        return self._fetch(
+            distributed_file, directory / distributed_file.file_name, is_missing_allowed=True
+        )
+
+    def _fetch(
+        self, distributed_file: DistributedFile, destination: Path, *, is_missing_allowed: bool
+    ) -> Path | None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
         partial = destination.with_name(destination.name + self._PARTIAL_SUFFIX)
         url = self.url_of(distributed_file)
         request = urllib.request.Request(url, headers={"User-Agent": self._USER_AGENT})
@@ -147,11 +217,22 @@ class RegistryDownloader:
         except RegistryDownloadError:
             raise
         except (OSError, http.client.HTTPException) as error:
+            if is_missing_allowed and self._is_missing(error):
+                return None
             raise RegistryDownloadError(f"Could not download {url}: {error}") from error
         finally:
             if not is_complete:
                 partial.unlink(missing_ok=True)
         return partial.replace(destination)
+
+    def _is_missing(self, error: OSError | http.client.HTTPException) -> bool:
+        match error:
+            case urllib.error.HTTPError(code=http.HTTPStatus.NOT_FOUND):
+                return True
+            case urllib.error.URLError(reason=FileNotFoundError()):
+                return True
+            case _:
+                return False
 
     def _datasets(self, scope: DistributionScope) -> list[AbrDataset]:
         return [dataset for dataset in AbrDataset if dataset.scope is scope]

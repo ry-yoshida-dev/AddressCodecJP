@@ -90,6 +90,39 @@ class NearestAddressFinder:
                 return self._to_nearest_address(searched, nearest, crs)
         raise PositionNotFoundError(f"No address is imported within {max_distance_meters} m.")
 
+    def list_nearby_municipalities(
+        self, coordinate: GeoCoordinate, crs: GeodeticCrs, radius_meters: float
+    ) -> set[str]:
+        """
+        List the municipalities of the towns whose points are near a coordinate.
+
+        Parameters
+        ----------
+        coordinate : GeoCoordinate
+            Searched coordinate on ``crs``.
+        crs : GeodeticCrs
+            Datum of ``coordinate``.
+        radius_meters : float
+            Half the side of the searched square.
+
+        Returns
+        -------
+        set[str]
+            Local government codes of the municipalities.
+
+        Raises
+        ------
+        ValueError
+            If ``radius_meters`` is not positive.
+        RuntimeError
+            If ``crs`` cannot be transformed.
+        """
+        if not radius_meters > 0:
+            raise ValueError(f"radius_meters must be positive, got {radius_meters}.")
+        searched = self._converter.transform(coordinate, crs, self._SEARCH_DATUM)
+        town_points = self._repository.list_town_points(self._bounds(searched, radius_meters))
+        return {town_point.code.lg_code for town_point in town_points}
+
     def _find_nearest(
         self,
         searched: GeoCoordinate,

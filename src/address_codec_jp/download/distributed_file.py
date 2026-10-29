@@ -16,33 +16,51 @@ class DistributedFile:
     dataset : AbrDataset
         Dataset of the file.
     area_code : str | None
-        Two-digit prefecture code for a per-prefecture dataset, six-digit local
-        government code for a per-municipality dataset, or ``None`` for a nationwide one.
+        Two-digit prefecture code for a file of a prefecture, six-digit local government
+        code for a file of a municipality, or ``None`` for a nationwide file.
 
     Raises
     ------
     ValueError
-        If ``area_code`` does not fit the distribution scope of the dataset.
+        If ``area_code`` is malformed, or the dataset is not distributed per its area.
     """
 
     dataset: AbrDataset
     area_code: str | None = None
 
     def __post_init__(self) -> None:
-        match self.dataset.scope, self.area_code:
-            case DistributionScope.NATIONWIDE, None:
-                pass
-            case DistributionScope.PREFECTURE, str(code) if Prefecture.is_code(code):
-                pass
-            case DistributionScope.MUNICIPALITY, str(code):
+        if self.scope not in self.dataset.scopes:
+            raise ValueError(
+                f"{self.dataset.name} is not distributed {self.scope.name.lower()}, "
+                + f"which the area code {self.area_code!r} asks for."
+            )
+
+    @property
+    def scope(self) -> DistributionScope:
+        """
+        Area unit of the file.
+
+        Returns
+        -------
+        DistributionScope
+            Nationwide without an area code, per prefecture for a prefecture code, and
+            per municipality for a local government code.
+
+        Raises
+        ------
+        ValueError
+            If the area code is neither a prefecture code nor a municipality code.
+        """
+        match self.area_code:
+            case None:
+                return DistributionScope.NATIONWIDE
+            case str(code) if Prefecture.is_code(code):
+                return DistributionScope.PREFECTURE
+            case str(code):
                 _ = AddressCode(lg_code=code)
                 if AddressCode.is_prefecture_code(code):
                     raise ValueError(f"{code} is a prefecture code, not a municipality code.")
-            case scope, code:
-                raise ValueError(
-                    f"{self.dataset.name} is distributed {scope.name.lower()}, "
-                    + f"which does not take the area code {code!r}."
-                )
+                return DistributionScope.MUNICIPALITY
 
     @property
     def file_name(self) -> str:
@@ -55,7 +73,7 @@ class DistributedFile:
             File name such as ``mt_town_pos_pref13.csv.zip``.
         """
         prefix = self.dataset.value
-        match self.dataset.scope:
+        match self.scope:
             case DistributionScope.NATIONWIDE:
                 return f"{prefix}_all.csv.zip"
             case DistributionScope.PREFECTURE:
@@ -74,7 +92,7 @@ class DistributedFile:
             Path such as ``mt_town_pos/pref/mt_town_pos_pref13.csv.zip``.
         """
         prefix = self.dataset.value
-        match self.dataset.scope:
+        match self.scope:
             case DistributionScope.NATIONWIDE:
                 return f"{prefix}/{self.file_name}"
             case DistributionScope.PREFECTURE:

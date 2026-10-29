@@ -36,6 +36,9 @@ class AddressCodec:
     ----------
     database : AddressDatabase
         Database with an imported town master. It is closed by ``close``.
+    lot_cache : DatabaseCache | None
+        Cache that holds ``database`` and adds blocks, residences, and land parcels of an
+        area before they are needed, or ``None`` to use only what has been imported.
 
     Examples
     --------
@@ -47,8 +50,11 @@ class AddressCodec:
 
     DEFAULT_FORMAT: ClassVar[AddressFormat] = AddressFormat()
 
-    def __init__(self, database: AddressDatabase) -> None:
+    NEARBY_LOT_MARGIN_METERS: ClassVar[float] = 5000.0
+
+    def __init__(self, database: AddressDatabase, lot_cache: DatabaseCache | None = None) -> None:
         self._database: AddressDatabase = database
+        self._lot_cache: DatabaseCache | None = lot_cache
         self._normalizer: TextNormalizer = TextNormalizer()
         self._matcher: AreaMatcher = AreaMatcher(
             database.towns, self._normalizer, LotNumberParser()
@@ -66,7 +72,9 @@ class AddressCodec:
         ----------
         database_path : Path | str | None
             SQLite file created by ``RegistryImporter``, or ``None`` for the database of
-            ``DatabaseCache.default``, which is downloaded and built on first use.
+            ``DatabaseCache.default``, which is downloaded and built on first use and
+            extended with the blocks, residences, and land parcels of each area that is
+            located or verified.
 
         Returns
         -------
@@ -83,8 +91,10 @@ class AddressCodec:
             If the default database has to be built and a registry file cannot be
             downloaded.
         """
-        resolved_path = DatabaseCache.default().ensure() if database_path is None else database_path
-        return cls(AddressDatabase.open_read_only(resolved_path))
+        if database_path is not None:
+            return cls(AddressDatabase.open_read_only(database_path))
+        cache = DatabaseCache.default()
+        return cls(AddressDatabase.open_read_only(cache.ensure()), cache)
 
     def __enter__(self) -> Self:
         return self
@@ -144,6 +154,9 @@ class AddressCodec:
         DatasetNotImportedError
             If the database contains no towns, or verification is requested before any
             block, residence, or parcel master has been imported.
+        RegistryDownloadError
+            If the lots of the area have to be added to ``lot_cache`` and a registry file
+            cannot be downloaded.
         """
         normalized_address = self._normalizer.normalize(address)
         if not normalized_address:
@@ -156,6 +169,7 @@ class AddressCodec:
         return address_match
 
     def _verify_lot(self, code: AddressCode) -> None:
+        self._ensure_lots(code)
         positions = self._database.positions
         if not positions.is_lot_imported:
             raise DatasetNotImportedError(
@@ -200,6 +214,9 @@ class AddressCodec:
         DatasetNotImportedError
             If the database contains no towns, or verification is requested before any
             block, residence, or parcel master has been imported.
+        RegistryDownloadError
+            If the lots of the area have to be added to ``lot_cache`` and a registry file
+            cannot be downloaded.
         """
         return self.match(address, is_lot_verified=is_lot_verified).code
 
@@ -322,8 +339,11 @@ class AddressCodec:
             If no town or no position has been imported.
         RuntimeError
             If the published datum cannot be transformed to ``crs``.
+        RegistryDownloadError
+            If the lots of the area have to be added to ``lot_cache`` and a registry file
+            cannot be downloaded.
         """
-        return self._locator.locate(self.encode(address), crs)
+        return self.locate_code(self.encode(address), crs)
 
     def locate_code(
         self, code: AddressCode | str, crs: GeodeticCrs = GeodeticCrs.JGD2011
@@ -354,9 +374,17 @@ class AddressCodec:
             If no position has been imported.
         RuntimeError
             If the published datum cannot be transformed to ``crs``.
+        RegistryDownloadError
+            If the lots of the area have to be added to ``lot_cache`` and a registry file
+            cannot be downloaded.
         """
         address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
+        self._ensure_lots(address_code)
         return self._locator.locate(address_code, crs)
+
+    def _ensure_lots(self, code: AddressCode) -> None:
+        if self._lot_cache is not None and code.machiaza_id is not None and code.lot.numbers:
+            self._lot_cache.ensure_lots([code.lg_code])
 
     def find_nearest(
         self,
@@ -368,7 +396,9 @@ class AddressCodec:
         Find the address whose representative point is nearest to a coordinate.
 
         Blocks, residences, and parcels are preferred; the nearest town is returned only
-        when no lot point is within ``max_distance_meters``.
+        when no lot point is within ``max_distance_meters``. With a ``lot_cache``, the lots
+        of the municipalities whose town points lie within ``max_distance_meters`` plus
+        ``NEARBY_LOT_MARGIN_METERS`` are added first.
 
         Parameters
         ----------
@@ -394,5 +424,14 @@ class AddressCodec:
             If no position has been imported.
         RuntimeError
             If ``crs`` cannot be transformed.
+        RegistryDownloadError
+            If the lots of the area have to be added to ``lot_cache`` and a registry file
+            cannot be downloaded.
         """
+        if self._lot_cache is not None and max_distance_meters > 0:
+            self._lot_cache.ensure_lots(
+                self._nearest_finder.list_nearby_municipalities(
+                    coordinate, crs, max_distance_meters + self.NEARBY_LOT_MARGIN_METERS
+                )
+            )
         return self._nearest_finder.find(coordinate, crs, max_distance_meters)

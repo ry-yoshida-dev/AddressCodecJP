@@ -6,8 +6,9 @@ Downloads Address Base Registry files from the registry download site
 (`https://data.address-br.digital.go.jp`). A plan lists the nationwide town master and
 prefecture and municipality points, the town, block, and residence files of chosen
 prefectures, and the parcel files of chosen municipalities, in import order, using the
-distribution scope of each `AbrDataset`. Files are written atomically under their
-distributed names.
+distribution scope of each `AbrDataset`. A lot plan lists the block, residence, and
+parcel files of municipalities, and files the site does not distribute can be skipped.
+Files are written atomically under their distributed names.
 
 ## Components
 

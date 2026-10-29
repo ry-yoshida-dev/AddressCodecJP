@@ -30,6 +30,6 @@ IDs of Tokyo are real; other town IDs, postal codes, and some readings are illus
 | [test_nearest.py](test_nearest.py) | Nearest address search |
 | [test_town_source.py](test_town_source.py) | Matching on an in-memory `TownSource` without a database |
 | [test_import_files.py](test_import_files.py) | Dataset detection, ordering and deduplication of `import_files`, transaction rollback, and the `import` command |
-| [test_database_cache.py](test_database_cache.py) | Building, reusing, and failed builds of the default database, and its use by `AddressCodec.open` and the command line |
+| [test_database_cache.py](test_database_cache.py) | Building, reusing, and failed builds of the default database, lots added on demand, and its use by `AddressCodec.open` and the command line |
 | [test_postal_lookup.py](test_postal_lookup.py) | Postal code parsing, towns by postal code, and the `postal` command |
 | [test_round_trip.py](test_round_trip.py) | Property-based decode and encode round trip over the sample towns |

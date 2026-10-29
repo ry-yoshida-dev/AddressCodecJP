@@ -72,7 +72,7 @@ def test_plan_lists_files_in_import_order() -> None:
 def test_distributed_file_rejects_area_codes_of_another_scope(
     dataset: AbrDataset, area_code: str | None
 ) -> None:
-    with pytest.raises(ValueError, match=r"area code|prefecture code|check digit"):
+    with pytest.raises(ValueError, match=r"area code|prefecture code|check digit|six digits"):
         _ = DistributedFile(dataset, area_code)
 
 
