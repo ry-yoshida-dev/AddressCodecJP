@@ -3,6 +3,7 @@ import sys
 
 from address_codec_jp.cli.output_format import OutputFormat
 from address_codec_jp.cli.output_value import OutputValue
+from address_codec_jp.errors.ambiguous_address_error import AmbiguousAddressError
 
 
 class RecordWriter:
@@ -46,10 +47,18 @@ class RecordWriter:
         input_text : str
             Input that failed.
         error : Exception
-            Raised error.
+            Raised error. JSON Lines output names its type, and lists the candidate
+            codes of an ``AmbiguousAddressError``.
         """
         match self._output_format:
             case OutputFormat.TSV:
                 print(f"{input_text}\tERROR: {error}", file=sys.stderr)
             case OutputFormat.JSONL:
-                print(json.dumps({"input": input_text, "error": str(error)}, ensure_ascii=False))
+                fields: dict[str, OutputValue] = {
+                    "input": input_text,
+                    "error": str(error),
+                    "error_type": type(error).__name__,
+                }
+                if isinstance(error, AmbiguousAddressError):
+                    fields["candidates"] = [str(code) for code in error.candidates]
+                print(json.dumps(fields, ensure_ascii=False))

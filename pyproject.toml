@@ -36,8 +36,17 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "N", "ISC"]
-ignore = ["ISC003", "RUF001", "RUF002", "RUF003"]
+select = [
+    "E", "F", "I", "UP", "B", "SIM", "RUF", "N", "ISC",
+    "D", "FBT", "PT", "C4", "PIE", "RET", "PERF",
+]
+ignore = ["ISC003", "RUF001", "RUF002", "RUF003", "D100", "D104", "D105", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D103", "FBT001"]
 
 [tool.mypy]
 strict = true

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import Enum, auto
 
 
@@ -36,3 +38,19 @@ class MatchTier(Enum):
                 return 1
             case MatchTier.FOLDED:
                 return 2
+
+    def loosen(self, other: MatchTier) -> MatchTier:
+        """
+        Looser of two tiers.
+
+        Parameters
+        ----------
+        other : MatchTier
+            Tier to compare with.
+
+        Returns
+        -------
+        MatchTier
+            The tier with the larger penalty.
+        """
+        return self if self.penalty >= other.penalty else other

@@ -4,7 +4,15 @@ from pathlib import Path
 import pytest
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp import AddressCodec, AddressLocation, PositionLevel
+from address_codec_jp import (
+    AddressCodec,
+    AddressLevel,
+    AddressLocation,
+    DatasetNotImportedError,
+    PositionNotFoundError,
+    RegistryFormatError,
+    RegistryImporter,
+)
 from address_codec_jp.storage import (
     AbrPositionCsvReader,
     AbrPositionDataset,
@@ -27,30 +35,30 @@ def degrees(location: AddressLocation) -> tuple[float, float]:
         (
             "千代田区丸の内1-2-3",
             "131016-0001001-2-3",
-            PositionLevel.RESIDENCE,
+            AddressLevel.RESIDENCE,
             (35.682456, 139.765123),
         ),
-        ("千代田区丸の内1-2-9", "131016-0001001-2", PositionLevel.BLOCK, (35.682, 139.765)),
-        ("千代田区丸の内1-2", "131016-0001001-2", PositionLevel.BLOCK, (35.682, 139.765)),
-        ("千代田区丸の内1-7", "131016-0001001", PositionLevel.TOWN, (35.68156, 139.767201)),
-        ("千代田区丸の内1-5", "131016-0001001", PositionLevel.TOWN, (35.68156, 139.767201)),
-        ("千代田区丸の内1-2-4", "131016-0001001-2", PositionLevel.BLOCK, (35.682, 139.765)),
-        ("千代田区丸の内3丁目", "131016", PositionLevel.MUNICIPALITY, (35.694003, 139.753634)),
-        ("三芳町竹間沢123-4", "113247-0001000-123-4", PositionLevel.RESIDENCE, (35.8362, 139.5321)),
-        ("三芳町竹間沢123-5", "113247-0001000-123", PositionLevel.BLOCK, (35.836, 139.532)),
-        ("三芳町竹間沢124-1", "113247-0001000", PositionLevel.TOWN, (35.835, 139.531)),
-        ("三芳町竹間沢字東12", "113247-0001000", PositionLevel.TOWN, (35.835, 139.531)),
-        ("台東区浅草橋", "131067", PositionLevel.MUNICIPALITY, (35.712607, 139.779984)),
-        ("台東区浅草橋1丁目", "131067-0001001", PositionLevel.TOWN, (35.697, 139.785)),
-        ("東京都", "130001", PositionLevel.PREFECTURE, (35.689568, 139.691717)),
-        ("港区六本木6丁目", "130001", PositionLevel.PREFECTURE, (35.689568, 139.691717)),
+        ("千代田区丸の内1-2-9", "131016-0001001-2", AddressLevel.BLOCK, (35.682, 139.765)),
+        ("千代田区丸の内1-2", "131016-0001001-2", AddressLevel.BLOCK, (35.682, 139.765)),
+        ("千代田区丸の内1-7", "131016-0001001", AddressLevel.TOWN, (35.68156, 139.767201)),
+        ("千代田区丸の内1-5", "131016-0001001", AddressLevel.TOWN, (35.68156, 139.767201)),
+        ("千代田区丸の内1-2-4", "131016-0001001-2", AddressLevel.BLOCK, (35.682, 139.765)),
+        ("千代田区丸の内3丁目", "131016", AddressLevel.MUNICIPALITY, (35.694003, 139.753634)),
+        ("三芳町竹間沢123-4", "113247-0001000-123-4", AddressLevel.RESIDENCE, (35.8362, 139.5321)),
+        ("三芳町竹間沢123-5", "113247-0001000-123", AddressLevel.BLOCK, (35.836, 139.532)),
+        ("三芳町竹間沢124-1", "113247-0001000", AddressLevel.TOWN, (35.835, 139.531)),
+        ("三芳町竹間沢字東12", "113247-0001000", AddressLevel.TOWN, (35.835, 139.531)),
+        ("台東区浅草橋", "131067", AddressLevel.MUNICIPALITY, (35.712607, 139.779984)),
+        ("台東区浅草橋1丁目", "131067-0001001", AddressLevel.TOWN, (35.697, 139.785)),
+        ("東京都", "130001", AddressLevel.PREFECTURE, (35.689568, 139.691717)),
+        ("港区六本木6丁目", "130001", AddressLevel.PREFECTURE, (35.689568, 139.691717)),
     ],
 )
 def test_locate_falls_back_to_the_nearest_area_with_a_point(
     located_codec: AddressCodec,
     address: str,
     located_code: str,
-    level: PositionLevel,
+    level: AddressLevel,
     expected_degrees: tuple[float, float],
 ) -> None:
     location = located_codec.locate(address)
@@ -81,53 +89,59 @@ def test_locate_on_another_datum(located_codec: AddressCodec) -> None:
     assert 300.0 < shift < 600.0
 
 
-def test_import_order_does_not_matter(codec: AddressCodec) -> None:
+def test_import_order_does_not_matter(importer: RegistryImporter, codec: AddressCodec) -> None:
     for path in reversed(POSITION_FIXTURES):
-        _ = codec.import_positions(path)
-    assert codec.locate("千代田区丸の内1-2-3").level is PositionLevel.RESIDENCE
+        _ = importer.import_positions(path)
+    assert codec.locate("千代田区丸の内1-2-3").level is AddressLevel.RESIDENCE
 
 
-def test_reimport_replaces_rows(located_codec: AddressCodec, tmp_path: Path) -> None:
+def test_reimport_replaces_rows(
+    importer: RegistryImporter, located_codec: AddressCodec, tmp_path: Path
+) -> None:
     moved = tmp_path / "moved.csv"
     _ = moved.write_text(
         "lg_code,rep_lon,rep_lat,rep_srid\n130001,139.0,35.0,EPSG:6668\n", encoding="utf-8"
     )
-    summary = located_codec.import_positions(moved)
+    summary = importer.import_positions(moved)
     assert (summary.dataset, summary.stored_count) == (AbrPositionDataset.AREA_POSITION, 1)
     assert degrees(located_codec.locate("東京都")) == pytest.approx((35.0, 139.0))
 
 
-def test_import_reads_zip_archives(codec: AddressCodec, tmp_path: Path) -> None:
+def test_import_reads_zip_archives(
+    importer: RegistryImporter, codec: AddressCodec, tmp_path: Path
+) -> None:
     archive_path = tmp_path / "mt_pref_pos_all.csv.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.write(FIXTURE_DIRECTORY / "positions" / "mt_pref_pos_sample.csv", "pref.csv")
-    assert codec.import_positions(archive_path).stored_count == 2
-    assert codec.locate("東京都").level is PositionLevel.PREFECTURE
+    assert importer.import_positions(archive_path).stored_count == 2
+    assert codec.locate("東京都").level is AddressLevel.PREFECTURE
 
 
 def test_locate_without_positions_fails_clearly(codec: AddressCodec) -> None:
-    with pytest.raises(RuntimeError, match="No positions"):
+    with pytest.raises(DatasetNotImportedError, match="No positions"):
         _ = codec.locate("東京都")
 
 
 def test_locate_without_any_enclosing_point_raises(located_codec: AddressCodec) -> None:
-    with pytest.raises(LookupError, match="No position is imported"):
+    with pytest.raises(PositionNotFoundError, match="No position is imported"):
         _ = located_codec.locate("広島県府中市府川町5")
 
 
-def test_town_master_is_not_a_position_dataset(codec: AddressCodec) -> None:
-    with pytest.raises(ValueError, match="Not a position dataset"):
-        _ = codec.import_positions(FIXTURE_DIRECTORY / "mt_town_sample.csv")
+def test_town_master_is_not_a_position_dataset(importer: RegistryImporter) -> None:
+    with pytest.raises(RegistryFormatError, match="Not a position dataset"):
+        _ = importer.import_positions(FIXTURE_DIRECTORY / "mt_town_sample.csv")
 
 
-def test_failed_import_stores_nothing(located_codec: AddressCodec, tmp_path: Path) -> None:
+def test_failed_import_stores_nothing(
+    importer: RegistryImporter, located_codec: AddressCodec, tmp_path: Path
+) -> None:
     broken = tmp_path / "broken.csv"
     _ = broken.write_text(
         "lg_code,rep_lon,rep_lat,rep_srid\n130001,139.0,35.0,EPSG:6668\n130001,139.0,35.0,EPSG:1\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError):
-        _ = located_codec.import_positions(broken)
+    with pytest.raises(RegistryFormatError, match="Row 3"):
+        _ = importer.import_positions(broken)
     assert degrees(located_codec.locate("東京都")) == pytest.approx((35.689568, 139.691717))
 
 
@@ -158,17 +172,19 @@ def test_unexpressible_lots_are_skipped_and_abolished_lots_removed() -> None:
     assert len(list(reader.read(positions / "mt_parcel_sample.csv"))) == 4
 
 
-def test_newer_master_removes_abolished_lots(located_codec: AddressCodec, tmp_path: Path) -> None:
-    assert located_codec.locate("千代田区丸の内1-2").level is PositionLevel.BLOCK
+def test_newer_master_removes_abolished_lots(
+    importer: RegistryImporter, located_codec: AddressCodec, tmp_path: Path
+) -> None:
+    assert located_codec.locate("千代田区丸の内1-2").level is AddressLevel.BLOCK
     newer_master = tmp_path / "mt_rsdtdsp_blk_newer.csv"
     _ = newer_master.write_text(
         "lg_code,machiaza_id,blk_id,city,oaza_cho,chome,blk_num,ablt_date\n"
         + "131016,0001001,001,千代田区,丸の内,一丁目,2,2026-04-01\n",
         encoding="utf-8",
     )
-    summary = located_codec.import_positions(newer_master)
+    summary = importer.import_positions(newer_master)
     assert (summary.stored_count, summary.removed_count) == (0, 1)
-    assert located_codec.locate("千代田区丸の内1-2").level is PositionLevel.TOWN
+    assert located_codec.locate("千代田区丸の内1-2").level is AddressLevel.TOWN
 
 
 def test_location_coordinate_is_a_geo_coordinate(located_codec: AddressCodec) -> None:

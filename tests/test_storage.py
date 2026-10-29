@@ -3,7 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from address_codec_jp import AddressCodec, PositionLevel
+from address_codec_jp import (
+    AddressCodec,
+    AddressDatabase,
+    AddressLevel,
+    AddressNotFoundError,
+    DatasetNotImportedError,
+    RegistryFormatError,
+    RegistryImporter,
+    UnsupportedDatabaseError,
+)
 from address_codec_jp.storage import AbrTownCsvReader
 
 HEADER: str = (
@@ -12,6 +21,7 @@ HEADER: str = (
     + "post_code,ablt_date\n"
 )
 EMPTY_TRAILING_COLUMNS: str = ",,,,,,,,,"
+MARUNOUCHI_ROW: str = "131016,0001001,東京都,,千代田区,,丸の内,一丁目,"
 
 
 def write_csv(path: Path, rows: list[str]) -> Path:
@@ -22,6 +32,14 @@ def write_csv(path: Path, rows: list[str]) -> Path:
     return path
 
 
+def build_database(tmp_path: Path) -> Path:
+    """Import a one-town master into a database file."""
+    database = tmp_path / "towns.sqlite3"
+    with RegistryImporter.open(database) as importer:
+        _ = importer.import_town_master(write_csv(tmp_path / "master.csv", [MARUNOUCHI_ROW]))
+    return database
+
+
 def test_open_rejects_missing_database(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         _ = AddressCodec.open(tmp_path / "typo.sqlite3")
@@ -29,20 +47,19 @@ def test_open_rejects_missing_database(tmp_path: Path) -> None:
 
 
 def test_encode_on_empty_database_fails_clearly() -> None:
-    with AddressCodec.create(":memory:") as codec, pytest.raises(RuntimeError):
-        _ = codec.encode("東京都")
+    with RegistryImporter.open(":memory:") as importer, pytest.raises(DatasetNotImportedError):
+        _ = AddressCodec(importer.database).encode("東京都")
 
 
 def test_reimport_replaces_previous_towns(tmp_path: Path) -> None:
-    old_master = write_csv(
-        tmp_path / "old.csv", ["131016,0001001,東京都,,千代田区,,丸の内,一丁目,"]
-    )
+    old_master = write_csv(tmp_path / "old.csv", [MARUNOUCHI_ROW])
     new_master = write_csv(tmp_path / "new.csv", ["131032,0005006,東京都,,港区,,六本木,六丁目,"])
-    with AddressCodec.create(":memory:") as codec:
-        _ = codec.import_town_master(old_master)
-        summary = codec.import_town_master(new_master)
+    with RegistryImporter.open(":memory:") as importer:
+        _ = importer.import_town_master(old_master)
+        summary = importer.import_town_master(new_master)
         assert (summary.registered_count, summary.complemented_count) == (1, 1)
-        with pytest.raises(KeyError):
+        codec = AddressCodec(importer.database)
+        with pytest.raises(AddressNotFoundError):
             _ = codec.decode("131016-0001001")
         assert codec.decode("131032-0005006") == "東京都港区六本木6丁目"
 
@@ -57,14 +74,12 @@ def test_reimport_replaces_previous_towns(tmp_path: Path) -> None:
 )
 def test_reader_rejects_malformed_rows(tmp_path: Path, row: str) -> None:
     master = write_csv(tmp_path / "bad.csv", [row])
-    with pytest.raises(ValueError):
+    with pytest.raises(RegistryFormatError, match="Row 2"):
         _ = list(AbrTownCsvReader().read(master))
 
 
 def test_failed_import_keeps_previous_towns(tmp_path: Path) -> None:
-    good_master = write_csv(
-        tmp_path / "good.csv", ["131016,0001001,東京都,,千代田区,,丸の内,一丁目,"]
-    )
+    good_master = write_csv(tmp_path / "good.csv", [MARUNOUCHI_ROW])
     bad_master = write_csv(
         tmp_path / "bad.csv",
         [
@@ -72,49 +87,79 @@ def test_failed_import_keeps_previous_towns(tmp_path: Path) -> None:
             "131017,0001001,東京都,,千代田区,,丸の内,一丁目,",
         ],
     )
-    with AddressCodec.create(":memory:") as codec:
-        _ = codec.import_town_master(good_master)
-        with pytest.raises(ValueError):
-            _ = codec.import_town_master(bad_master)
-        assert codec.decode("131016-0001001") == "東京都千代田区丸の内1丁目"
+    with RegistryImporter.open(":memory:") as importer:
+        _ = importer.import_town_master(good_master)
+        with pytest.raises(RegistryFormatError, match="Row 3"):
+            _ = importer.import_town_master(bad_master)
+        assert AddressCodec(importer.database).decode("131016-0001001") == (
+            "東京都千代田区丸の内1丁目"
+        )
 
 
 def test_identical_duplicate_rows_are_stored_once(tmp_path: Path) -> None:
-    row = "131016,0001001,東京都,,千代田区,,丸の内,一丁目,"
-    master = write_csv(tmp_path / "duplicate.csv", [row, row])
-    with AddressCodec.create(":memory:") as codec:
-        summary = codec.import_town_master(master)
+    master = write_csv(tmp_path / "duplicate.csv", [MARUNOUCHI_ROW, MARUNOUCHI_ROW])
+    with RegistryImporter.open(":memory:") as importer:
+        summary = importer.import_town_master(master)
         assert summary.registered_count == 1
 
 
 def test_conflicting_duplicate_rows_are_rejected(tmp_path: Path) -> None:
     master = write_csv(
         tmp_path / "conflict.csv",
-        [
-            "131016,0001001,東京都,,千代田区,,丸の内,一丁目,",
-            "131016,0001001,東京都,,千代田区,,丸の内,二丁目,",
-        ],
+        [MARUNOUCHI_ROW, "131016,0001001,東京都,,千代田区,,丸の内,二丁目,"],
     )
-    with AddressCodec.create(":memory:") as codec, pytest.raises(ValueError):
-        _ = codec.import_town_master(master)
+    with RegistryImporter.open(":memory:") as importer, pytest.raises(RegistryFormatError):
+        _ = importer.import_town_master(master)
 
 
-def test_open_is_read_only(tmp_path: Path) -> None:
-    master = write_csv(tmp_path / "master.csv", ["131016,0001001,東京都,,千代田区,,丸の内,一丁目,"])
-    database = tmp_path / "towns.sqlite3"
-    with AddressCodec.create(database) as codec:
-        _ = codec.import_town_master(master)
+def test_codec_opens_database_read_only(tmp_path: Path) -> None:
+    database = build_database(tmp_path)
     with AddressCodec.open(database) as codec:
         assert codec.decode("130001") == "東京都"
-        with pytest.raises(sqlite3.OperationalError):
-            _ = codec.import_town_master(master)
+    with pytest.raises(ValueError, match="writing"):
+        _ = RegistryImporter(AddressDatabase.open_read_only(database))
 
 
-def test_open_rejects_database_without_towns(tmp_path: Path) -> None:
+def test_importer_adds_to_existing_database(tmp_path: Path) -> None:
+    database = build_database(tmp_path)
+    with RegistryImporter.open(database) as importer:
+        _ = importer.import_town_master(
+            write_csv(tmp_path / "new.csv", ["131032,0005006,東京都,,港区,,六本木,六丁目,"])
+        )
+    with AddressCodec.open(database) as codec:
+        assert codec.decode("131032-0005006") == "東京都港区六本木6丁目"
+
+
+@pytest.mark.parametrize("is_table_created", [False, True])
+def test_open_rejects_foreign_sqlite_database(tmp_path: Path, is_table_created: bool) -> None:
     database = tmp_path / "other.sqlite3"
-    sqlite3.connect(database).close()
-    with pytest.raises(ValueError):
+    with sqlite3.connect(database) as connection:
+        if is_table_created:
+            _ = connection.execute("CREATE TABLE towns (lg_code TEXT, machiaza_id TEXT)")
+    connection.close()
+    with pytest.raises(UnsupportedDatabaseError, match="not an AddressCodecJP database"):
         _ = AddressCodec.open(database)
+    if is_table_created:
+        with pytest.raises(UnsupportedDatabaseError):
+            _ = RegistryImporter.open(database)
+
+
+def test_open_rejects_file_that_is_not_sqlite(tmp_path: Path) -> None:
+    database = tmp_path / "notes.txt"
+    _ = database.write_text("not a database " * 100, encoding="utf-8")
+    with pytest.raises(UnsupportedDatabaseError, match="not an SQLite database"):
+        _ = AddressCodec.open(database)
+
+
+def test_open_rejects_database_of_another_schema_version(tmp_path: Path) -> None:
+    database = build_database(tmp_path)
+    with sqlite3.connect(database) as connection:
+        _ = connection.execute("PRAGMA user_version = 0")
+    connection.close()
+    with pytest.raises(UnsupportedDatabaseError, match="schema version 0"):
+        _ = AddressCodec.open(database)
+    with pytest.raises(UnsupportedDatabaseError, match="schema version 0"):
+        _ = RegistryImporter.open(database)
 
 
 def test_abolished_towns_are_skipped(tmp_path: Path) -> None:
@@ -142,34 +187,17 @@ def test_town_reader_keeps_readings_and_postal_codes(tmp_path: Path) -> None:
     assert town.municipality.prefecture.kana == "トウキョウト"
 
 
-def test_reimport_removes_orphaned_positions(located_codec: AddressCodec, tmp_path: Path) -> None:
-    master = write_csv(tmp_path / "new.csv", ["131016,0001001,東京都,,千代田区,,丸の内,一丁目,"])
-    summary = located_codec.import_town_master(master)
-    assert summary.removed_position_count > 0
+def test_reimport_removes_orphaned_positions(
+    importer: RegistryImporter, located_codec: AddressCodec, tmp_path: Path
+) -> None:
     assert located_codec.locate("千代田区丸の内1-2-3").is_exact
-    assert located_codec.locate("東京都").level is PositionLevel.PREFECTURE
-    assert located_codec.locate_code("113247-0001000-123-4").level is PositionLevel.PREFECTURE
-
-
-def test_open_rejects_database_of_an_older_version(tmp_path: Path) -> None:
-    database = tmp_path / "old.sqlite3"
-    with sqlite3.connect(database) as connection:
-        _ = connection.execute("CREATE TABLE towns (lg_code TEXT, machiaza_id TEXT)")
-    connection.close()
-    with pytest.raises(ValueError, match="older version"):
-        _ = AddressCodec.open(database)
-
-
-def test_import_rebuilds_database_of_an_older_version(tmp_path: Path) -> None:
-    database = tmp_path / "old.sqlite3"
-    with sqlite3.connect(database) as connection:
-        _ = connection.execute("CREATE TABLE towns (lg_code TEXT, machiaza_id TEXT)")
-    connection.close()
-    master = write_csv(tmp_path / "master.csv", ["131016,0001001,東京都,,千代田区,,丸の内,一丁目,"])
-    with AddressCodec.create(database) as codec:
-        _ = codec.import_town_master(master)
-    with AddressCodec.open(database) as codec:
-        assert codec.decode("131016-0001001") == "東京都千代田区丸の内1丁目"
+    master = write_csv(tmp_path / "new.csv", [MARUNOUCHI_ROW])
+    summary = importer.import_town_master(master)
+    assert summary.removed_position_count > 0
+    codec = AddressCodec(importer.database)
+    assert codec.locate("千代田区丸の内1-2-3").is_exact
+    assert codec.locate("東京都").level is AddressLevel.PREFECTURE
+    assert codec.locate_code("113247-0001000-123-4").level is AddressLevel.PREFECTURE
 
 
 def test_municipality_names_must_agree(tmp_path: Path) -> None:
@@ -180,5 +208,8 @@ def test_municipality_names_must_agree(tmp_path: Path) -> None:
             "131016,0001002,東京都,,中央区,,丸の内,二丁目,",
         ],
     )
-    with AddressCodec.create(":memory:") as codec, pytest.raises(ValueError, match="131016"):
-        _ = codec.import_town_master(master)
+    with (
+        RegistryImporter.open(":memory:") as importer,
+        pytest.raises(RegistryFormatError, match="131016"),
+    ):
+        _ = importer.import_town_master(master)

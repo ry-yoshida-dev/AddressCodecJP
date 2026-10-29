@@ -3,23 +3,29 @@ from pathlib import Path
 
 import pytest
 
-from address_codec_jp import AddressCodec
+from address_codec_jp import AddressCodec, RegistryImporter
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*.csv"))
 
 
 @pytest.fixture
-def codec() -> Iterator[AddressCodec]:
-    """Codec backed by an in-memory database loaded with the sample town master."""
-    with AddressCodec.create(":memory:") as address_codec:
-        _ = address_codec.import_town_master(FIXTURE_DIRECTORY / "mt_town_sample.csv")
-        yield address_codec
+def importer() -> Iterator[RegistryImporter]:
+    """Provide an importer on an in-memory database loaded with the sample town master."""
+    with RegistryImporter.open(":memory:") as registry_importer:
+        _ = registry_importer.import_town_master(FIXTURE_DIRECTORY / "mt_town_sample.csv")
+        yield registry_importer
 
 
 @pytest.fixture
-def located_codec(codec: AddressCodec) -> AddressCodec:
-    """Codec whose database also holds the sample position datasets."""
+def codec(importer: RegistryImporter) -> AddressCodec:
+    """Provide a codec on the database of ``importer``."""
+    return AddressCodec(importer.database)
+
+
+@pytest.fixture
+def located_codec(importer: RegistryImporter) -> AddressCodec:
+    """Provide a codec whose database also holds the sample position datasets."""
     for path in POSITION_FIXTURES:
-        _ = codec.import_positions(path)
-    return codec
+        _ = importer.import_positions(path)
+    return AddressCodec(importer.database)

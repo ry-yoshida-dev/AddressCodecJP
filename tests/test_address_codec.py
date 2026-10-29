@@ -7,9 +7,11 @@ from address_codec_jp import (
     AddressCodec,
     AddressFormat,
     AddressLevel,
+    AddressNotFoundError,
     DigitWidth,
     LotStyle,
     NumeralStyle,
+    RegistryImporter,
 )
 
 TOWN_MASTER_HEADER: str = (
@@ -130,7 +132,7 @@ def test_encode_rejects_unmatched(codec: AddressCodec, address: str) -> None:
 
 
 def test_encode_rejects_blank(codec: AddressCodec) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="blank"):
         _ = codec.encode("　")
 
 
@@ -190,7 +192,7 @@ def test_registered_oaza_town_is_kept(codec: AddressCodec) -> None:
 
 def test_decode_rejects_lot_on_complemented_oaza(codec: AddressCodec) -> None:
     assert codec.decode("131067-0001000") == "東京都台東区浅草橋"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="only under a chome"):
         _ = codec.decode("131067-0001000-1-2")
 
 
@@ -208,7 +210,7 @@ def test_decode_kanji_large_lot(codec: AddressCodec) -> None:
 
 
 def test_decode_unknown_town(codec: AddressCodec) -> None:
-    with pytest.raises(KeyError):
+    with pytest.raises(AddressNotFoundError, match="131016-9999999"):
         _ = codec.decode("131016-9999999")
 
 
@@ -218,22 +220,22 @@ def test_round_trip(codec: AddressCodec) -> None:
     assert codec.encode(codec.decode(code, AddressFormat(numeral_style=NumeralStyle.KANJI))) == code
 
 
-def test_reimport_refreshes_matching(tmp_path: Path) -> None:
+def test_codec_created_after_reimport_matches_new_towns(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
         TOWN_MASTER_HEADER + "131067,0012000,東京都,,台東区,,浅草,,,,,,,,,,,\n",
         encoding="utf-8",
     )
-    with AddressCodec.create(":memory:") as codec:
-        _ = codec.import_town_master(master)
-        assert str(codec.encode("台東区浅草")) == "131067-0012000"
+    with RegistryImporter.open(":memory:") as importer:
+        _ = importer.import_town_master(master)
+        assert str(AddressCodec(importer.database).encode("台東区浅草")) == "131067-0012000"
         _ = master.write_text(
             TOWN_MASTER_HEADER + "131067,0001001,東京都,,台東区,,浅草橋,一丁目,,,,,,,,,,\n",
             encoding="utf-8",
         )
-        _ = codec.import_town_master(master)
-        with pytest.raises(LookupError):
-            _ = codec.encode("台東区浅草")
+        _ = importer.import_town_master(master)
+        with pytest.raises(AddressNotFoundError):
+            _ = AddressCodec(importer.database).encode("台東区浅草")
 
 
 def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> None:
@@ -244,8 +246,9 @@ def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> N
         + "992020,0001000,試験県,,北市山,,川,,,,,,,,,,,\n",
         encoding="utf-8",
     )
-    with AddressCodec.create(":memory:") as codec:
-        _ = codec.import_town_master(master)
+    with RegistryImporter.open(":memory:") as importer:
+        _ = importer.import_town_master(master)
+        codec = AddressCodec(importer.database)
         assert str(codec.encode("北市山田1-2")) == "992011-0001000-1-2"
         assert str(codec.encode("北市山川1-2")) == "992020-0001000-1-2"
         assert str(codec.encode("北市山")) == "992020"

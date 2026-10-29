@@ -1,9 +1,10 @@
 from typing import ClassVar
 
+from address_codec_jp.domain.address import Address
 from address_codec_jp.domain.lot_number import LotNumber
 from address_codec_jp.domain.municipality import Municipality
-from address_codec_jp.domain.prefecture import Prefecture
 from address_codec_jp.domain.town import Town
+from address_codec_jp.errors.reading_not_found_error import ReadingNotFoundError
 from address_codec_jp.formatting.address_format import AddressFormat
 from address_codec_jp.formatting.digit_width import DigitWidth
 from address_codec_jp.formatting.lot_style import LotStyle
@@ -23,66 +24,17 @@ class AddressFormatter:
     )
     _SHORT_CHOME_MARKER: ClassVar[str] = "丁"
 
-    def format_prefecture(self, prefecture: Prefecture, address_format: AddressFormat) -> str:
+    def format(self, address: Address, address_format: AddressFormat) -> str:
         """
-        Render a prefecture.
+        Render an address.
 
         Parameters
         ----------
-        prefecture : Prefecture
-            Prefecture to render.
+        address : Address
+            Address to render.
         address_format : AddressFormat
-            Output format. The prefecture is written even when the format excludes it.
-
-        Returns
-        -------
-        str
-            Prefecture name or its reading.
-
-        Raises
-        ------
-        LookupError
-            If katakana is requested and the registry has no reading of the name.
-        """
-        return self._name(prefecture.name, prefecture.kana, address_format)
-
-    def format_municipality(self, municipality: Municipality, address_format: AddressFormat) -> str:
-        """
-        Render a municipality.
-
-        Parameters
-        ----------
-        municipality : Municipality
-            Municipality to render.
-        address_format : AddressFormat
-            Output format.
-
-        Returns
-        -------
-        str
-            Address text such as ``東京都台東区``.
-
-        Raises
-        ------
-        LookupError
-            If katakana is requested and the registry has no reading of a name.
-        """
-        return self._apply_width(
-            self._municipality_text(municipality, address_format), address_format
-        )
-
-    def format_town(self, town: Town, lot: LotNumber, address_format: AddressFormat) -> str:
-        """
-        Render a town with lot numbers.
-
-        Parameters
-        ----------
-        town : Town
-            Town to render.
-        lot : LotNumber
-            Block and residence numbers.
-        address_format : AddressFormat
-            Output format.
+            Output format. A prefecture alone is written even when the format excludes
+            the prefecture, and the postal code is written only for towns.
 
         Returns
         -------
@@ -91,15 +43,20 @@ class AddressFormatter:
 
         Raises
         ------
-        LookupError
+        ReadingNotFoundError
             If katakana is requested and the registry has no reading of a name.
         """
-        text = (
-            self._postal_code_text(town, address_format)
-            + self._municipality_text(town.municipality, address_format)
-            + self._name(town.oaza_name, town.oaza_kana, address_format)
-            + self._format_numbers(town, lot, address_format)
-        )
+        if address.town is not None:
+            text = (
+                self._postal_code_text(address.town, address_format)
+                + self._municipality_text(address.town.municipality, address_format)
+                + self._name(address.town.oaza_name, address.town.oaza_kana, address_format)
+                + self._format_numbers(address.town, address.lot, address_format)
+            )
+        elif address.municipality is not None:
+            text = self._municipality_text(address.municipality, address_format)
+        else:
+            text = self._name(address.prefecture.name, address.prefecture.kana, address_format)
         return self._apply_width(text, address_format)
 
     def _postal_code_text(self, town: Town, address_format: AddressFormat) -> str:
@@ -135,7 +92,7 @@ class AddressFormatter:
                 return name
             case NameScript.KATAKANA:
                 if name and not kana:
-                    raise LookupError(f"The registry has no reading of {name!r}.")
+                    raise ReadingNotFoundError(f"The registry has no reading of {name!r}.")
                 return kana
 
     def _apply_width(self, text: str, address_format: AddressFormat) -> str:

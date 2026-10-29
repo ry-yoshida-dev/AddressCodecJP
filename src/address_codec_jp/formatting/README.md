@@ -2,14 +2,14 @@
 
 ## Overview
 
-Renders a prefecture, a municipality, or a town with lot numbers as address text in a
-selectable format, with registered names or their katakana readings.
+Renders an `Address` (a prefecture, a municipality, or a town with lot numbers) as
+address text in a selectable format, with registered names or their katakana readings.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| [address_formatter.py](address_formatter.py) | `AddressFormatter`: builds the address string for each level |
+| [address_formatter.py](address_formatter.py) | `AddressFormatter`: builds the address string of an `Address` |
 | [address_format.py](address_format.py) | `AddressFormat`: combination of output options |
 | [numeral_style.py](numeral_style.py) | `NumeralStyle`: Arabic or kanji numerals |
 | [lot_style.py](lot_style.py) | `LotStyle`: `番`/`号`, `番地`, or hyphen notation |

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
 from address_codec_jp.domain.address_code import AddressCode
-from address_codec_jp.domain.position_level import PositionLevel
+from address_codec_jp.domain.address_level import AddressLevel
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,16 +57,16 @@ class AddressLocation:
         return float(self.coordinate.longitude.degree.flat[0])
 
     @property
-    def level(self) -> PositionLevel:
+    def level(self) -> AddressLevel:
         """
         Granularity of the returned point.
 
         Returns
         -------
-        PositionLevel
+        AddressLevel
             Level of ``located_code``.
         """
-        return PositionLevel.of(self.located_code)
+        return self.located_code.level
 
     @property
     def is_exact(self) -> bool:

@@ -15,10 +15,8 @@ written with the address tells them apart.
 
 | Component | Responsibility |
 | --- | --- |
-| [area_matcher.py](area_matcher.py) | `AreaMatcher`: builds, ranks, and checks readings of an address |
+| [area_matcher.py](area_matcher.py) | `AreaMatcher`: builds, ranks, and checks readings of an address and returns an `AddressMatch`, or raises `AmbiguousAddressError` with the candidate codes |
 | [name_index.py](name_index.py) | `NameIndex`: tiered prefix index of oaza or koaza names |
-| [match_tier.py](match_tier.py) | `MatchTier`: exact, prefix-insensitive, and variant-folded comparison |
-| [candidate_set.py](candidate_set.py) | `CandidateSet`: towns compatible with a partial reading |
+| [candidate_set.py](candidate_set.py) | `CandidateSet`: towns compatible with a partial reading and the loosest `MatchTier` used |
 | [town_interpretation.py](town_interpretation.py) | `TownInterpretation`: a complete reading and its ranking key |
-| [area_match.py](area_match.py) | `AreaMatch`: matched prefecture, municipality, town, lot numbers, and remainder |
 | [municipality_match.py](municipality_match.py) | `MunicipalityMatch`: municipalities matching the leading name and remaining text |

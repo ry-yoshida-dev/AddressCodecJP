@@ -4,11 +4,15 @@ from collections.abc import Container
 from dataclasses import replace
 from typing import ClassVar
 
-from address_codec_jp.domain.lot_number import LotNumber
+from address_codec_jp.domain.address import Address
+from address_codec_jp.domain.address_code import AddressCode
+from address_codec_jp.domain.address_match import AddressMatch
 from address_codec_jp.domain.municipality import Municipality
 from address_codec_jp.domain.prefecture import Prefecture
 from address_codec_jp.domain.town import Town
-from address_codec_jp.matching.area_match import AreaMatch
+from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
+from address_codec_jp.errors.ambiguous_address_error import AmbiguousAddressError
+from address_codec_jp.errors.dataset_not_imported_error import DatasetNotImportedError
 from address_codec_jp.matching.candidate_set import CandidateSet
 from address_codec_jp.matching.municipality_match import MunicipalityMatch
 from address_codec_jp.matching.name_index import NameIndex
@@ -67,7 +71,7 @@ class AreaMatcher:
         self._oaza_indexes: dict[str, NameIndex] = {}
         self._koaza_indexes: dict[tuple[tuple[str, str], ...], NameIndex] = {}
 
-    def match(self, normalized_address: str, postal_code: str | None) -> AreaMatch:
+    def match(self, normalized_address: str, postal_code: str | None) -> AddressMatch:
         """
         Identify the most specific area at the start of a normalized address.
 
@@ -80,14 +84,16 @@ class AreaMatcher:
 
         Returns
         -------
-        AreaMatch
+        AddressMatch
             Matched prefecture, municipality, town, lot numbers, and unconsumed text.
 
         Raises
         ------
-        LookupError
-            If nothing matches, or the address is ambiguous.
-        RuntimeError
+        AddressNotFoundError
+            If nothing matches.
+        AmbiguousAddressError
+            If the address fits several areas or lot numbers equally well.
+        DatasetNotImportedError
             If the repository contains no towns.
         """
         municipality_matches = [
@@ -95,34 +101,44 @@ class AreaMatcher:
             for municipality_match in self._match_municipalities(normalized_address)
         ]
         if not municipality_matches:
-            return self._match_prefecture_only(normalized_address)
+            return self._match_prefecture_only(normalized_address, postal_code)
         longest_match = municipality_matches[0]
         if not NameIndex.strip_prefix(longest_match.remainder):
-            return self._match_municipality_only(longest_match)
+            return self._match_municipality_only(normalized_address, postal_code, longest_match)
         for municipality_match in municipality_matches:
             is_town_required = (
                 municipality_match.is_town_required or municipality_match is not longest_match
             )
-            interpretations = self._interpret_town(municipality_match, is_town_required)
+            interpretations = self._interpret_town(
+                municipality_match, is_town_required=is_town_required
+            )
             if interpretations:
-                return self._select(municipality_match, interpretations, postal_code)
-        raise LookupError(
+                return self._select(
+                    normalized_address, postal_code, municipality_match, interpretations
+                )
+        raise AddressNotFoundError(
             f"No town in {self._describe_all(longest_match.municipalities)} matches "
             + f"{longest_match.remainder!r}."
         )
 
-    def _match_prefecture_only(self, text: str) -> AreaMatch:
+    def _match_prefecture_only(self, text: str, postal_code: str | None) -> AddressMatch:
         index = self._get_prefecture_index()
         keys = self._matching_prefixes(self._normalizer.fold(text), index)
         if not keys:
-            raise LookupError(f"No prefecture or municipality matches {text!r}.")
+            raise AddressNotFoundError(f"No prefecture or municipality matches {text!r}.")
         key = keys[0]
         prefecture = index[key]
         remainder = text[len(key) :]
         if remainder:
-            raise LookupError(f"No municipality in {prefecture.name} matches {remainder!r}.")
-        return AreaMatch(
-            prefecture=prefecture, municipality=None, town=None, lot=LotNumber(), remainder=""
+            raise AddressNotFoundError(
+                f"No municipality in {prefecture.name} matches {remainder!r}."
+            )
+        return AddressMatch(
+            address=Address(prefecture=prefecture),
+            remainder="",
+            normalized_address=text,
+            postal_code=postal_code,
+            town_name_tier=None,
         )
 
     def _match_municipalities(self, text: str) -> list[MunicipalityMatch]:
@@ -156,24 +172,33 @@ class AreaMatcher:
             is_ward_omitted=municipality_match.is_ward_omitted and len(selected) > 1,
         )
 
-    def _match_municipality_only(self, municipality_match: MunicipalityMatch) -> AreaMatch:
+    def _match_municipality_only(
+        self,
+        normalized_address: str,
+        postal_code: str | None,
+        municipality_match: MunicipalityMatch,
+    ) -> AddressMatch:
         if municipality_match.is_town_required:
-            raise LookupError(
+            raise AmbiguousAddressError(
                 f"Municipality {municipality_match.name!r} is ambiguous: "
                 + f"{self._describe_all(municipality_match.municipalities)}. "
-                + "Add the prefecture or ward."
+                + "Add the prefecture or ward.",
+                tuple(
+                    AddressCode(lg_code=municipality.lg_code)
+                    for municipality in municipality_match.municipalities
+                ),
             )
         municipality = municipality_match.municipalities[0]
-        return AreaMatch(
-            prefecture=municipality.prefecture,
-            municipality=municipality,
-            town=None,
-            lot=LotNumber(),
+        return AddressMatch(
+            address=Address(prefecture=municipality.prefecture, municipality=municipality),
             remainder="",
+            normalized_address=normalized_address,
+            postal_code=postal_code,
+            town_name_tier=None,
         )
 
     def _interpret_town(
-        self, municipality_match: MunicipalityMatch, is_town_required: bool
+        self, municipality_match: MunicipalityMatch, *, is_town_required: bool
     ) -> list[TownInterpretation]:
         return [
             interpretation
@@ -184,10 +209,11 @@ class AreaMatcher:
 
     def _select(
         self,
+        normalized_address: str,
+        postal_code: str | None,
         municipality_match: MunicipalityMatch,
         interpretations: list[TownInterpretation],
-        postal_code: str | None,
-    ) -> AreaMatch:
+    ) -> AddressMatch:
         text = municipality_match.remainder
         description = self._describe_all(municipality_match.municipalities)
         best_key = min(interpretation.ranking_key for interpretation in interpretations)
@@ -196,10 +222,12 @@ class AreaMatcher:
             best = self._prefer_postal_code(best, postal_code)
         towns = {(town.lg_code, town.machiaza_id): town for item in best for town in item.towns}
         lots = {item.lot for item in best}
+        candidates = self._candidate_codes(best)
         if len(towns) == 1 and len(lots) > 1:
-            raise LookupError(
+            raise AmbiguousAddressError(
                 f"Lot numbers of {text!r} in {description} are ambiguous: "
-                + f"{sorted(map(str, lots))}."
+                + f"{sorted(map(str, lots))}.",
+                candidates,
             )
         if len(towns) > 1:
             names = sorted(
@@ -207,15 +235,32 @@ class AreaMatcher:
                 + f"{town.koaza_name}({town.lg_code}-{town.machiaza_id})"
                 for town in towns.values()
             )
-            raise LookupError(f"{text!r} in {description} is ambiguous: {names}.")
+            raise AmbiguousAddressError(
+                f"{text!r} in {description} is ambiguous: {names}.", candidates
+            )
         town = next(iter(towns.values()))
-        return AreaMatch(
-            prefecture=town.municipality.prefecture,
-            municipality=town.municipality,
-            town=town,
-            lot=best[0].lot,
+        return AddressMatch(
+            address=Address(
+                prefecture=town.municipality.prefecture,
+                municipality=town.municipality,
+                town=town,
+                lot=best[0].lot,
+            ),
             remainder=best[0].remainder,
+            normalized_address=normalized_address,
+            postal_code=postal_code,
+            town_name_tier=best[0].loosest_tier,
         )
+
+    def _candidate_codes(
+        self, interpretations: list[TownInterpretation]
+    ) -> tuple[AddressCode, ...]:
+        codes = {
+            AddressCode(lg_code=town.lg_code, machiaza_id=town.machiaza_id, lot=item.lot)
+            for item in interpretations
+            for town in item.towns
+        }
+        return tuple(sorted(codes, key=str))
 
     def _prefer_postal_code(
         self, interpretations: list[TownInterpretation], postal_code: str
@@ -256,6 +301,7 @@ class AreaMatcher:
                         towns=selected,
                         remainder=candidates.remainder[matched.end() :],
                         penalty=candidates.penalty,
+                        loosest_tier=candidates.loosest_tier,
                         split_digit_count=candidates.split_digit_count,
                     )
                 )
@@ -266,6 +312,7 @@ class AreaMatcher:
                     towns=without_chome,
                     remainder=candidates.remainder,
                     penalty=candidates.penalty,
+                    loosest_tier=candidates.loosest_tier,
                     split_digit_count=candidates.split_digit_count,
                 )
             )
@@ -278,6 +325,7 @@ class AreaMatcher:
                 towns=koaza_candidates.towns,
                 remainder=koaza_candidates.remainder,
                 penalty=candidates.penalty + koaza_candidates.penalty,
+                loosest_tier=candidates.loosest_tier.loosen(koaza_candidates.loosest_tier),
                 split_digit_count=candidates.split_digit_count + koaza_candidates.split_digit_count,
             )
             for koaza_candidates in koaza_index.match_all(candidates.remainder)
@@ -289,6 +337,7 @@ class AreaMatcher:
                     towns=without_koaza,
                     remainder=candidates.remainder,
                     penalty=candidates.penalty,
+                    loosest_tier=candidates.loosest_tier,
                     split_digit_count=candidates.split_digit_count,
                 )
             )
@@ -311,6 +360,7 @@ class AreaMatcher:
             remainder=lot_result.remainder,
             name_length=text_length - len(candidates.remainder) - candidates.split_digit_count,
             penalty=candidates.penalty,
+            loosest_tier=candidates.loosest_tier,
         )
 
     def _get_prefecture_index(self) -> dict[str, Prefecture]:
@@ -327,7 +377,9 @@ class AreaMatcher:
             index: dict[str, set[Municipality]] = defaultdict(set)
             municipalities = self._repository.list_municipalities()
             if not municipalities:
-                raise RuntimeError("The town database is empty. Import the town master first.")
+                raise DatasetNotImportedError(
+                    "The town database is empty. Import the town master first."
+                )
             for municipality in municipalities:
                 prefixes = {
                     prefecture + county

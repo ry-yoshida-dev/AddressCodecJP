@@ -124,13 +124,15 @@ class TextNormalizer:
             self._normalize(name, is_trailing_number_converted=False),
         }
 
-    def _normalize(self, text: str, is_trailing_number_converted: bool) -> str:
+    def _normalize(self, text: str, *, is_trailing_number_converted: bool) -> str:
         normalized = unicodedata.normalize("NFKC", text)
         normalized = self._WHITESPACE_BETWEEN_DIGITS.sub("-", normalized)
         normalized = self._WHITESPACE.sub("", normalized)
         normalized = self._normalize_dashes(normalized)
         normalized = self._POSTAL_CODE.sub("", normalized)
-        normalized = self._convert_kanji_numbers(normalized, is_trailing_number_converted)
+        normalized = self._convert_kanji_numbers(
+            normalized, is_trailing_number_converted=is_trailing_number_converted
+        )
         normalized = self._normalize_dashes(normalized)
         return self._REPEATED_DASH.sub("-", normalized).strip("-")
 
@@ -152,7 +154,7 @@ class TextNormalizer:
         folded = self._KE_VARIANTS.sub("ケ", folded)
         return self._NO_VARIANTS.sub("の", folded)
 
-    def _convert_kanji_numbers(self, text: str, is_trailing_number_converted: bool) -> str:
+    def _convert_kanji_numbers(self, text: str, *, is_trailing_number_converted: bool) -> str:
         patterns = [self._KANJI_NUMBER]
         if is_trailing_number_converted:
             patterns.append(self._TRAILING_KANJI_NUMBER)

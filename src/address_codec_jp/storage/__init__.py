@@ -2,6 +2,7 @@ from address_codec_jp.storage.abr_csv_file import AbrCsvFile
 from address_codec_jp.storage.abr_position_csv_reader import AbrPositionCsvReader
 from address_codec_jp.storage.abr_position_dataset import AbrPositionDataset
 from address_codec_jp.storage.abr_town_csv_reader import AbrTownCsvReader
+from address_codec_jp.storage.address_database import AddressDatabase
 from address_codec_jp.storage.area_position import AreaPosition
 from address_codec_jp.storage.import_summary import ImportSummary
 from address_codec_jp.storage.lot_entry import LotEntry
@@ -20,6 +21,7 @@ __all__ = [
     "AbrPositionCsvReader",
     "AbrPositionDataset",
     "AbrTownCsvReader",
+    "AddressDatabase",
     "AreaPosition",
     "ImportSummary",
     "LotEntry",

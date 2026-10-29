@@ -1,7 +1,7 @@
 import argparse
 import sqlite3
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import assert_never
 
@@ -18,6 +18,7 @@ from address_codec_jp.formatting.digit_width import DigitWidth
 from address_codec_jp.formatting.lot_style import LotStyle
 from address_codec_jp.formatting.name_script import NameScript
 from address_codec_jp.formatting.numeral_style import NumeralStyle
+from address_codec_jp.registry_importer import RegistryImporter
 
 
 class CommandLineInterface:
@@ -25,7 +26,9 @@ class CommandLineInterface:
     Command line front end of ``AddressCodec``.
 
     Query commands read their inputs from the arguments, or from standard input, one
-    per line, when no argument is given.
+    per line, when no argument is given. Standard input is processed line by line, and
+    blank lines are reported as errors so that JSON Lines output stays aligned with the
+    input lines.
     """
 
     def __init__(self) -> None:
@@ -58,8 +61,8 @@ class CommandLineInterface:
         database_path = Path(namespace.database)
         match command:
             case Command.IMPORT:
-                with AddressCodec.create(database_path) as codec:
-                    summary = codec.import_town_master(Path(namespace.source))
+                with RegistryImporter.open(database_path) as importer:
+                    summary = importer.import_town_master(Path(namespace.source))
                 print(
                     f"Imported {summary.registered_count} towns and added "
                     + f"{summary.complemented_count} oaza-level towns into {database_path}; "
@@ -67,9 +70,9 @@ class CommandLineInterface:
                 )
                 return 0
             case Command.IMPORT_POSITIONS:
-                with AddressCodec.create(database_path) as codec:
+                with RegistryImporter.open(database_path) as importer:
                     for source in namespace.sources:
-                        position_summary = codec.import_positions(Path(source))
+                        position_summary = importer.import_positions(Path(source))
                         print(
                             f"Imported {position_summary.stored_count} rows of "
                             + f"{position_summary.dataset.value} from {source}; removed "
@@ -99,10 +102,12 @@ class CommandLineInterface:
                 exit_status = 1
         return exit_status
 
-    def _read_inputs(self, arguments: list[str]) -> list[str]:
+    def _read_inputs(self, arguments: list[str]) -> Iterator[str]:
         if arguments:
-            return arguments
-        return [line.strip() for line in sys.stdin if line.strip()]
+            yield from arguments
+            return
+        for line in sys.stdin:
+            yield line.strip()
 
     def _answer(
         self,
@@ -114,7 +119,7 @@ class CommandLineInterface:
     ) -> None:
         match command:
             case Command.ENCODE:
-                address_match = codec.match(input_text, namespace.is_lot_verified)
+                address_match = codec.match(input_text, is_lot_verified=namespace.is_lot_verified)
                 writer.write(
                     input_text,
                     [str(address_match.code), address_match.remainder]
@@ -124,6 +129,9 @@ class CommandLineInterface:
                         "code": str(address_match.code),
                         "level": address_match.code.level.name,
                         "remainder": address_match.remainder,
+                        "town_name_tier": None
+                        if address_match.town_name_tier is None
+                        else address_match.town_name_tier.name,
                     },
                 )
             case Command.DECODE:

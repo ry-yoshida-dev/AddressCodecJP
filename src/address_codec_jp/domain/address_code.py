@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import ClassVar, Self, override
 
@@ -42,6 +43,7 @@ class AddressCode:
         + r"(?:-(?P<block>[1-9][0-9]*)(?:-(?P<residence>[1-9][0-9]*))?)?)?"
     )
     _CHECK_DIGIT_WEIGHTS: ClassVar[tuple[int, ...]] = (6, 5, 4, 3, 2)
+    _OAZA_CHOME_PART: ClassVar[str] = "000"
 
     lg_code: str
     machiaza_id: str | None = None
@@ -134,6 +136,7 @@ class AddressCode:
         ----------
         text : str
             Code such as ``131067``, ``131067-0004000`` or ``131016-0011001-2-3``.
+            Full-width digits and hyphens are accepted.
 
         Returns
         -------
@@ -145,7 +148,7 @@ class AddressCode:
         ValueError
             If the text does not follow the address code format.
         """
-        matched = cls._PATTERN.fullmatch(text.strip())
+        matched = cls._PATTERN.fullmatch(unicodedata.normalize("NFKC", text).strip())
         if matched is None:
             raise ValueError(f"Invalid address code: {text!r}.")
         block = matched.group("block")
@@ -179,13 +182,68 @@ class AddressCode:
         Returns
         -------
         AddressLevel
-            Prefecture, municipality, or town.
+            Level of the most specific component of the code.
         """
-        if self.machiaza_id is not None:
-            return AddressLevel.TOWN
-        if self.is_prefecture_code(self.lg_code):
-            return AddressLevel.PREFECTURE
-        return AddressLevel.MUNICIPALITY
+        if self.machiaza_id is None:
+            if self.is_prefecture_code(self.lg_code):
+                return AddressLevel.PREFECTURE
+            return AddressLevel.MUNICIPALITY
+        match len(self.lot.numbers):
+            case 0:
+                return AddressLevel.TOWN
+            case 1:
+                return AddressLevel.BLOCK
+            case _:
+                return AddressLevel.RESIDENCE
+
+    @property
+    def parent(self) -> Self | None:
+        """
+        Code of the nearest enclosing area.
+
+        A residence is enclosed by its block, a block by its town, a chome or koaza by
+        its oaza (the town ID with the chome part ``000``), a town by its municipality,
+        and a municipality by its prefecture. The enclosing area need not be registered.
+
+        Returns
+        -------
+        Self | None
+            Enclosing code, or ``None`` for a prefecture.
+        """
+        match self.level:
+            case AddressLevel.PREFECTURE:
+                return None
+            case AddressLevel.MUNICIPALITY:
+                return self.for_prefecture(self.prefecture_code)
+            case AddressLevel.RESIDENCE:
+                return type(self)(
+                    lg_code=self.lg_code,
+                    machiaza_id=self.machiaza_id,
+                    lot=LotNumber(block=self.lot.block),
+                )
+            case AddressLevel.BLOCK:
+                return type(self)(lg_code=self.lg_code, machiaza_id=self.machiaza_id)
+            case AddressLevel.TOWN:
+                if self.machiaza_id is None or self.machiaza_id.endswith(self._OAZA_CHOME_PART):
+                    return type(self)(lg_code=self.lg_code)
+                return type(self)(
+                    lg_code=self.lg_code,
+                    machiaza_id=self.machiaza_id[:4] + self._OAZA_CHOME_PART,
+                )
+
+    def lineage(self) -> list[Self]:
+        """
+        List this code followed by all its enclosing areas.
+
+        Returns
+        -------
+        list[Self]
+            Codes from this one up to its prefecture.
+        """
+        codes = [self]
+        while (parent := codes[-1].parent) is not None:
+            codes.append(parent)
+        return codes
 
     @override
     def __str__(self) -> str:

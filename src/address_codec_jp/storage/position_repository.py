@@ -32,12 +32,12 @@ class PositionRepository:
     Parameters
     ----------
     connection : sqlite3.Connection
-        Open SQLite connection. It is shared with the town repository and not closed here.
+        Open SQLite connection owned by ``AddressDatabase``.
     """
 
     _SCHEMA: ClassVar[tuple[str, ...]] = (
         """
-        CREATE TABLE IF NOT EXISTS area_positions (
+        CREATE TABLE area_positions (
             lg_code TEXT PRIMARY KEY,
             longitude REAL NOT NULL,
             latitude REAL NOT NULL,
@@ -45,7 +45,7 @@ class PositionRepository:
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS town_positions (
+        CREATE TABLE town_positions (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
             lot_system TEXT NOT NULL,
@@ -56,7 +56,7 @@ class PositionRepository:
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS lot_entries (
+        CREATE TABLE lot_entries (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
             lot_system TEXT NOT NULL,
@@ -67,15 +67,15 @@ class PositionRepository:
         )
         """,
         """
-        CREATE INDEX IF NOT EXISTS lot_entries_by_number
+        CREATE INDEX lot_entries_by_number
         ON lot_entries (lg_code, machiaza_id, lot_system, block, residence)
         """,
         """
-        CREATE INDEX IF NOT EXISTS town_positions_by_coordinate
+        CREATE INDEX town_positions_by_coordinate
         ON town_positions (latitude, longitude)
         """,
         """
-        CREATE TABLE IF NOT EXISTS lot_positions (
+        CREATE TABLE lot_positions (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
             lot_system TEXT NOT NULL,
@@ -87,12 +87,11 @@ class PositionRepository:
         )
         """,
         """
-        CREATE INDEX IF NOT EXISTS lot_positions_by_coordinate
+        CREATE INDEX lot_positions_by_coordinate
         ON lot_positions (latitude, longitude)
         """,
     )
-    _TABLES: ClassVar[tuple[str, ...]] = (
-        "area_positions",
+    _TOWN_KEYED_TABLES: ClassVar[tuple[str, ...]] = (
         "town_positions",
         "lot_entries",
         "lot_positions",
@@ -103,12 +102,12 @@ class PositionRepository:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection: sqlite3.Connection = connection
         self._is_position_imported: bool = False
+        self._is_lot_imported: bool = False
 
     def create_schema(self) -> None:
-        """Create the position tables if they do not exist."""
-        with self._connection:
-            for statement in self._SCHEMA:
-                _ = self._connection.execute(statement)
+        """Create the position tables."""
+        for statement in self._SCHEMA:
+            _ = self._connection.execute(statement)
 
     @property
     def is_position_imported(self) -> bool:
@@ -120,10 +119,15 @@ class PositionRepository:
         Returns
         -------
         bool
-            ``True`` when the tables exist and hold a prefecture, municipality, or town.
+            ``True`` when a point of a prefecture, municipality, or town is stored.
         """
         if not self._is_position_imported:
-            self._is_position_imported = self._query_position_imported()
+            row = self._fetch_first(
+                "SELECT EXISTS (SELECT 1 FROM area_positions) "
+                + "OR EXISTS (SELECT 1 FROM town_positions)",
+                (),
+            )
+            self._is_position_imported = row is not None and bool(row[0])
         return self._is_position_imported
 
     @property
@@ -131,15 +135,17 @@ class PositionRepository:
         """
         Tell whether any block, residence, or parcel number has been imported.
 
+        A positive answer is cached, because imports only add numbers.
+
         Returns
         -------
         bool
             ``True`` when a block, residence, or parcel master has been imported.
         """
-        if not self._is_schema_present():
-            return False
-        row = self._fetch_first("SELECT EXISTS (SELECT 1 FROM lot_entries)", ())
-        return row is not None and bool(row[0])
+        if not self._is_lot_imported:
+            row = self._fetch_first("SELECT EXISTS (SELECT 1 FROM lot_entries)", ())
+            self._is_lot_imported = row is not None and bool(row[0])
+        return self._is_lot_imported
 
     def has_lots(self, lg_code: str, machiaza_id: str) -> bool:
         """
@@ -196,23 +202,6 @@ class PositionRepository:
             "SELECT EXISTS (SELECT 1 FROM lot_entries WHERE lg_code = ? AND machiaza_id = ? "
             + f"AND block = ?{residence_condition})",
             parameters,
-        )
-        return row is not None and bool(row[0])
-
-    def _is_schema_present(self) -> bool:
-        table_count_row = self._fetch_first(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?, ?)",
-            self._TABLES,
-        )
-        return table_count_row is not None and table_count_row[0] == len(self._TABLES)
-
-    def _query_position_imported(self) -> bool:
-        if not self._is_schema_present():
-            return False
-        row = self._fetch_first(
-            "SELECT EXISTS (SELECT 1 FROM area_positions) "
-            + "OR EXISTS (SELECT 1 FROM town_positions)",
-            (),
         )
         return row is not None and bool(row[0])
 
@@ -330,7 +319,7 @@ class PositionRepository:
                 "DELETE FROM area_positions WHERE substr(lg_code, 3, 3) != '000' "
                 + "AND lg_code NOT IN (SELECT lg_code FROM towns)"
             ).rowcount
-            for table in self._TABLES[1:]:
+            for table in self._TOWN_KEYED_TABLES:
                 removed_count += self._connection.execute(
                     f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM towns AS t "
                     + f"WHERE t.lg_code = {table}.lg_code AND t.machiaza_id = {table}.machiaza_id)"

@@ -10,8 +10,9 @@ database for lookup by code or municipality.
 | Component | Responsibility |
 | --- | --- |
 | [abr_csv_file.py](abr_csv_file.py) | `AbrCsvFile`: reads rows of a registry CSV file or its ZIP archive |
-| [abr_town_csv_reader.py](abr_town_csv_reader.py) | `AbrTownCsvReader`: reads `mt_town_all.csv` or its ZIP archive, skipping abolished rows |
-| [town_repository.py](town_repository.py) | `TownRepository`: SQLite store of municipalities, towns, and postal codes; atomic replacement on import, read-only opening with schema check, and lookup of prefectures, municipalities, and towns |
+| [abr_town_csv_reader.py](abr_town_csv_reader.py) | `AbrTownCsvReader`: reads `mt_town_all.csv` or its ZIP archive, skipping abolished rows and naming the row of malformed values |
+| [address_database.py](address_database.py) | `AddressDatabase`: owns the SQLite connection, opens read-only or writable, and rejects files of another application or schema version |
+| [town_repository.py](town_repository.py) | `TownRepository`: SQLite store of municipalities, towns, and postal codes; atomic replacement on import and lookup of prefectures, municipalities, and towns |
 | [town_replacement.py](town_replacement.py) | `TownReplacement`: numbers of stored and complemented towns of a replacement |
 | [import_summary.py](import_summary.py) | `ImportSummary`: numbers of registered and complemented towns and removed position rows of a town master import |
 | [abr_position_dataset.py](abr_position_dataset.py) | `AbrPositionDataset`: position-related datasets, identified by their CSV header |

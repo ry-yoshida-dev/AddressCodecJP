@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from address_codec_jp.domain.match_tier import MatchTier
 from address_codec_jp.domain.town import Town
 
 
@@ -16,6 +17,8 @@ class CandidateSet:
         Normalized text not yet consumed.
     penalty : int
         Accumulated ``MatchTier.penalty`` of the name comparisons used so far.
+    loosest_tier : MatchTier
+        Loosest tier of the name comparisons used so far.
     split_digit_count : int
         Digits that names consumed right before a number in the remainder, such as the
         ``1`` of koaza ``１`` read from ``112番`` or the ``12`` of koaza ``１２`` read
@@ -26,4 +29,5 @@ class CandidateSet:
     towns: list[Town]
     remainder: str
     penalty: int
+    loosest_tier: MatchTier
     split_digit_count: int = 0

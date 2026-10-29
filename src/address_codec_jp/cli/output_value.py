@@ -1,1 +1,1 @@
-type OutputValue = str | int | float | None
+type OutputValue = str | int | float | list[str] | None

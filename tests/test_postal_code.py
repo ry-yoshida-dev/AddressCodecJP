@@ -76,7 +76,7 @@ def test_decode_writes_the_registered_postal_code(
 
 
 def test_complemented_oaza_takes_the_postal_codes_of_its_chome(codec: AddressCodec) -> None:
-    town = codec.match("千代田区丸の内").town
+    town = codec.match("千代田区丸の内").address.town
     assert town is not None
     assert town.postal_codes == ("1000005",)
     assert not town.is_registered

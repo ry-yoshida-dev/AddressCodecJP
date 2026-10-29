@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from address_codec_jp.domain.lot_number import LotNumber
+from address_codec_jp.domain.match_tier import MatchTier
 from address_codec_jp.domain.town import Town
 
 
@@ -21,6 +22,8 @@ class TownInterpretation:
         Number of characters consumed by oaza, chome, and koaza names.
     penalty : int
         Accumulated ``MatchTier.penalty`` of the name comparisons.
+    loosest_tier : MatchTier
+        Loosest tier of the name comparisons.
     """
 
     towns: list[Town]
@@ -28,6 +31,7 @@ class TownInterpretation:
     remainder: str
     name_length: int
     penalty: int
+    loosest_tier: MatchTier
 
     @property
     def ranking_key(self) -> tuple[int, int, int]:

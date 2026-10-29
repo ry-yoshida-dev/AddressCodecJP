@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from address_codec_jp import (
     LotNumber,
     LotStyle,
     NumeralStyle,
+    RegistryImporter,
     Town,
 )
 from address_codec_jp.storage import AbrTownCsvReader
@@ -43,11 +45,11 @@ FORMATS: list[AddressFormat] = [
 
 
 @pytest.fixture(scope="module")
-def shared_codec() -> AddressCodec:
+def shared_codec() -> Iterator[AddressCodec]:
     """Codec shared by the generated examples of this module."""
-    address_codec = AddressCodec.create(":memory:")
-    _ = address_codec.import_town_master(FIXTURE)
-    return address_codec
+    with RegistryImporter.open(":memory:") as importer:
+        _ = importer.import_town_master(FIXTURE)
+        yield AddressCodec(importer.database)
 
 
 @settings(max_examples=300, deadline=None)

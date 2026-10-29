@@ -42,10 +42,10 @@ def test_from_int_uses_digits_from_ten_thousand() -> None:
 )
 def test_rejects_invalid_positional(text: str) -> None:
     assert KanjiNumeral.parse(text) is None
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Not a valid kanji numeral"):
         _ = KanjiNumeral.to_int(text)
 
 
 def test_rejects_non_numeral() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Not a valid kanji numeral"):
         _ = KanjiNumeral.to_int("丸")

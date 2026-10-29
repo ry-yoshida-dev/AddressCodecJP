@@ -2,9 +2,9 @@ import re
 from collections import defaultdict
 from typing import ClassVar
 
+from address_codec_jp.domain.match_tier import MatchTier
 from address_codec_jp.domain.town import Town
 from address_codec_jp.matching.candidate_set import CandidateSet
-from address_codec_jp.matching.match_tier import MatchTier
 from address_codec_jp.normalization.text_normalizer import TextNormalizer
 
 
@@ -89,12 +89,18 @@ class NameIndex:
                         towns=towns,
                         remainder=remainder,
                         penalty=tier.penalty,
+                        loosest_tier=tier,
                         split_digit_count=self._count_split_digits(key, remainder),
                     )
                 )
         if self._unnamed_towns:
             candidate_sets.append(
-                CandidateSet(towns=self._unnamed_towns, remainder=normalized_text, penalty=0)
+                CandidateSet(
+                    towns=self._unnamed_towns,
+                    remainder=normalized_text,
+                    penalty=0,
+                    loosest_tier=MatchTier.EXACT,
+                )
             )
         return candidate_sets
 

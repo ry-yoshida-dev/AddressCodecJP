@@ -8,6 +8,8 @@ from address_codec_jp.domain.address_location import AddressLocation
 from address_codec_jp.domain.address_point import AddressPoint
 from address_codec_jp.domain.coordinate_bounds import CoordinateBounds
 from address_codec_jp.domain.nearest_address import NearestAddress
+from address_codec_jp.errors.dataset_not_imported_error import DatasetNotImportedError
+from address_codec_jp.errors.position_not_found_error import PositionNotFoundError
 from address_codec_jp.positioning.datum_converter import DatumConverter
 from address_codec_jp.storage.position_repository import PositionRepository
 
@@ -62,15 +64,19 @@ class NearestAddressFinder:
         ------
         ValueError
             If ``max_distance_meters`` is not positive.
-        LookupError
+        PositionNotFoundError
             If no point is within ``max_distance_meters``.
+        DatasetNotImportedError
+            If no position has been imported.
         RuntimeError
-            If no position has been imported, or ``crs`` cannot be transformed.
+            If ``crs`` cannot be transformed.
         """
         if not max_distance_meters > 0:
             raise ValueError(f"max_distance_meters must be positive, got {max_distance_meters}.")
         if not self._repository.is_position_imported:
-            raise RuntimeError("No positions have been imported. Import position datasets.")
+            raise DatasetNotImportedError(
+                "No positions have been imported. Import position datasets."
+            )
         searched = self._converter.transform(coordinate, crs, self._SEARCH_DATUM)
         searches: list[Callable[[CoordinateBounds], list[AddressPoint]]] = [
             self._repository.list_lot_points,
@@ -80,7 +86,7 @@ class NearestAddressFinder:
             nearest = self._find_nearest(searched, search, max_distance_meters)
             if nearest is not None:
                 return self._to_nearest_address(searched, nearest, crs)
-        raise LookupError(f"No address is imported within {max_distance_meters} m.")
+        raise PositionNotFoundError(f"No address is imported within {max_distance_meters} m.")
 
     def _find_nearest(
         self,

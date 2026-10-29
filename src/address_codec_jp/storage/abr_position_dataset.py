@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import Enum
 
+from address_codec_jp.errors.registry_format_error import RegistryFormatError
+
 
 class AbrPositionDataset(Enum):
     """
@@ -57,7 +59,7 @@ class AbrPositionDataset(Enum):
 
         Raises
         ------
-        ValueError
+        RegistryFormatError
             If the header belongs to none of the datasets, such as the town master.
         """
         columns = set(header)
@@ -70,7 +72,7 @@ class AbrPositionDataset(Enum):
             return cls.BLOCK_POSITION if is_position else cls.BLOCK
         if is_position:
             return cls.TOWN_POSITION if "machiaza_id" in columns else cls.AREA_POSITION
-        raise ValueError(
+        raise RegistryFormatError(
             "Not a position dataset of the Address Base Registry. Expected one of: "
             + ", ".join(dataset.value for dataset in cls)
             + "."

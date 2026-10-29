@@ -6,6 +6,7 @@ from geo_coordinate import GeodeticCrs
 from address_codec_jp.domain.lot_number import LotNumber
 from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.representative_point import RepresentativePoint
+from address_codec_jp.errors.registry_format_error import RegistryFormatError
 from address_codec_jp.storage.abr_csv_file import AbrCsvFile
 from address_codec_jp.storage.abr_position_dataset import AbrPositionDataset
 from address_codec_jp.storage.area_position import AreaPosition
@@ -45,7 +46,7 @@ class AbrPositionCsvReader:
         ------
         FileNotFoundError
             If the file does not exist.
-        ValueError
+        RegistryFormatError
             If the file is empty or not a position-related dataset.
         """
         return AbrPositionDataset.detect(self._read_header(AbrCsvFile(path).read_rows()))
@@ -69,31 +70,36 @@ class AbrPositionCsvReader:
         ------
         FileNotFoundError
             If the file does not exist.
-        ValueError
+        RegistryFormatError
             If the file is not a position-related dataset, required columns are
-            missing, a row is short, or a value is malformed.
+            missing, a row is short, or a value is malformed. The message names the row.
         """
         rows = AbrCsvFile(path).read_rows()
         header = self._read_header(rows)
         dataset = AbrPositionDataset.detect(header)
         missing_columns = [column for column in dataset.required_columns if column not in header]
         if missing_columns:
-            raise ValueError(f"{dataset.value} CSV lacks required columns: {missing_columns}.")
+            raise RegistryFormatError(
+                f"{dataset.value} CSV lacks required columns: {missing_columns}."
+            )
         column_index = {column: header.index(column) for column in dataset.required_columns}
         for row_number, row in enumerate(rows, start=2):
             if len(row) < len(header):
-                raise ValueError(
+                raise RegistryFormatError(
                     f"Row {row_number} has {len(row)} columns, expected {len(header)}."
                 )
             values = {column: row[index] for column, index in column_index.items()}
-            record = self._to_record(dataset, values)
+            try:
+                record = self._to_record(dataset, values)
+            except ValueError as error:
+                raise RegistryFormatError(f"Row {row_number}: {error}") from error
             if record is not None:
                 yield record
 
     def _read_header(self, rows: Iterator[list[str]]) -> list[str]:
         header = next(rows, None)
         if header is None:
-            raise ValueError("Registry CSV is empty.")
+            raise RegistryFormatError("Registry CSV is empty.")
         return header
 
     def _to_record(

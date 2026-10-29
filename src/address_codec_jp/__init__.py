@@ -1,17 +1,28 @@
 from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.domain import (
+    Address,
     AddressCode,
     AddressLevel,
     AddressLocation,
     AddressMatch,
     LotNumber,
     LotSystem,
+    MatchTier,
     Municipality,
     NearestAddress,
-    PositionLevel,
     Prefecture,
     RepresentativePoint,
     Town,
+)
+from address_codec_jp.errors import (
+    AddressCodecError,
+    AddressNotFoundError,
+    AmbiguousAddressError,
+    DatasetNotImportedError,
+    PositionNotFoundError,
+    ReadingNotFoundError,
+    RegistryFormatError,
+    UnsupportedDatabaseError,
 )
 from address_codec_jp.formatting import (
     AddressFormat,
@@ -20,24 +31,45 @@ from address_codec_jp.formatting import (
     NameScript,
     NumeralStyle,
 )
+from address_codec_jp.registry_importer import RegistryImporter
+from address_codec_jp.storage import (
+    AbrPositionDataset,
+    AddressDatabase,
+    ImportSummary,
+    PositionImportSummary,
+)
 
 __all__ = [
+    "AbrPositionDataset",
+    "Address",
     "AddressCode",
     "AddressCodec",
+    "AddressCodecError",
+    "AddressDatabase",
     "AddressFormat",
     "AddressLevel",
     "AddressLocation",
     "AddressMatch",
+    "AddressNotFoundError",
+    "AmbiguousAddressError",
+    "DatasetNotImportedError",
     "DigitWidth",
+    "ImportSummary",
     "LotNumber",
     "LotStyle",
     "LotSystem",
+    "MatchTier",
     "Municipality",
     "NameScript",
     "NearestAddress",
     "NumeralStyle",
-    "PositionLevel",
+    "PositionImportSummary",
+    "PositionNotFoundError",
     "Prefecture",
+    "ReadingNotFoundError",
+    "RegistryFormatError",
+    "RegistryImporter",
     "RepresentativePoint",
     "Town",
+    "UnsupportedDatabaseError",
 ]

@@ -5,6 +5,7 @@ from typing import ClassVar
 
 from address_codec_jp.domain.municipality import Municipality
 from address_codec_jp.domain.town import Town
+from address_codec_jp.errors.registry_format_error import RegistryFormatError
 from address_codec_jp.normalization.kanji_numeral import KanjiNumeral
 from address_codec_jp.storage.abr_csv_file import AbrCsvFile
 
@@ -73,43 +74,52 @@ class AbrTownCsvReader:
         ------
         FileNotFoundError
             If the file does not exist.
-        ValueError
+        RegistryFormatError
             If the archive has no CSV file, required columns are missing, a row is short,
-            or a code is malformed.
+            or a code is malformed. The message names the row.
         """
         rows = AbrCsvFile(path).read_rows()
         header = next(rows, None)
         if header is None:
-            raise ValueError("Town master CSV is empty.")
+            raise RegistryFormatError("Town master CSV is empty.")
         missing_columns = [column for column in self.REQUIRED_COLUMNS if column not in header]
         if missing_columns:
-            raise ValueError(f"Town master CSV lacks required columns: {missing_columns}.")
+            raise RegistryFormatError(f"Town master CSV lacks required columns: {missing_columns}.")
         column_index = {column: header.index(column) for column in self.REQUIRED_COLUMNS}
         municipalities: dict[tuple[str, ...], Municipality] = {}
         for row_number, row in enumerate(rows, start=2):
             if len(row) < len(header):
-                raise ValueError(
+                raise RegistryFormatError(
                     f"Row {row_number} has {len(row)} columns, expected {len(header)}."
                 )
             values = {column: row[index] for column, index in column_index.items()}
             if values["ablt_date"]:
                 continue
-            municipality_values = tuple(values[column] for column in self._MUNICIPALITY_COLUMNS)
-            if municipality_values not in municipalities:
-                municipalities[municipality_values] = self._to_municipality(values)
-            yield Town(
-                municipality=municipalities[municipality_values],
-                machiaza_id=values["machiaza_id"].zfill(7),
-                oaza_name=values["oaza_cho"],
-                chome_name=values["chome"],
-                chome_number=self._parse_chome_number(values["chome"]),
-                koaza_name=values["koaza"],
-                oaza_kana=values["oaza_cho_kana"],
-                chome_kana=values["chome_kana"],
-                koaza_kana=values["koaza_kana"],
-                postal_codes=self._parse_postal_codes(values["post_code"]),
-                is_registered=True,
-            )
+            try:
+                town = self._to_town(values, municipalities)
+            except ValueError as error:
+                raise RegistryFormatError(f"Row {row_number}: {error}") from error
+            yield town
+
+    def _to_town(
+        self, values: dict[str, str], municipalities: dict[tuple[str, ...], Municipality]
+    ) -> Town:
+        municipality_values = tuple(values[column] for column in self._MUNICIPALITY_COLUMNS)
+        if municipality_values not in municipalities:
+            municipalities[municipality_values] = self._to_municipality(values)
+        return Town(
+            municipality=municipalities[municipality_values],
+            machiaza_id=values["machiaza_id"].zfill(7),
+            oaza_name=values["oaza_cho"],
+            chome_name=values["chome"],
+            chome_number=self._parse_chome_number(values["chome"]),
+            koaza_name=values["koaza"],
+            oaza_kana=values["oaza_cho_kana"],
+            chome_kana=values["chome_kana"],
+            koaza_kana=values["koaza_kana"],
+            postal_codes=self._parse_postal_codes(values["post_code"]),
+            is_registered=True,
+        )
 
     def _to_municipality(self, values: dict[str, str]) -> Municipality:
         return Municipality(

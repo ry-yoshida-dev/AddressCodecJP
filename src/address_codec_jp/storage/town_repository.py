@@ -1,13 +1,13 @@
 import sqlite3
 from collections.abc import Iterable
 from itertools import batched
-from pathlib import Path
-from types import TracebackType
-from typing import ClassVar, Self
+from typing import ClassVar
 
 from address_codec_jp.domain.municipality import Municipality
 from address_codec_jp.domain.prefecture import Prefecture
 from address_codec_jp.domain.town import Town
+from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
+from address_codec_jp.errors.registry_format_error import RegistryFormatError
 from address_codec_jp.storage.town_replacement import TownReplacement
 
 
@@ -21,7 +21,7 @@ class TownRepository:
     Parameters
     ----------
     connection : sqlite3.Connection
-        Open SQLite connection to a database that holds the town tables.
+        Open SQLite connection owned by ``AddressDatabase``.
     """
 
     _MUNICIPALITY_COLUMN_NAMES: ClassVar[tuple[str, ...]] = (
@@ -58,14 +58,10 @@ class TownRepository:
         + ", (SELECT group_concat(p.postal_code, ';') FROM town_postal_codes AS p "
         + "WHERE p.lg_code = t.lg_code AND p.machiaza_id = t.machiaza_id) FROM towns AS t"
     )
-    _TABLES: ClassVar[dict[str, tuple[str, ...]]] = {
-        "municipalities": _MUNICIPALITY_COLUMN_NAMES,
-        "towns": _TOWN_COLUMN_NAMES,
-        "town_postal_codes": ("lg_code", "machiaza_id", "postal_code"),
-    }
+    _TABLES: ClassVar[tuple[str, ...]] = ("municipalities", "towns", "town_postal_codes")
     _SCHEMA: ClassVar[tuple[str, ...]] = (
         """
-        CREATE TABLE IF NOT EXISTS municipalities (
+        CREATE TABLE municipalities (
             lg_code TEXT PRIMARY KEY,
             prefecture_name TEXT NOT NULL,
             county_name TEXT NOT NULL,
@@ -78,7 +74,7 @@ class TownRepository:
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS towns (
+        CREATE TABLE towns (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
             oaza_name TEXT NOT NULL,
@@ -93,7 +89,7 @@ class TownRepository:
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS town_postal_codes (
+        CREATE TABLE town_postal_codes (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
             postal_code TEXT NOT NULL,
@@ -101,7 +97,7 @@ class TownRepository:
         )
         """,
         """
-        CREATE INDEX IF NOT EXISTS town_postal_codes_by_code
+        CREATE INDEX town_postal_codes_by_code
         ON town_postal_codes (postal_code)
         """,
     )
@@ -112,105 +108,10 @@ class TownRepository:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection: sqlite3.Connection = connection
 
-    @classmethod
-    def open(cls, database_path: Path | str) -> Self:
-        """
-        Open an existing repository database in read-only mode.
-
-        Parameters
-        ----------
-        database_path : Path | str
-            SQLite file created by ``create``.
-
-        Returns
-        -------
-        Self
-            Repository bound to the database.
-
-        Raises
-        ------
-        FileNotFoundError
-            If the file does not exist.
-        ValueError
-            If the file is an SQLite database without the town table, or its tables were
-            created by an older version.
-        """
-        path = Path(database_path)
-        if not path.is_file():
-            raise FileNotFoundError(f"Town database not found: {database_path}.")
-        connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-        repository = cls(connection)
-        if not repository._read_columns("towns"):
-            connection.close()
-            raise ValueError(f"{database_path} is not a town database. Import a town master.")
-        if not repository.is_schema_current:
-            connection.close()
-            raise ValueError(
-                f"{database_path} was created by an older version. Import the town master again."
-            )
-        return repository
-
-    @classmethod
-    def create(cls, database_path: Path | str) -> Self:
-        """
-        Open a repository database, creating the file if needed.
-
-        Parameters
-        ----------
-        database_path : Path | str
-            SQLite file path, or ``":memory:"`` for an in-memory database.
-
-        Returns
-        -------
-        Self
-            Repository bound to the database.
-        """
-        repository = cls(sqlite3.connect(database_path))
-        if repository.is_schema_current or not repository._read_columns("towns"):
-            repository._create_schema()
-        return repository
-
-    @property
-    def is_schema_current(self) -> bool:
-        """
-        Tell whether every table has the columns of this version.
-
-        Returns
-        -------
-        bool
-            ``False`` for tables created by an older version, which ``replace_all``
-            rebuilds.
-        """
-        return all(
-            set(columns) == self._read_columns(table) for table, columns in self._TABLES.items()
-        )
-
-    @property
-    def connection(self) -> sqlite3.Connection:
-        """
-        Connection to the database, shared with the position repository.
-
-        Returns
-        -------
-        sqlite3.Connection
-            Open connection owned by this repository.
-        """
-        return self._connection
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        exception_type: type[BaseException] | None,
-        exception: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        self.close()
-
-    def close(self) -> None:
-        """Close the underlying connection."""
-        self._connection.close()
+    def create_schema(self) -> None:
+        """Create the town tables."""
+        for statement in self._SCHEMA:
+            _ = self._connection.execute(statement)
 
     def replace_all(self, towns: Iterable[Town]) -> TownReplacement:
         """
@@ -220,7 +121,7 @@ class TownRepository:
         added for oaza registered only by chome. An ABR town ID consists of a four-digit
         oaza part and a three-digit chome part, so such a town gets the chome part ``000``
         and ``is_registered`` set to ``False``. It takes the postal codes of all its
-        chome. Tables of an older version are rebuilt.
+        chome.
 
         Parameters
         ----------
@@ -234,15 +135,11 @@ class TownRepository:
 
         Raises
         ------
-        ValueError
+        RegistryFormatError
             If one town ID appears with different contents, or one local government code
             with different municipality names. Nothing is changed then.
         """
         with self._connection:
-            if not self.is_schema_current:
-                for table in self._TABLES:
-                    _ = self._connection.execute(f"DROP TABLE IF EXISTS {table}")
-                self._create_schema()
             self._load_incoming(towns)
             self._reject_conflicts()
             for table in self._TABLES:
@@ -278,16 +175,6 @@ class TownRepository:
             registered_count=registered_cursor.rowcount,
             complemented_count=complemented_cursor.rowcount,
         )
-
-    def _create_schema(self) -> None:
-        for statement in self._SCHEMA:
-            _ = self._connection.execute(statement)
-
-    def _read_columns(self, table: str) -> set[str]:
-        rows: list[tuple[object, ...]] = self._connection.execute(
-            "SELECT name FROM pragma_table_info(?)", (table,)
-        ).fetchall()
-        return {str(row[0]) for row in rows}
 
     def _load_incoming(self, towns: Iterable[Town]) -> None:
         self._drop_incoming()
@@ -346,14 +233,14 @@ class TownRepository:
         ).fetchall()
         if town_conflicts:
             self._drop_incoming()
-            raise ValueError(
+            raise RegistryFormatError(
                 "Town IDs appear with different contents: "
                 + ", ".join(f"{row[0]}-{row[1]}" for row in town_conflicts)
                 + "."
             )
         if municipality_conflicts:
             self._drop_incoming()
-            raise ValueError(
+            raise RegistryFormatError(
                 "Local government codes appear with different municipality names: "
                 + ", ".join(str(row[0]) for row in municipality_conflicts)
                 + "."
@@ -381,7 +268,7 @@ class TownRepository:
 
         Raises
         ------
-        KeyError
+        AddressNotFoundError
             If no town has the identifiers.
         """
         rows: list[tuple[object, ...]] = self._connection.execute(
@@ -389,7 +276,7 @@ class TownRepository:
             (lg_code, machiaza_id),
         ).fetchall()
         if not rows:
-            raise KeyError(f"Town {lg_code}-{machiaza_id} is not registered.")
+            raise AddressNotFoundError(f"Town {lg_code}-{machiaza_id} is not registered.")
         return self._to_town(rows[0], self.get_municipality(lg_code))
 
     def get_municipality(self, lg_code: str) -> Municipality:
@@ -408,12 +295,12 @@ class TownRepository:
 
         Raises
         ------
-        KeyError
+        AddressNotFoundError
             If the municipality is not registered.
         """
         municipalities = self._query_municipalities("WHERE lg_code = ?", (lg_code,))
         if not municipalities:
-            raise KeyError(f"Municipality {lg_code} is not registered.")
+            raise AddressNotFoundError(f"Municipality {lg_code} is not registered.")
         return municipalities[0]
 
     def get_prefecture(self, prefecture_code: str) -> Prefecture:
@@ -432,7 +319,7 @@ class TownRepository:
 
         Raises
         ------
-        KeyError
+        AddressNotFoundError
             If no municipality of the prefecture is registered.
         """
         next_prefecture_code = f"{int(prefecture_code) + 1:02d}"
@@ -440,7 +327,7 @@ class TownRepository:
             "WHERE lg_code >= ? AND lg_code < ?", (prefecture_code, next_prefecture_code)
         )
         if not municipalities:
-            raise KeyError(f"Prefecture {prefecture_code} is not registered.")
+            raise AddressNotFoundError(f"Prefecture {prefecture_code} is not registered.")
         return municipalities[0].prefecture
 
     def list_municipalities(self) -> list[Municipality]:

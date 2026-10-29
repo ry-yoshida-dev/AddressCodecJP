@@ -27,8 +27,9 @@ dependency (Python 3.12+).
 | `130001` | Prefecture | 東京都 |
 | `131067` | Municipality | 東京都台東区 |
 | `131067-0004000` | Oaza | 東京都台東区浅草橋 |
-| `131067-0004001` | Chome | 東京都台東区浅草橋1丁目 |
-| `131067-0004001-2-3` | Chome with lot numbers | 東京都台東区浅草橋1丁目2番3号 |
+| `131067-0004001` | Town (chome) | 東京都台東区浅草橋1丁目 |
+| `131067-0004001-2` | Block | 東京都台東区浅草橋1丁目2番 |
+| `131067-0004001-2-3` | Residence | 東京都台東区浅草橋1丁目2番3号 |
 
 | Part | Meaning |
 | --- | --- |
@@ -37,14 +38,17 @@ dependency (Python 3.12+).
 | `block` | `番` or `番地` number (optional) |
 | `residence` | `号` or branch number (optional) |
 
-`AddressCode.level` tells the granularity as an `AddressLevel`. Building names and room
-numbers are not encoded; they are returned as `remainder`.
+`AddressCode.level` tells the granularity as an `AddressLevel` (`PREFECTURE`,
+`MUNICIPALITY`, `TOWN`, `BLOCK`, or `RESIDENCE`), and `AddressCode.parent` and
+`AddressCode.lineage()` give the enclosing areas up to the prefecture. `AddressCode.parse`
+also accepts full-width digits and hyphens. Building names and room numbers are not
+encoded; they are returned as `remainder`.
 
 The ABR lists some oaza only by chome (e.g. 浅草橋 has only 1丁目 to 5丁目). On import,
 an oaza-level town with the chome part `000` is added for each such oaza so that addresses
 ending at the oaza can be encoded. Such a town has `Town.is_registered == False` and never
 carries lot numbers, because lot numbers of that oaza belong to one of its chome:
-`台東区浅草橋6-1-1` raises `LookupError`, and decoding `131067-0004000-1-2` raises
+`台東区浅草橋6-1-1` raises `AddressNotFoundError`, and decoding `131067-0004000-1-2` raises
 `ValueError`.
 
 ### Normalization and matching
@@ -64,8 +68,10 @@ Input is normalized before matching:
 
 The registry sometimes registers names that differ only by `大字`/`字`, by `の`/`ノ`, or by
 `ヶ`/`ケ`/`が` as different towns (e.g. 網走市 `大曲` and `字大曲`). Names are therefore
-compared in three tiers: exact, ignoring `大字`/`字`, and folding notation variants and
-old-style kanji. A stricter tier wins over a looser one.
+compared in three tiers (`MatchTier`): exact, ignoring `大字`/`字`, and folding notation
+variants and old-style kanji. A stricter tier wins over a looser one, and
+`AddressMatch.town_name_tier` tells the loosest tier the match needed, so that loose
+matches can be reviewed (`千代田区丸ノ内1丁目` is `FOLDED`).
 
 A municipality may be written without its prefecture or county (`台東区`), the prefecture
 without `都`/`府`/`県` (`東京千代田区`), and a designated city without its ward
@@ -73,25 +79,33 @@ without `都`/`府`/`県` (`東京千代田区`), and a designated city without 
 decides among them. The longest municipality name is tried first; when no town of it
 matches the rest, shorter municipality names are tried, and a town name must then confirm
 the municipality. After the municipality, every reading of oaza, chome, koaza, and lot
-numbers is tried. Readings that leave less unparsed text win, then readings that explain more of the
-text by registered names, then stricter comparisons. `LookupError` is raised instead of
-guessing when:
+numbers is tried. Readings that leave less unparsed text win, then readings that explain
+more of the text by registered names, then stricter comparisons. `AmbiguousAddressError`
+is raised instead of guessing, with the possible codes in `candidates`, when:
 
-- the municipality name is shared by several municipalities and no town name tells them
-  apart (`府中市`, `府中市1-1`, `横浜市`)
+- the address ends at a municipality name shared by several municipalities (`府中市`,
+  `横浜市`)
 - the best readings point to different towns, e.g. two towns registered under the same
   name, or a numeric koaza next to a lot number (`門前町本市112番3号`, `門前町椎木12-3`)
-- a chome is written that does not exist (`丸の内9丁目`, `丸の内9-1-2`)
-- digits are left unread without lot numbers (`浅草橋6-1-1` must not become `浅草` +
-  `橋6-1-1`)
 
 A leading postal code decides only these cases, among the municipalities or towns that
 have it registered: `〒060-0042 札幌市` is 札幌市中央区. It never overrides the written
 names, and the registry gives postal codes for only about 13% of the towns.
 
-With `is_lot_verified=True`, `match` and `encode` also require the lot numbers to be
-registered in the imported block, residence, or parcel masters. Without a residence number,
-any residence of the block counts.
+`AddressNotFoundError` is raised when nothing fits, for example when:
+
+- a municipality name shared by several municipalities is followed by no town name
+  (`府中市1-1`)
+- a chome is written that does not exist (`丸の内9丁目`, `丸の内9-1-2`)
+- digits are left unread without lot numbers (`浅草橋6-1-1` must not become `浅草` +
+  `橋6-1-1`)
+
+With `is_lot_verified=True` (keyword-only), `match` and `encode` also require the lot
+numbers to be registered in the imported block, residence, or parcel masters. Without a
+residence number, any residence of the block counts.
+
+`AddressCodec.resolve` returns the registered `Address` (prefecture, municipality, town,
+and lot numbers) of a code, and `AddressMatch.address` holds the same for a match.
 
 ### Representative points
 
@@ -118,7 +132,7 @@ lot or town.
 ### Readings and postal codes
 
 `AddressFormat(name_script=NameScript.KATAKANA)` writes the registered katakana
-readings (`トウキョウトチヨダクマルノウチ1チョウメ2バン3ゴウ`) and raises `LookupError` for a
+readings (`トウキョウトチヨダクマルノウチ1チョウメ2バン3ゴウ`) and raises `ReadingNotFoundError` for a
 town whose reading is not registered. `is_postal_code_included=True` writes the postal
 code first (`〒060-0042 北海道札幌市中央区大通西1丁目`) for towns with exactly one
 registered postal code. Oaza-level towns added on import take the postal codes of their
@@ -149,12 +163,14 @@ The reader requires the columns `lg_code`, `machiaza_id`, `pref`, `county`, `cit
 `post_code` and `ablt_date`; other columns are ignored. Short rows and malformed codes
 (including a wrong check digit) raise `ValueError`.
 
-In Python, `AddressCodec.create(path)` creates a database for `import_town_master`, and
-`AddressCodec.open(path)` opens an existing one read-only; it raises `FileNotFoundError`
-for a missing file and `ValueError` for an SQLite file without the town table, or one
-created by an older version, instead of modifying it. Importing again through the same codec refreshes its matching indexes.
-A codec holds one SQLite connection and must be used only in the thread that opened it;
-open one codec per thread instead of sharing it.
+In Python, `RegistryImporter.open(path)` opens a database for import, creating the file
+if needed, and `AddressCodec.open(path)` opens it read-only for queries. Both raise
+`UnsupportedDatabaseError` for a file that is not a database of this version of the
+library (the file is marked with an SQLite application ID and schema version), instead of
+modifying it; delete such a file and import again. `AddressCodec.open` raises
+`FileNotFoundError` for a missing file. A codec builds its matching indexes on first use,
+so open it after importing. A codec or importer holds one SQLite connection and must be
+used only in the thread that opened it; open one codec per thread instead of sharing it.
 
 ### Representative points
 
@@ -198,7 +214,19 @@ On the Tokyo datasets, `locate` takes about 0.2 ms and `find_nearest` about 1 to
 ### Python
 
 ```python
-from address_codec_jp import AddressCodec, AddressFormat, LotStyle, NumeralStyle
+from pathlib import Path
+
+from address_codec_jp import (
+    AddressCodec,
+    AddressFormat,
+    LotStyle,
+    NumeralStyle,
+    RegistryImporter,
+)
+
+with RegistryImporter.open("towns.sqlite3") as importer:
+    summary = importer.import_town_master(Path("data/mt_town_all.csv.zip"))
+    print(summary.registered_count, summary.complemented_count)
 
 with AddressCodec.open("towns.sqlite3") as codec:
     code = codec.encode("東京都千代田区丸の内１丁目２番３号")
@@ -214,7 +242,7 @@ with AddressCodec.open("towns.sqlite3") as codec:
         print(address_code, address_code.level.name, codec.decode(address_code))
 
     match = codec.match("港区六本木6-10-1 六本木ヒルズ森タワー")
-    print(match.code, match.remainder)
+    print(match.code, match.code.level.name, match.remainder)
 ```
 
 ```
@@ -225,7 +253,7 @@ with AddressCodec.open("towns.sqlite3") as codec:
 130001 PREFECTURE 東京都
 131067 MUNICIPALITY 東京都台東区
 131067-0004000 TOWN 東京都台東区浅草橋
-131032-0028006-10-1 六本木ヒルズ森タワー
+131032-0028006-10-1 RESIDENCE 六本木ヒルズ森タワー
 ```
 
 Output above is from the ABR town master released in October 2026.
@@ -320,18 +348,37 @@ Columns: code, address, level, latitude, longitude, distance in meters, and datu
 Nearest options: `--crs`, `--max-distance` (meters, 1000 by default).
 
 Query commands (`encode`, `decode`, `locate`, `nearest`) read one input per line from
-standard input when no argument is given. `--output jsonl` writes one JSON object per
-input, with errors as `{"input": ..., "error": ...}` in the same position, while the
-default `tsv` writes errors to standard error. The exit status is 1 when any input fails.
+standard input when no argument is given, processing each line as it arrives. `--output
+jsonl` writes one JSON object per input, with errors as `{"input": ..., "error": ...,
+"error_type": ...}` in the same position (blank lines included), and adds `candidates`
+for an ambiguous address. The default `tsv` writes errors to standard error. The exit
+status is 1 when any input fails.
 
 ```bash
 printf '鳥取市面影1丁目1-1\n府中市\n' | uv run address-codec-jp encode --output jsonl
 ```
 
 ```
-{"input": "鳥取市面影1丁目1-1", "code": "312011-0055001-1-1", "level": "TOWN", "remainder": ""}
-{"input": "府中市", "error": "Municipality '府中市' is ambiguous: 東京都府中市, 広島県府中市. Add the prefecture or ward."}
+{"input": "鳥取市面影1丁目1-1", "code": "312011-0055001-1-1", "level": "RESIDENCE", "remainder": "", "town_name_tier": "EXACT"}
+{"input": "府中市", "error": "Municipality '府中市' is ambiguous: 東京都府中市, 広島県府中市. Add the prefecture or ward.", "error_type": "AmbiguousAddressError", "candidates": ["132063", "342084"]}
 ```
+
+## Errors
+
+Every error derives from `AddressCodecError` and from the most specific built-in
+exception, so either can be caught.
+
+| Error | Built-in base | Raised when |
+| --- | --- | --- |
+| `AddressNotFoundError` | `LookupError` | An address, code, or verified lot is not registered |
+| `AmbiguousAddressError` | `LookupError` | Several areas or lot numbers fit equally well; `candidates` lists their codes |
+| `PositionNotFoundError` | `LookupError` | No imported point fits the address or coordinate |
+| `ReadingNotFoundError` | `LookupError` | A katakana reading to be written is not registered |
+| `DatasetNotImportedError` | `RuntimeError` | A dataset the operation needs has not been imported |
+| `RegistryFormatError` | `ValueError` | A registry file is not the expected dataset or has malformed rows (the row is named) |
+| `UnsupportedDatabaseError` | `ValueError` | A database file was not created by this version |
+
+Blank addresses and malformed address codes raise plain `ValueError`.
 
 ## Limitations
 

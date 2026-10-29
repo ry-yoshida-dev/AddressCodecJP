@@ -101,9 +101,26 @@ def test_locate_without_positions_is_reported(
 def test_inputs_are_read_from_standard_input(
     database: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("sys.stdin", io.StringIO("千代田区丸の内1-2-3\n\n台東区浅草橋\n"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("千代田区丸の内1-2-3\n台東区浅草橋\n"))
     assert CommandLineInterface().run(["--database", str(database), "encode"]) == 0
     assert capsys.readouterr().out.splitlines() == ["131016-0001001-2-3", "131067-0001000"]
+
+
+def test_blank_input_lines_keep_jsonl_output_aligned(
+    database: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("千代田区丸の内1-2-3\n\n台東区浅草橋\n"))
+    arguments = ["--database", str(database), "encode", "--output", "jsonl"]
+    assert CommandLineInterface().run(arguments) == 1
+    records: list[dict[str, object]] = [
+        json.loads(line) for line in capsys.readouterr().out.splitlines()
+    ]
+    assert [record.get("code") for record in records] == [
+        "131016-0001001-2-3",
+        None,
+        "131067-0001000",
+    ]
+    assert records[1]["error_type"] == "ValueError"
 
 
 def test_jsonl_output_keeps_errors_in_line(
@@ -115,11 +132,14 @@ def test_jsonl_output_keeps_errors_in_line(
     assert records[0] == {
         "input": "千代田区丸の内1-2-3 ビル",
         "code": "131016-0001001-2-3",
-        "level": "TOWN",
+        "level": "RESIDENCE",
         "remainder": "ビル",
+        "town_name_tier": "EXACT",
     }
     assert records[1]["input"] == "府中市"
     assert "ambiguous" in records[1]["error"]
+    assert records[1]["error_type"] == "AmbiguousAddressError"
+    assert records[1]["candidates"] == ["132063", "342084"]
 
 
 def test_decode_writes_kana_and_postal_code(

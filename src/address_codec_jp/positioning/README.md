@@ -10,6 +10,6 @@ requested datum. Also finds the address whose point is nearest to a coordinate.
 
 | Component | Responsibility |
 | --- | --- |
-| [address_locator.py](address_locator.py) | `AddressLocator`: fallback from residence or block to town, oaza, municipality, and prefecture |
+| [address_locator.py](address_locator.py) | `AddressLocator`: fallback along `AddressCode.lineage` from residence or block to town, oaza, municipality, and prefecture |
 | [nearest_address_finder.py](nearest_address_finder.py) | `NearestAddressFinder`: nearest block, residence, parcel, or town point by growing square searches |
 | [datum_converter.py](datum_converter.py) | `DatumConverter`: cached datum transformation of published points and coordinates |

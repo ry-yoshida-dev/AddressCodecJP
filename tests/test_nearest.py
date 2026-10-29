@@ -1,22 +1,27 @@
 import pytest
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp import AddressCodec, PositionLevel
+from address_codec_jp import (
+    AddressCodec,
+    AddressLevel,
+    DatasetNotImportedError,
+    PositionNotFoundError,
+)
 
 
 @pytest.mark.parametrize(
     ("latitude", "longitude", "code", "level"),
     [
-        (35.682456, 139.765123, "131016-0001001-2-3", PositionLevel.RESIDENCE),
-        (35.68201, 139.76501, "131016-0001001-2", PositionLevel.BLOCK),
-        (35.6795, 139.7641, "131016-0001001-2", PositionLevel.BLOCK),
-        (35.8362, 139.5321, "113247-0001000-123-4", PositionLevel.RESIDENCE),
-        (35.836, 139.532, "113247-0001000-123", PositionLevel.BLOCK),
-        (35.6971, 139.7851, "131067-0001001", PositionLevel.TOWN),
+        (35.682456, 139.765123, "131016-0001001-2-3", AddressLevel.RESIDENCE),
+        (35.68201, 139.76501, "131016-0001001-2", AddressLevel.BLOCK),
+        (35.6795, 139.7641, "131016-0001001-2", AddressLevel.BLOCK),
+        (35.8362, 139.5321, "113247-0001000-123-4", AddressLevel.RESIDENCE),
+        (35.836, 139.532, "113247-0001000-123", AddressLevel.BLOCK),
+        (35.6971, 139.7851, "131067-0001001", AddressLevel.TOWN),
     ],
 )
 def test_nearest_point_is_found(
-    located_codec: AddressCodec, latitude: float, longitude: float, code: str, level: PositionLevel
+    located_codec: AddressCodec, latitude: float, longitude: float, code: str, level: AddressLevel
 ) -> None:
     nearest = located_codec.find_nearest(GeoCoordinate.from_degrees(latitude, longitude))
     assert str(nearest.code) == code
@@ -52,7 +57,7 @@ def test_town_is_returned_when_no_lot_is_within_the_limit(located_codec: Address
 
 def test_distance_limit_is_respected(located_codec: AddressCodec) -> None:
     coordinate = GeoCoordinate.from_degrees(35.6795, 139.7641)
-    with pytest.raises(LookupError, match="within 30"):
+    with pytest.raises(PositionNotFoundError, match="within 30"):
         _ = located_codec.find_nearest(coordinate, max_distance_meters=30.0)
 
 
@@ -69,5 +74,5 @@ def test_non_positive_distance_is_rejected(located_codec: AddressCodec) -> None:
 
 
 def test_nearest_without_positions_fails_clearly(codec: AddressCodec) -> None:
-    with pytest.raises(RuntimeError, match="No positions"):
+    with pytest.raises(DatasetNotImportedError, match="No positions"):
         _ = codec.find_nearest(GeoCoordinate.from_degrees(35.0, 135.0))

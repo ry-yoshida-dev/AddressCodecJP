@@ -1,10 +1,8 @@
 from dataclasses import dataclass
 
+from address_codec_jp.domain.address import Address
 from address_codec_jp.domain.address_code import AddressCode
-from address_codec_jp.domain.lot_number import LotNumber
-from address_codec_jp.domain.municipality import Municipality
-from address_codec_jp.domain.prefecture import Prefecture
-from address_codec_jp.domain.town import Town
+from address_codec_jp.domain.match_tier import MatchTier
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,40 +12,24 @@ class AddressMatch:
 
     Parameters
     ----------
-    normalized_address : str
-        Input after text normalization.
-    prefecture : Prefecture
-        Matched prefecture.
-    municipality : Municipality | None
-        Matched municipality. ``None`` when the address ends at the prefecture.
-    town : Town | None
-        Matched town. ``None`` when the address ends at the prefecture or municipality.
-    lot : LotNumber
-        Parsed block and residence numbers.
+    address : Address
+        Matched prefecture, municipality, town, and lot numbers.
     remainder : str
         Trailing text that is not part of the code, such as a building name or room number.
+    normalized_address : str
+        Input after text normalization.
     postal_code : str | None
         Seven-digit postal code written at the start of the input, or ``None``.
-
-    Raises
-    ------
-    ValueError
-        If a town is given without a municipality, or lot numbers without a town.
+    town_name_tier : MatchTier | None
+        Loosest comparison needed to match the oaza and koaza names, or ``None`` when
+        the address ends at the prefecture or municipality.
     """
 
-    normalized_address: str
-    prefecture: Prefecture
-    municipality: Municipality | None
-    town: Town | None
-    lot: LotNumber
+    address: Address
     remainder: str
+    normalized_address: str
     postal_code: str | None
-
-    def __post_init__(self) -> None:
-        if self.town is not None and self.municipality is None:
-            raise ValueError("A town match requires a municipality.")
-        if self.town is None and self.lot.numbers:
-            raise ValueError("Lot numbers require a town.")
+    town_name_tier: MatchTier | None
 
     @property
     def code(self) -> AddressCode:
@@ -59,10 +41,4 @@ class AddressMatch:
         AddressCode
             Code at the most specific level that was matched.
         """
-        if self.town is not None:
-            return AddressCode(
-                lg_code=self.town.lg_code, machiaza_id=self.town.machiaza_id, lot=self.lot
-            )
-        if self.municipality is not None:
-            return AddressCode(lg_code=self.municipality.lg_code)
-        return AddressCode.for_prefecture(self.prefecture.code)
+        return self.address.code

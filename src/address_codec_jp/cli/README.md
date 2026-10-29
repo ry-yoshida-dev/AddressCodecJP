@@ -2,9 +2,11 @@
 
 ## Overview
 
-Command line front end installed as `address-codec-jp`. Query commands read their inputs
-from the arguments, or one per line from standard input, and write tab-separated text or
-JSON Lines.
+Command line front end installed as `address-codec-jp`. Import commands go through
+`RegistryImporter`, and query commands through a read-only `AddressCodec`. Query commands
+read their inputs from the arguments, or line by line from standard input, and write
+tab-separated text or JSON Lines; blank input lines are reported as errors, so JSON Lines
+output stays aligned with the input.
 
 ## Components
 
@@ -15,7 +17,7 @@ JSON Lines.
 | [command.py](command.py) | `Command`: `import`, `encode`, `decode`, `import-positions`, `locate`, and `nearest` sub-commands |
 | [output_format.py](output_format.py) | `OutputFormat`: `tsv` or `jsonl` output of query commands |
 | [output_value.py](output_value.py) | `OutputValue`: value types written to JSON Lines |
-| [record_writer.py](record_writer.py) | `RecordWriter`: writes one result or error per input |
+| [record_writer.py](record_writer.py) | `RecordWriter`: writes one result or error per input, with the error type and the candidates of an ambiguous address in JSON Lines |
 | [coordinate_text.py](coordinate_text.py) | `CoordinateText`: parses `latitude,longitude` inputs |
 
 ## Examples

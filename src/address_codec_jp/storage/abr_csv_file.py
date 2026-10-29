@@ -4,6 +4,8 @@ import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 
+from address_codec_jp.errors.registry_format_error import RegistryFormatError
+
 
 class AbrCsvFile:
     """
@@ -31,7 +33,7 @@ class AbrCsvFile:
         ------
         FileNotFoundError
             If the file does not exist.
-        ValueError
+        RegistryFormatError
             If the archive has no CSV file.
         """
         if not self._path.is_file():
@@ -40,7 +42,7 @@ class AbrCsvFile:
             with zipfile.ZipFile(self._path) as archive:
                 csv_names = [name for name in archive.namelist() if name.endswith(".csv")]
                 if not csv_names:
-                    raise ValueError(f"No CSV file found in {self._path}.")
+                    raise RegistryFormatError(f"No CSV file found in {self._path}.")
                 with archive.open(csv_names[0]) as binary_stream:
                     member_stream = io.TextIOWrapper(binary_stream, "utf-8-sig", newline="")
                     yield from (row for row in csv.reader(member_stream) if row)
