@@ -14,8 +14,8 @@ from address_codec_jp import (
     RegistryImporter,
 )
 from address_codec_jp.storage import (
+    AbrDataset,
     AbrPositionCsvReader,
-    AbrPositionDataset,
     LotEntry,
     LotRemoval,
 )
@@ -103,7 +103,7 @@ def test_reimport_replaces_rows(
         "lg_code,rep_lon,rep_lat,rep_srid\n130001,139.0,35.0,EPSG:6668\n", encoding="utf-8"
     )
     summary = importer.import_positions(moved)
-    assert (summary.dataset, summary.stored_count) == (AbrPositionDataset.AREA_POSITION, 1)
+    assert (summary.dataset, summary.stored_count) == (AbrDataset.AREA_POSITION, 1)
     assert degrees(located_codec.locate("東京都")) == pytest.approx((35.0, 139.0))
 
 
@@ -128,7 +128,7 @@ def test_locate_without_any_enclosing_point_raises(located_codec: AddressCodec) 
 
 
 def test_town_master_is_not_a_position_dataset(importer: RegistryImporter) -> None:
-    with pytest.raises(RegistryFormatError, match="Not a position dataset"):
+    with pytest.raises(RegistryFormatError, match="import_town_master"):
         _ = importer.import_positions(FIXTURE_DIRECTORY / "mt_town_sample.csv")
 
 
@@ -148,18 +148,18 @@ def test_failed_import_stores_nothing(
 @pytest.mark.parametrize(
     ("file_name", "dataset"),
     [
-        ("mt_pref_pos_sample.csv", AbrPositionDataset.AREA_POSITION),
-        ("mt_city_pos_sample.csv", AbrPositionDataset.AREA_POSITION),
-        ("mt_town_pos_sample.csv", AbrPositionDataset.TOWN_POSITION),
-        ("mt_rsdtdsp_blk_sample.csv", AbrPositionDataset.BLOCK),
-        ("mt_rsdtdsp_blk_pos_sample.csv", AbrPositionDataset.BLOCK_POSITION),
-        ("mt_rsdtdsp_rsdt_sample.csv", AbrPositionDataset.RESIDENCE),
-        ("mt_rsdtdsp_rsdt_pos_sample.csv", AbrPositionDataset.RESIDENCE_POSITION),
-        ("mt_parcel_sample.csv", AbrPositionDataset.PARCEL),
-        ("mt_parcel_pos_sample.csv", AbrPositionDataset.PARCEL_POSITION),
+        ("mt_pref_pos_sample.csv", AbrDataset.AREA_POSITION),
+        ("mt_city_pos_sample.csv", AbrDataset.AREA_POSITION),
+        ("mt_town_pos_sample.csv", AbrDataset.TOWN_POSITION),
+        ("mt_rsdtdsp_blk_sample.csv", AbrDataset.BLOCK),
+        ("mt_rsdtdsp_blk_pos_sample.csv", AbrDataset.BLOCK_POSITION),
+        ("mt_rsdtdsp_rsdt_sample.csv", AbrDataset.RESIDENCE),
+        ("mt_rsdtdsp_rsdt_pos_sample.csv", AbrDataset.RESIDENCE_POSITION),
+        ("mt_parcel_sample.csv", AbrDataset.PARCEL),
+        ("mt_parcel_pos_sample.csv", AbrDataset.PARCEL_POSITION),
     ],
 )
-def test_dataset_is_detected_by_header(file_name: str, dataset: AbrPositionDataset) -> None:
+def test_dataset_is_detected_by_header(file_name: str, dataset: AbrDataset) -> None:
     assert AbrPositionCsvReader().detect(FIXTURE_DIRECTORY / "positions" / file_name) is dataset
 
 

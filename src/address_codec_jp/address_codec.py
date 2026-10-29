@@ -20,6 +20,7 @@ from address_codec_jp.normalization.text_normalizer import TextNormalizer
 from address_codec_jp.positioning.address_locator import AddressLocator
 from address_codec_jp.positioning.nearest_address_finder import NearestAddressFinder
 from address_codec_jp.storage.address_database import AddressDatabase
+from address_codec_jp.storage.dataset_import import DatasetImport
 
 
 class AddressCodec:
@@ -91,6 +92,18 @@ class AddressCodec:
     def close(self) -> None:
         """Close the underlying database."""
         self._database.close()
+
+    def list_imports(self) -> list[DatasetImport]:
+        """
+        List the registry files imported into the database.
+
+        Returns
+        -------
+        list[DatasetImport]
+            Imports from the oldest to the newest, with file names and SHA-256 digests
+            that identify the registry release.
+        """
+        return self._database.imports.list_all()
 
     def match(self, address: str, *, is_lot_verified: bool = False) -> AddressMatch:
         """

@@ -10,3 +10,4 @@ class Command(Enum):
     IMPORT_POSITIONS = "import-positions"
     LOCATE = "locate"
     NEAREST = "nearest"
+    INFO = "info"

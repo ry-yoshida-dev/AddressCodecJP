@@ -4,6 +4,7 @@ from types import TracebackType
 from typing import ClassVar, Self
 
 from address_codec_jp.errors.unsupported_database_error import UnsupportedDatabaseError
+from address_codec_jp.storage.import_log_repository import ImportLogRepository
 from address_codec_jp.storage.position_repository import PositionRepository
 from address_codec_jp.storage.town_repository import TownRepository
 
@@ -26,7 +27,7 @@ class AddressDatabase:
     """
 
     APPLICATION_ID: ClassVar[int] = 0x41434A50
-    SCHEMA_VERSION: ClassVar[int] = 1
+    SCHEMA_VERSION: ClassVar[int] = 2
     MEMORY_PATH: ClassVar[str] = ":memory:"
 
     def __init__(self, connection: sqlite3.Connection, *, is_writable: bool) -> None:
@@ -34,6 +35,7 @@ class AddressDatabase:
         self._is_writable: bool = is_writable
         self._towns: TownRepository = TownRepository(connection)
         self._positions: PositionRepository = PositionRepository(connection)
+        self._imports: ImportLogRepository = ImportLogRepository(connection)
 
     @classmethod
     def open_read_only(cls, database_path: Path | str) -> Self:
@@ -130,6 +132,18 @@ class AddressDatabase:
         """
         return self._positions
 
+    @property
+    def imports(self) -> ImportLogRepository:
+        """
+        Log of the imported registry files.
+
+        Returns
+        -------
+        ImportLogRepository
+            Repository on this database.
+        """
+        return self._imports
+
     def __enter__(self) -> Self:
         return self
 
@@ -155,6 +169,7 @@ class AddressDatabase:
         with self._connection:
             self._towns.create_schema()
             self._positions.create_schema()
+            self._imports.create_schema()
             _ = self._connection.execute(f"PRAGMA application_id = {self.APPLICATION_ID}")
             _ = self._connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
 

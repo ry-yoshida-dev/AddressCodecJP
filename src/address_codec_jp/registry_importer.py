@@ -1,10 +1,14 @@
+import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Self
+from typing import ClassVar, Self
 
+from address_codec_jp.storage.abr_dataset import AbrDataset
 from address_codec_jp.storage.abr_position_csv_reader import AbrPositionCsvReader
 from address_codec_jp.storage.abr_town_csv_reader import AbrTownCsvReader
 from address_codec_jp.storage.address_database import AddressDatabase
+from address_codec_jp.storage.dataset_import import DatasetImport
 from address_codec_jp.storage.import_summary import ImportSummary
 from address_codec_jp.storage.position_import_summary import PositionImportSummary
 
@@ -12,6 +16,9 @@ from address_codec_jp.storage.position_import_summary import PositionImportSumma
 class RegistryImporter:
     """
     Importer of Address Base Registry datasets into an address database.
+
+    Every successful import is logged with the file name and SHA-256 digest, so that
+    ``AddressCodec.list_imports`` tells which registry release the database holds.
 
     Parameters
     ----------
@@ -28,6 +35,8 @@ class RegistryImporter:
     >>> with RegistryImporter.open("towns.sqlite3") as importer:  # doctest: +SKIP
     ...     summary = importer.import_town_master(Path("mt_town_all.csv.zip"))
     """
+
+    _HASH_CHUNK_SIZE: ClassVar[int] = 1 << 20
 
     def __init__(self, database: AddressDatabase) -> None:
         if not database.is_writable:
@@ -111,6 +120,7 @@ class RegistryImporter:
         """
         replacement = self._database.towns.replace_all(AbrTownCsvReader().read(path))
         removed_position_count = self._database.positions.remove_orphans()
+        self._log(path, AbrDataset.TOWN, replacement.registered_count)
         return ImportSummary(
             registered_count=replacement.registered_count,
             complemented_count=replacement.complemented_count,
@@ -149,8 +159,24 @@ class RegistryImporter:
         reader = AbrPositionCsvReader()
         dataset = reader.detect(path)
         changes = self._database.positions.save_all(reader.read(path))
+        self._log(path, dataset, changes.stored_count)
         return PositionImportSummary(
             dataset=dataset,
             stored_count=changes.stored_count,
             removed_count=changes.removed_count,
+        )
+
+    def _log(self, path: Path, dataset: AbrDataset, row_count: int) -> None:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            while chunk := stream.read(self._HASH_CHUNK_SIZE):
+                digest.update(chunk)
+        self._database.imports.add(
+            DatasetImport(
+                dataset=dataset,
+                source_name=path.name,
+                source_sha256=digest.hexdigest(),
+                imported_at=datetime.now(UTC),
+                row_count=row_count,
+            )
         )

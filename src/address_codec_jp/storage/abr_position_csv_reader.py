@@ -9,7 +9,7 @@ from address_codec_jp.domain.representative_point import RepresentativePoint
 from address_codec_jp.domain.town_position import TownPosition
 from address_codec_jp.errors.registry_format_error import RegistryFormatError
 from address_codec_jp.storage.abr_csv_file import AbrCsvFile
-from address_codec_jp.storage.abr_position_dataset import AbrPositionDataset
+from address_codec_jp.storage.abr_dataset import AbrDataset
 from address_codec_jp.storage.area_position import AreaPosition
 from address_codec_jp.storage.lot_entry import LotEntry
 from address_codec_jp.storage.lot_position import LotPosition
@@ -28,7 +28,7 @@ class AbrPositionCsvReader:
     number, parcels with a third number, and non-numeric lot numbers.
     """
 
-    def detect(self, path: Path) -> AbrPositionDataset:
+    def detect(self, path: Path) -> AbrDataset:
         """
         Identify the dataset of a file.
 
@@ -39,7 +39,7 @@ class AbrPositionCsvReader:
 
         Returns
         -------
-        AbrPositionDataset
+        AbrDataset
             Dataset of the file.
 
         Raises
@@ -49,7 +49,7 @@ class AbrPositionCsvReader:
         RegistryFormatError
             If the file is empty or not a position-related dataset.
         """
-        return AbrPositionDataset.detect(self._read_header(AbrCsvFile(path).read_rows()))
+        return AbrDataset.detect(self._read_header(AbrCsvFile(path).read_rows()))
 
     def read(self, path: Path) -> Iterator[PositionRecord]:
         """
@@ -76,7 +76,11 @@ class AbrPositionCsvReader:
         """
         rows = AbrCsvFile(path).read_rows()
         header = self._read_header(rows)
-        dataset = AbrPositionDataset.detect(header)
+        dataset = AbrDataset.detect(header)
+        if not dataset.is_position_related:
+            raise RegistryFormatError(
+                "The file is the town master. Import it with import_town_master."
+            )
         missing_columns = [column for column in dataset.required_columns if column not in header]
         if missing_columns:
             raise RegistryFormatError(
@@ -102,15 +106,15 @@ class AbrPositionCsvReader:
             raise RegistryFormatError("Registry CSV is empty.")
         return header
 
-    def _to_record(
-        self, dataset: AbrPositionDataset, values: dict[str, str]
-    ) -> PositionRecord | None:
+    def _to_record(self, dataset: AbrDataset, values: dict[str, str]) -> PositionRecord | None:
         lg_code = values["lg_code"].zfill(6)
         match dataset:
-            case AbrPositionDataset.AREA_POSITION:
+            case AbrDataset.TOWN:
+                raise RuntimeError("The town master has no position records.")
+            case AbrDataset.AREA_POSITION:
                 point = self._to_point(values)
                 return None if point is None else AreaPosition(lg_code=lg_code, point=point)
-            case AbrPositionDataset.TOWN_POSITION:
+            case AbrDataset.TOWN_POSITION:
                 point = self._to_point(values)
                 if point is None:
                     return None
@@ -120,11 +124,11 @@ class AbrPositionCsvReader:
                     lot_system=self._to_lot_system(values["rsdt_addr_flg"]),
                     point=point,
                 )
-            case AbrPositionDataset.BLOCK:
+            case AbrDataset.BLOCK:
                 return self._to_entry(
                     values, LotSystem.RESIDENCE_INDICATION, values["blk_id"], [values["blk_num"]]
                 )
-            case AbrPositionDataset.RESIDENCE:
+            case AbrDataset.RESIDENCE:
                 if values["rsdt_num2"] and not values["ablt_date"]:
                     return None
                 return self._to_entry(
@@ -133,7 +137,7 @@ class AbrPositionCsvReader:
                     self._residence_id(values),
                     [values["blk_num"], values["rsdt_num"]],
                 )
-            case AbrPositionDataset.PARCEL:
+            case AbrDataset.PARCEL:
                 if values["prc_num3"] and not values["ablt_date"]:
                     return None
                 return self._to_entry(
@@ -142,15 +146,15 @@ class AbrPositionCsvReader:
                     values["prc_id"],
                     [number for number in (values["prc_num1"], values["prc_num2"]) if number],
                 )
-            case AbrPositionDataset.BLOCK_POSITION:
+            case AbrDataset.BLOCK_POSITION:
                 return self._to_lot_position(
                     values, LotSystem.RESIDENCE_INDICATION, values["blk_id"]
                 )
-            case AbrPositionDataset.RESIDENCE_POSITION:
+            case AbrDataset.RESIDENCE_POSITION:
                 return self._to_lot_position(
                     values, LotSystem.RESIDENCE_INDICATION, self._residence_id(values)
                 )
-            case AbrPositionDataset.PARCEL_POSITION:
+            case AbrDataset.PARCEL_POSITION:
                 return self._to_lot_position(values, LotSystem.LAND_PARCEL, values["prc_id"])
 
     def _to_entry(

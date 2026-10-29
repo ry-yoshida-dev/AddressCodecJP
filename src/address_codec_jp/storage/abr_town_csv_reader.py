@@ -8,6 +8,7 @@ from address_codec_jp.domain.town import Town
 from address_codec_jp.errors.registry_format_error import RegistryFormatError
 from address_codec_jp.normalization.kanji_numeral import KanjiNumeral
 from address_codec_jp.storage.abr_csv_file import AbrCsvFile
+from address_codec_jp.storage.abr_dataset import AbrDataset
 
 
 class AbrTownCsvReader:
@@ -20,26 +21,6 @@ class AbrTownCsvReader:
     codes separated by ``;``.
     """
 
-    REQUIRED_COLUMNS: ClassVar[tuple[str, ...]] = (
-        "lg_code",
-        "machiaza_id",
-        "pref",
-        "county",
-        "city",
-        "ward",
-        "oaza_cho",
-        "chome",
-        "koaza",
-        "pref_kana",
-        "county_kana",
-        "city_kana",
-        "ward_kana",
-        "oaza_cho_kana",
-        "chome_kana",
-        "koaza_kana",
-        "post_code",
-        "ablt_date",
-    )
     _MUNICIPALITY_COLUMNS: ClassVar[tuple[str, ...]] = (
         "lg_code",
         "pref",
@@ -82,10 +63,12 @@ class AbrTownCsvReader:
         header = next(rows, None)
         if header is None:
             raise RegistryFormatError("Town master CSV is empty.")
-        missing_columns = [column for column in self.REQUIRED_COLUMNS if column not in header]
+        missing_columns = [
+            column for column in AbrDataset.TOWN.required_columns if column not in header
+        ]
         if missing_columns:
             raise RegistryFormatError(f"Town master CSV lacks required columns: {missing_columns}.")
-        column_index = {column: header.index(column) for column in self.REQUIRED_COLUMNS}
+        column_index = {column: header.index(column) for column in AbrDataset.TOWN.required_columns}
         municipalities: dict[tuple[str, ...], Municipality] = {}
         for row_number, row in enumerate(rows, start=2):
             if len(row) < len(header):

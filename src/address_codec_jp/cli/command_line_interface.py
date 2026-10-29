@@ -79,6 +79,21 @@ class CommandLineInterface:
                             + f"{position_summary.removed_count} abolished lots."
                         )
                 return 0
+            case Command.INFO:
+                with AddressCodec.open(database_path) as codec:
+                    for dataset_import in codec.list_imports():
+                        print(
+                            "\t".join(
+                                [
+                                    dataset_import.imported_at.isoformat(timespec="seconds"),
+                                    dataset_import.dataset.value,
+                                    str(dataset_import.row_count),
+                                    dataset_import.source_name,
+                                    dataset_import.source_sha256,
+                                ]
+                            )
+                        )
+                return 0
             case Command.ENCODE | Command.DECODE | Command.LOCATE | Command.NEAREST:
                 writer = RecordWriter(OutputFormat(namespace.output))
                 with AddressCodec.open(database_path) as codec:
@@ -187,7 +202,7 @@ class CommandLineInterface:
                         "crs": str(location.crs),
                     },
                 )
-            case Command.IMPORT | Command.IMPORT_POSITIONS:
+            case Command.IMPORT | Command.IMPORT_POSITIONS | Command.INFO:
                 raise RuntimeError(f"{command.value} is not a query command.")
             case _:
                 assert_never(command)
@@ -317,5 +332,9 @@ class CommandLineInterface:
             type=float,
             default=1000.0,
             help="Largest accepted distance in meters.",
+        )
+        _ = subparsers.add_parser(
+            Command.INFO.value,
+            help="List imported registry files: time, dataset, rows, file name, and SHA-256.",
         )
         return parser

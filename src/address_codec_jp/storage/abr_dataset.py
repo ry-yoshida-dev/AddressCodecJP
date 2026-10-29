@@ -6,14 +6,16 @@ from enum import Enum
 from address_codec_jp.errors.registry_format_error import RegistryFormatError
 
 
-class AbrPositionDataset(Enum):
+class AbrDataset(Enum):
     """
-    Address Base Registry datasets used to locate addresses.
+    Address Base Registry datasets that can be imported.
 
     Each value is the file name prefix the registry publishes the dataset under.
 
     Attributes
     ----------
+    TOWN
+        Town master (町字マスター).
     AREA_POSITION
         Representative points of prefectures or municipalities
         (都道府県・市区町村マスター位置参照拡張).
@@ -33,6 +35,7 @@ class AbrPositionDataset(Enum):
         Representative points of land parcels (地番マスター位置参照拡張).
     """
 
+    TOWN = "mt_town"
     AREA_POSITION = "mt_pref_pos / mt_city_pos"
     TOWN_POSITION = "mt_town_pos"
     BLOCK = "mt_rsdtdsp_blk"
@@ -43,7 +46,7 @@ class AbrPositionDataset(Enum):
     PARCEL_POSITION = "mt_parcel_pos"
 
     @classmethod
-    def detect(cls, header: Sequence[str]) -> AbrPositionDataset:
+    def detect(cls, header: Sequence[str]) -> AbrDataset:
         """
         Identify a dataset by its CSV header.
 
@@ -54,13 +57,13 @@ class AbrPositionDataset(Enum):
 
         Returns
         -------
-        AbrPositionDataset
+        AbrDataset
             Dataset the header belongs to.
 
         Raises
         ------
         RegistryFormatError
-            If the header belongs to none of the datasets, such as the town master.
+            If the header belongs to none of the datasets.
         """
         columns = set(header)
         is_position = "rep_lon" in columns
@@ -72,11 +75,25 @@ class AbrPositionDataset(Enum):
             return cls.BLOCK_POSITION if is_position else cls.BLOCK
         if is_position:
             return cls.TOWN_POSITION if "machiaza_id" in columns else cls.AREA_POSITION
+        if {"machiaza_id", "oaza_cho"} <= columns:
+            return cls.TOWN
         raise RegistryFormatError(
-            "Not a position dataset of the Address Base Registry. Expected one of: "
+            "Not a dataset of the Address Base Registry. Expected one of: "
             + ", ".join(dataset.value for dataset in cls)
             + "."
         )
+
+    @property
+    def is_position_related(self) -> bool:
+        """
+        Tell whether the dataset is imported by ``RegistryImporter.import_positions``.
+
+        Returns
+        -------
+        bool
+            ``False`` only for the town master.
+        """
+        return self is not AbrDataset.TOWN
 
     @property
     def required_columns(self) -> tuple[str, ...]:
@@ -90,15 +107,36 @@ class AbrPositionDataset(Enum):
         """
         point_columns = ("rep_lon", "rep_lat", "rep_srid")
         match self:
-            case AbrPositionDataset.AREA_POSITION:
+            case AbrDataset.TOWN:
+                return (
+                    "lg_code",
+                    "machiaza_id",
+                    "pref",
+                    "county",
+                    "city",
+                    "ward",
+                    "oaza_cho",
+                    "chome",
+                    "koaza",
+                    "pref_kana",
+                    "county_kana",
+                    "city_kana",
+                    "ward_kana",
+                    "oaza_cho_kana",
+                    "chome_kana",
+                    "koaza_kana",
+                    "post_code",
+                    "ablt_date",
+                )
+            case AbrDataset.AREA_POSITION:
                 return ("lg_code", *point_columns)
-            case AbrPositionDataset.TOWN_POSITION:
+            case AbrDataset.TOWN_POSITION:
                 return ("lg_code", "machiaza_id", "rsdt_addr_flg", *point_columns)
-            case AbrPositionDataset.BLOCK:
+            case AbrDataset.BLOCK:
                 return ("lg_code", "machiaza_id", "blk_id", "blk_num", "ablt_date")
-            case AbrPositionDataset.BLOCK_POSITION:
+            case AbrDataset.BLOCK_POSITION:
                 return ("lg_code", "machiaza_id", "blk_id", *point_columns)
-            case AbrPositionDataset.RESIDENCE:
+            case AbrDataset.RESIDENCE:
                 return (
                     "lg_code",
                     "machiaza_id",
@@ -110,9 +148,9 @@ class AbrPositionDataset(Enum):
                     "rsdt_num2",
                     "ablt_date",
                 )
-            case AbrPositionDataset.RESIDENCE_POSITION:
+            case AbrDataset.RESIDENCE_POSITION:
                 return ("lg_code", "machiaza_id", "blk_id", "rsdt_id", "rsdt2_id", *point_columns)
-            case AbrPositionDataset.PARCEL:
+            case AbrDataset.PARCEL:
                 return (
                     "lg_code",
                     "machiaza_id",
@@ -122,5 +160,5 @@ class AbrPositionDataset(Enum):
                     "prc_num3",
                     "ablt_date",
                 )
-            case AbrPositionDataset.PARCEL_POSITION:
+            case AbrDataset.PARCEL_POSITION:
                 return ("lg_code", "machiaza_id", "prc_id", *point_columns)

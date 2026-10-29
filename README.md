@@ -172,6 +172,16 @@ modifying it; delete such a file and import again. `AddressCodec.open` raises
 so open it after importing. A codec or importer holds one SQLite connection and must be
 used only in the thread that opened it; open one codec per thread instead of sharing it.
 
+Every successful import is logged with the file name, its SHA-256 digest, the time, and
+the number of stored rows, so that the registry release behind a database can be
+checked later with `AddressCodec.list_imports()` or the `info` command:
+
+```bash
+uv run address-codec-jp --database towns.sqlite3 info
+```
+
+Columns: import time (UTC), dataset, stored rows, file name, and SHA-256 digest.
+
 ### Representative points
 
 Download the position-related datasets from the ABR download site and import them with

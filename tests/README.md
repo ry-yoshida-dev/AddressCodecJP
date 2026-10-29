@@ -23,6 +23,7 @@ are real; town IDs, postal codes, and some readings are illustrative.
 | [test_storage.py](test_storage.py) | Town master import, abolished rows, orphaned positions, read-only opening, and database identification |
 | [test_cli.py](test_cli.py) | Command line commands, standard input, and JSON Lines output |
 | [test_postal_code.py](test_postal_code.py) | Postal code extraction, disambiguation, and output |
+| [test_import_log.py](test_import_log.py) | Import log of datasets, digests, and the `info` command |
 | [test_kana.py](test_kana.py) | Katakana readings in decoded addresses |
 | [test_lot_verification.py](test_lot_verification.py) | Lot number verification against imported masters |
 | [test_nearest.py](test_nearest.py) | Nearest address search |

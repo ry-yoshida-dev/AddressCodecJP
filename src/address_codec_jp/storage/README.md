@@ -15,7 +15,7 @@ database for lookup by code or municipality.
 | [town_repository.py](town_repository.py) | `TownRepository`: SQLite store of municipalities, towns, and postal codes; atomic replacement on import and lookup of prefectures, municipalities, and towns |
 | [town_replacement.py](town_replacement.py) | `TownReplacement`: numbers of stored and complemented towns of a replacement |
 | [import_summary.py](import_summary.py) | `ImportSummary`: numbers of registered and complemented towns and removed position rows of a town master import |
-| [abr_position_dataset.py](abr_position_dataset.py) | `AbrPositionDataset`: position-related datasets, identified by their CSV header |
+| [abr_dataset.py](abr_dataset.py) | `AbrDataset`: the town master and position-related datasets, identified by their CSV header |
 | [abr_position_csv_reader.py](abr_position_csv_reader.py) | `AbrPositionCsvReader`: reads position extensions and the block, residence, and parcel number masters, turning abolished lots into removals |
 | [position_record.py](position_record.py) | `PositionRecord`: union of the records read from position datasets |
 | [area_position.py](area_position.py) | `AreaPosition`: point of a prefecture or municipality |
@@ -25,3 +25,5 @@ database for lookup by code or municipality.
 | [position_changes.py](position_changes.py) | `PositionChanges`: numbers of stored records and removed lots |
 | [position_repository.py](position_repository.py) | `PositionRepository`: SQLite store of points, joined from numbers and identifiers at lookup; lot existence checks, bounding-box queries, and removal of orphaned rows |
 | [position_import_summary.py](position_import_summary.py) | `PositionImportSummary`: dataset and numbers of stored rows and removed lots of an import |
+| [dataset_import.py](dataset_import.py) | `DatasetImport`: dataset, file name, SHA-256, time, and row count of one import |
+| [import_log_repository.py](import_log_repository.py) | `ImportLogRepository`: SQLite log of the imported registry files |

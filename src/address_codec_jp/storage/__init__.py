@@ -1,9 +1,11 @@
 from address_codec_jp.storage.abr_csv_file import AbrCsvFile
+from address_codec_jp.storage.abr_dataset import AbrDataset
 from address_codec_jp.storage.abr_position_csv_reader import AbrPositionCsvReader
-from address_codec_jp.storage.abr_position_dataset import AbrPositionDataset
 from address_codec_jp.storage.abr_town_csv_reader import AbrTownCsvReader
 from address_codec_jp.storage.address_database import AddressDatabase
 from address_codec_jp.storage.area_position import AreaPosition
+from address_codec_jp.storage.dataset_import import DatasetImport
+from address_codec_jp.storage.import_log_repository import ImportLogRepository
 from address_codec_jp.storage.import_summary import ImportSummary
 from address_codec_jp.storage.lot_entry import LotEntry
 from address_codec_jp.storage.lot_position import LotPosition
@@ -17,11 +19,13 @@ from address_codec_jp.storage.town_repository import TownRepository
 
 __all__ = [
     "AbrCsvFile",
+    "AbrDataset",
     "AbrPositionCsvReader",
-    "AbrPositionDataset",
     "AbrTownCsvReader",
     "AddressDatabase",
     "AreaPosition",
+    "DatasetImport",
+    "ImportLogRepository",
     "ImportSummary",
     "LotEntry",
     "LotPosition",

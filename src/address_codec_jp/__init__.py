@@ -33,14 +33,15 @@ from address_codec_jp.formatting import (
 )
 from address_codec_jp.registry_importer import RegistryImporter
 from address_codec_jp.storage import (
-    AbrPositionDataset,
+    AbrDataset,
     AddressDatabase,
+    DatasetImport,
     ImportSummary,
     PositionImportSummary,
 )
 
 __all__ = [
-    "AbrPositionDataset",
+    "AbrDataset",
     "Address",
     "AddressCode",
     "AddressCodec",
@@ -52,6 +53,7 @@ __all__ = [
     "AddressMatch",
     "AddressNotFoundError",
     "AmbiguousAddressError",
+    "DatasetImport",
     "DatasetNotImportedError",
     "DigitWidth",
     "ImportSummary",
