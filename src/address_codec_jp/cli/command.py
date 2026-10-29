@@ -11,3 +11,4 @@ class Command(Enum):
     LOCATE = "locate"
     NEAREST = "nearest"
     INFO = "info"
+    DOWNLOAD = "download"

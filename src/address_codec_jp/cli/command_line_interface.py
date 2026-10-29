@@ -13,6 +13,8 @@ from address_codec_jp.cli.command_arguments import CommandArguments
 from address_codec_jp.cli.coordinate_text import CoordinateText
 from address_codec_jp.cli.output_format import OutputFormat
 from address_codec_jp.cli.record_writer import RecordWriter
+from address_codec_jp.download.registry_downloader import RegistryDownloader
+from address_codec_jp.download.registry_file import RegistryFile
 from address_codec_jp.formatting.address_format import AddressFormat
 from address_codec_jp.formatting.digit_width import DigitWidth
 from address_codec_jp.formatting.lot_style import LotStyle
@@ -62,22 +64,15 @@ class CommandLineInterface:
         match command:
             case Command.IMPORT:
                 with RegistryImporter.open(database_path) as importer:
-                    summary = importer.import_town_master(Path(namespace.source))
-                print(
-                    f"Imported {summary.registered_count} towns and added "
-                    + f"{summary.complemented_count} oaza-level towns into {database_path}; "
-                    + f"removed {summary.removed_position_count} position rows of other towns."
-                )
+                    self._import_town_master(importer, Path(namespace.source))
                 return 0
             case Command.IMPORT_POSITIONS:
                 with RegistryImporter.open(database_path) as importer:
                     for source in namespace.sources:
-                        position_summary = importer.import_positions(Path(source))
-                        print(
-                            f"Imported {position_summary.stored_count} rows of "
-                            + f"{position_summary.dataset.value} from {source}; removed "
-                            + f"{position_summary.removed_count} abolished lots."
-                        )
+                        self._import_positions(importer, Path(source))
+                return 0
+            case Command.DOWNLOAD:
+                self._download(namespace, database_path)
                 return 0
             case Command.INFO:
                 with AddressCodec.open(database_path) as codec:
@@ -100,6 +95,40 @@ class CommandLineInterface:
                     return self._query(command, codec, namespace, writer)
             case _:
                 assert_never(command)
+
+    def _import_town_master(self, importer: RegistryImporter, source: Path) -> None:
+        summary = importer.import_town_master(source)
+        print(
+            f"Imported {summary.registered_count} towns and added "
+            + f"{summary.complemented_count} oaza-level towns from {source}; "
+            + f"removed {summary.removed_position_count} position rows of other towns."
+        )
+
+    def _import_positions(self, importer: RegistryImporter, source: Path) -> None:
+        summary = importer.import_positions(source)
+        print(
+            f"Imported {summary.stored_count} rows of {summary.dataset.value} from {source}; "
+            + f"removed {summary.removed_count} abolished lots."
+        )
+
+    def _download(self, namespace: CommandArguments, database_path: Path) -> None:
+        downloader = RegistryDownloader(namespace.base_url)
+        directory = Path(namespace.directory)
+        targets = downloader.plan(namespace.prefectures, namespace.municipalities)
+        for target in targets:
+            path = downloader.download(
+                target, directory, is_existing_kept=namespace.is_existing_kept
+            )
+            print(f"Downloaded {downloader.url_of(target)} to {path}")
+        if not namespace.is_imported:
+            return
+        with RegistryImporter.open(database_path) as importer:
+            for target in targets:
+                source = directory / target.file_name
+                if target.registry_file is RegistryFile.TOWN:
+                    self._import_town_master(importer, source)
+                else:
+                    self._import_positions(importer, source)
 
     def _query(
         self,
@@ -202,7 +231,7 @@ class CommandLineInterface:
                         "crs": str(location.crs),
                     },
                 )
-            case Command.IMPORT | Command.IMPORT_POSITIONS | Command.INFO:
+            case Command.IMPORT | Command.IMPORT_POSITIONS | Command.INFO | Command.DOWNLOAD:
                 raise RuntimeError(f"{command.value} is not a query command.")
             case _:
                 assert_never(command)
@@ -333,6 +362,45 @@ class CommandLineInterface:
             default=1000.0,
             help="Largest accepted distance in meters.",
         )
+        download_parser = subparsers.add_parser(
+            Command.DOWNLOAD.value,
+            help="Download the town master, nationwide points, and files of chosen areas.",
+        )
+        _ = download_parser.add_argument("directory", help="Directory for the downloaded files.")
+        _ = download_parser.add_argument(
+            "--prefecture",
+            dest="prefectures",
+            action="append",
+            default=[],
+            metavar="CODE",
+            help="Two-digit prefecture code for town, block, and residence files; repeatable.",
+        )
+        _ = download_parser.add_argument(
+            "--municipality",
+            dest="municipalities",
+            action="append",
+            default=[],
+            metavar="LG_CODE",
+            help="Six-digit local government code for land parcel files; repeatable.",
+        )
+        _ = download_parser.add_argument(
+            "--import",
+            dest="is_imported",
+            action="store_true",
+            help="Import the downloaded files into --database.",
+        )
+        _ = download_parser.add_argument(
+            "--keep-existing",
+            dest="is_existing_kept",
+            action="store_true",
+            help="Skip files already present in the directory.",
+        )
+        _ = download_parser.add_argument(
+            "--base-url",
+            default=RegistryDownloader.DEFAULT_BASE_URL,
+            help="Download site or a mirror, e.g. a file:// URL.",
+        )
+
         _ = subparsers.add_parser(
             Command.INFO.value,
             help="List imported registry files: time, dataset, rows, file name, and SHA-256.",

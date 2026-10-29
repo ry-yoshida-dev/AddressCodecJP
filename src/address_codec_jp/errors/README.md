@@ -15,6 +15,7 @@ from the most specific built-in exception, so `except LookupError` keeps working
 | [dataset_not_imported_error.py](dataset_not_imported_error.py) | `DatasetNotImportedError` (`RuntimeError`): a required dataset has not been imported |
 | [position_not_found_error.py](position_not_found_error.py) | `PositionNotFoundError` (`LookupError`): no representative point fits |
 | [reading_not_found_error.py](reading_not_found_error.py) | `ReadingNotFoundError` (`LookupError`): katakana reading of a name is missing |
+| [registry_download_error.py](registry_download_error.py) | `RegistryDownloadError` (`OSError`): a registry file could not be downloaded |
 | [registry_format_error.py](registry_format_error.py) | `RegistryFormatError` (`ValueError`): registry file is not the expected dataset or is malformed |
 | [unsupported_database_error.py](unsupported_database_error.py) | `UnsupportedDatabaseError` (`ValueError`): database was not created by this version |
 

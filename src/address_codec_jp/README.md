@@ -14,6 +14,7 @@ matching, lot number parsing, formatting, and positioning on that database.
 | [registry_importer.py](registry_importer.py) | `RegistryImporter`: imports the town master and position datasets into a writable database |
 | [\_\_main\_\_.py](__main__.py) | `python -m address_codec_jp` entry point |
 | [domain/](domain/) | Immutable domain models such as `AddressCode`, `Address`, and `Town` |
+| [download/](download/) | Downloader of registry files from the ABR download site |
 | [errors/](errors/) | Exception hierarchy rooted at `AddressCodecError` |
 | [normalization/](normalization/) | Text normalization, kanji numerals, lot number parsing |
 | [matching/](matching/) | Longest-prefix matching from text to a registered town |

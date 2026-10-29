@@ -14,7 +14,7 @@ output stays aligned with the input.
 | --- | --- |
 | [command_line_interface.py](command_line_interface.py) | `CommandLineInterface`: argument parsing and command execution |
 | [command_arguments.py](command_arguments.py) | `CommandArguments`: typed argument namespace |
-| [command.py](command.py) | `Command`: `import`, `encode`, `decode`, `import-positions`, `locate`, `nearest`, and `info` sub-commands |
+| [command.py](command.py) | `Command`: `import`, `encode`, `decode`, `import-positions`, `locate`, `nearest`, `info`, and `download` sub-commands |
 | [output_format.py](output_format.py) | `OutputFormat`: `tsv` or `jsonl` output of query commands |
 | [output_value.py](output_value.py) | `OutputValue`: value types written to JSON Lines |
 | [record_writer.py](record_writer.py) | `RecordWriter`: writes one result or error per input, with the error type and the candidates of an ambiguous address in JSON Lines |
@@ -23,6 +23,7 @@ output stays aligned with the input.
 ## Examples
 
 ```bash
+address-codec-jp --database towns.sqlite3 download data --prefecture 13 --import
 address-codec-jp --database towns.sqlite3 import mt_town_all.csv.zip
 address-codec-jp --database towns.sqlite3 encode "千代田区丸の内1-2-3" --verify-lot
 address-codec-jp --database towns.sqlite3 decode 131016-0001001-2-3 --numeral kanji

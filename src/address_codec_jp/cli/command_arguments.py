@@ -22,3 +22,9 @@ class CommandArguments(argparse.Namespace):
         self.is_lot_verified: bool = False
         self.crs: str = ""
         self.max_distance: float = 0.0
+        self.directory: str = ""
+        self.prefectures: list[str] = []
+        self.municipalities: list[str] = []
+        self.is_imported: bool = False
+        self.is_existing_kept: bool = False
+        self.base_url: str = ""

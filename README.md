@@ -140,6 +140,22 @@ chome.
 
 ## Setup
 
+The quickest way is the `download` command. It fetches the nationwide town master and
+prefecture and municipality points, the town, block, and residence files of each
+`--prefecture`, and the land parcel files of each `--municipality` from the
+[ABR download site](https://dataset.address-br.digital.go.jp/), and with `--import`
+imports them into the database in the right order:
+
+```bash
+uv sync
+uv run address-codec-jp --database towns.sqlite3 download data --prefecture 13 --import
+```
+
+Files are written under their distributed names and replaced atomically;
+`--keep-existing` skips files already in the directory, and `--base-url` points to a
+mirror (a `file://` URL works too). In Python, `RegistryDownloader.plan` and
+`RegistryDownloader.download` do the same. The steps below do it by hand.
+
 1. Download the nationwide town master (日本 町字マスター データセット, about 12 MB zipped)
    from the [ABR download site](https://dataset.address-br.digital.go.jp/).
 2. Import it into a SQLite database. The master has about 730,000 rows (156 MB as CSV),
@@ -161,7 +177,7 @@ The reader requires the columns `lg_code`, `machiaza_id`, `pref`, `county`, `cit
 `ward`, `oaza_cho`, `chome`, `koaza`, their readings `pref_kana`, `county_kana`,
 `city_kana`, `ward_kana`, `oaza_cho_kana`, `chome_kana`, and `koaza_kana`, and
 `post_code` and `ablt_date`; other columns are ignored. Short rows and malformed codes
-(including a wrong check digit) raise `ValueError`.
+(including a wrong check digit) raise `RegistryFormatError` naming the row.
 
 In Python, `RegistryImporter.open(path)` opens a database for import, creating the file
 if needed, and `AddressCodec.open(path)` opens it read-only for queries. Both raise
@@ -184,8 +200,8 @@ Columns: import time (UTC), dataset, stored rows, file name, and SHA-256 digest.
 
 ### Representative points
 
-Download the position-related datasets from the ABR download site and import them with
-`import-positions`. Points are added to the same database, and files can be added
+Download the position-related datasets from the ABR download site (or with the
+`download` command above) and import them with `import-positions`. Points are added to the same database, and files can be added
 prefecture by prefecture in any order; rows with the same identifiers are replaced.
 
 | Dataset | Unit of distribution | URL path under `https://data.address-br.digital.go.jp/` |
