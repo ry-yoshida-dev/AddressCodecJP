@@ -36,6 +36,7 @@ class NameIndex:
             tier: defaultdict(list) for tier in MatchTier
         }
         self._unnamed_towns: list[Town] = []
+        self._longest_key_length: int = 0
 
     def add(self, name: str, town: Town) -> None:
         """
@@ -56,6 +57,7 @@ class NameIndex:
             for key in {self._to_comparable_text(item, tier) for item in normalized_names}:
                 if key:
                     self._towns[tier][key].append(town)
+                    self._longest_key_length = max(self._longest_key_length, len(key))
 
     def match_all(self, normalized_text: str) -> list[CandidateSet]:
         """
@@ -75,8 +77,11 @@ class NameIndex:
         for tier in MatchTier:
             comparable_text = self._to_comparable_text(normalized_text, tier)
             skipped_length = len(normalized_text) - len(comparable_text)
-            for key, towns in self._towns[tier].items():
-                if not comparable_text.startswith(key):
+            towns_by_key = self._towns[tier]
+            for length in range(1, min(len(comparable_text), self._longest_key_length) + 1):
+                key = comparable_text[:length]
+                towns = towns_by_key.get(key)
+                if towns is None:
                     continue
                 remainder = normalized_text[skipped_length + len(key) :]
                 candidate_sets.append(

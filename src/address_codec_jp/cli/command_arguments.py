@@ -10,11 +10,15 @@ class CommandArguments(argparse.Namespace):
         self.database: str = ""
         self.source: str = ""
         self.sources: list[str] = []
-        self.addresses: list[str] = []
-        self.codes: list[str] = []
+        self.inputs: list[str] = []
+        self.output: str = ""
         self.numeral: str = ""
         self.lot: str = ""
         self.width: str = ""
         self.is_prefecture_excluded: bool = False
         self.is_county_excluded: bool = False
+        self.is_kana: bool = False
+        self.is_postal_code_included: bool = False
+        self.is_lot_verified: bool = False
         self.crs: str = ""
+        self.max_distance: float = 0.0

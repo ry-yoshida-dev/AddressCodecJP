@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from address_codec_jp.domain.address_code import AddressCode
 from address_codec_jp.domain.prefecture import Prefecture
 
 
@@ -20,6 +21,21 @@ class Municipality:
         City, town, village, or special ward name.
     ward_name : str
         Ward name of a designated city, or an empty string.
+    prefecture_kana : str
+        Katakana reading of ``prefecture_name``.
+    county_kana : str
+        Katakana reading of ``county_name``.
+    city_kana : str
+        Katakana reading of ``city_name``.
+    ward_kana : str
+        Katakana reading of ``ward_name``.
+
+    Readings are empty strings when the name is empty or the registry has no reading.
+
+    Raises
+    ------
+    ValueError
+        If ``lg_code`` is malformed or denotes a prefecture.
     """
 
     lg_code: str
@@ -27,6 +43,15 @@ class Municipality:
     county_name: str
     city_name: str
     ward_name: str
+    prefecture_kana: str
+    county_kana: str
+    city_kana: str
+    ward_kana: str
+
+    def __post_init__(self) -> None:
+        _ = AddressCode(lg_code=self.lg_code)
+        if AddressCode.is_prefecture_code(self.lg_code):
+            raise ValueError(f"{self.lg_code} is a prefecture code, not a municipality code.")
 
     @property
     def prefecture(self) -> Prefecture:
@@ -38,4 +63,6 @@ class Municipality:
         Prefecture
             Prefecture built from the first two digits of ``lg_code``.
         """
-        return Prefecture(code=self.lg_code[:2], name=self.prefecture_name)
+        return Prefecture(
+            code=self.lg_code[:2], name=self.prefecture_name, kana=self.prefecture_kana
+        )

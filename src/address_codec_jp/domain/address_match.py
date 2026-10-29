@@ -26,6 +26,8 @@ class AddressMatch:
         Parsed block and residence numbers.
     remainder : str
         Trailing text that is not part of the code, such as a building name or room number.
+    postal_code : str | None
+        Seven-digit postal code written at the start of the input, or ``None``.
 
     Raises
     ------
@@ -39,6 +41,7 @@ class AddressMatch:
     town: Town | None
     lot: LotNumber
     remainder: str
+    postal_code: str | None
 
     def __post_init__(self) -> None:
         if self.town is not None and self.municipality is None:

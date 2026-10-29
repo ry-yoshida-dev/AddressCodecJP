@@ -1,3 +1,5 @@
+import io
+import json
 from pathlib import Path
 
 import pytest
@@ -94,3 +96,72 @@ def test_locate_without_positions_is_reported(
 ) -> None:
     assert CommandLineInterface().run(["--database", str(database), "locate", "東京都"]) == 1
     assert "No positions" in capsys.readouterr().err
+
+
+def test_inputs_are_read_from_standard_input(
+    database: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("千代田区丸の内1-2-3\n\n台東区浅草橋\n"))
+    assert CommandLineInterface().run(["--database", str(database), "encode"]) == 0
+    assert capsys.readouterr().out.splitlines() == ["131016-0001001-2-3", "131067-0001000"]
+
+
+def test_jsonl_output_keeps_errors_in_line(
+    database: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    arguments = ["--database", str(database), "encode", "--output", "jsonl"]
+    assert CommandLineInterface().run([*arguments, "千代田区丸の内1-2-3 ビル", "府中市"]) == 1
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[0] == {
+        "input": "千代田区丸の内1-2-3 ビル",
+        "code": "131016-0001001-2-3",
+        "level": "TOWN",
+        "remainder": "ビル",
+    }
+    assert records[1]["input"] == "府中市"
+    assert "ambiguous" in records[1]["error"]
+
+
+def test_decode_writes_kana_and_postal_code(
+    database: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    arguments = ["--database", str(database), "decode", "131016-0001001-2-3"]
+    assert CommandLineInterface().run([*arguments, "--kana", "--postal-code"]) == 0
+    assert (
+        capsys.readouterr().out.strip()
+        == "〒100-0005 トウキョウトチヨダクマルノウチ1チョウメ2バン3ゴウ"
+    )
+
+
+def test_encode_verifies_lots(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    cli = CommandLineInterface()
+    sources = sorted(str(path) for path in (FIXTURE.parent / "positions").glob("*.csv"))
+    assert cli.run(["--database", str(database), "import-positions", *sources]) == 0
+    arguments = ["--database", str(database), "encode", "--verify-lot"]
+    assert cli.run([*arguments, "千代田区丸の内1-2-3"]) == 0
+    assert cli.run([*arguments, "千代田区丸の内1-2-9"]) == 1
+    assert "not registered" in capsys.readouterr().err
+
+
+def test_nearest(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    cli = CommandLineInterface()
+    sources = sorted(str(path) for path in (FIXTURE.parent / "positions").glob("*.csv"))
+    assert cli.run(["--database", str(database), "import-positions", *sources]) == 0
+    _ = capsys.readouterr()
+    arguments = ["--database", str(database), "nearest", "35.682456,139.765123", "north"]
+    assert cli.run(arguments) == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "\t".join(
+            [
+                "131016-0001001-2-3",
+                "東京都千代田区丸の内1丁目2番3号",
+                "RESIDENCE",
+                "35.682456000",
+                "139.765123000",
+                "0.0",
+                "EPSG:6668",
+            ]
+        )
+    ]
+    assert "latitude,longitude" in captured.err

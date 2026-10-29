@@ -5,7 +5,12 @@ import pytest
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
 from address_codec_jp import AddressCodec, AddressLocation, PositionLevel
-from address_codec_jp.storage import AbrPositionCsvReader, AbrPositionDataset
+from address_codec_jp.storage import (
+    AbrPositionCsvReader,
+    AbrPositionDataset,
+    LotEntry,
+    LotRemoval,
+)
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*.csv"))
@@ -144,12 +149,26 @@ def test_dataset_is_detected_by_header(file_name: str, dataset: AbrPositionDatas
     assert AbrPositionCsvReader().detect(FIXTURE_DIRECTORY / "positions" / file_name) is dataset
 
 
-def test_unexpressible_lots_are_skipped() -> None:
+def test_unexpressible_lots_are_skipped_and_abolished_lots_removed() -> None:
     reader = AbrPositionCsvReader()
     positions = FIXTURE_DIRECTORY / "positions"
-    assert len(list(reader.read(positions / "mt_rsdtdsp_blk_sample.csv"))) == 1
+    block_records = list(reader.read(positions / "mt_rsdtdsp_blk_sample.csv"))
+    assert [type(record) for record in block_records] == [LotEntry, LotRemoval]
     assert len(list(reader.read(positions / "mt_rsdtdsp_rsdt_sample.csv"))) == 1
     assert len(list(reader.read(positions / "mt_parcel_sample.csv"))) == 4
+
+
+def test_newer_master_removes_abolished_lots(located_codec: AddressCodec, tmp_path: Path) -> None:
+    assert located_codec.locate("千代田区丸の内1-2").level is PositionLevel.BLOCK
+    newer_master = tmp_path / "mt_rsdtdsp_blk_newer.csv"
+    _ = newer_master.write_text(
+        "lg_code,machiaza_id,blk_id,city,oaza_cho,chome,blk_num,ablt_date\n"
+        + "131016,0001001,001,千代田区,丸の内,一丁目,2,2026-04-01\n",
+        encoding="utf-8",
+    )
+    summary = located_codec.import_positions(newer_master)
+    assert (summary.stored_count, summary.removed_count) == (0, 1)
+    assert located_codec.locate("千代田区丸の内1-2").level is PositionLevel.TOWN
 
 
 def test_location_coordinate_is_a_geo_coordinate(located_codec: AddressCodec) -> None:

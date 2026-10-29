@@ -9,3 +9,4 @@ class Command(Enum):
     DECODE = "decode"
     IMPORT_POSITIONS = "import-positions"
     LOCATE = "locate"
+    NEAREST = "nearest"

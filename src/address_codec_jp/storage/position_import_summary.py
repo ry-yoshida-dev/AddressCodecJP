@@ -13,9 +13,11 @@ class PositionImportSummary:
     dataset : AbrPositionDataset
         Kind of the imported file.
     stored_count : int
-        Rows stored. Abolished rows and lot numbers that address codes cannot express
-        are skipped.
+        Rows stored. Lot numbers that address codes cannot express are skipped.
+    removed_count : int
+        Previously imported lot numbers removed because the file marks them abolished.
     """
 
     dataset: AbrPositionDataset
     stored_count: int
+    removed_count: int

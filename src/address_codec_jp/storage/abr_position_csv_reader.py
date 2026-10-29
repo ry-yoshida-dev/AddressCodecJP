@@ -11,6 +11,7 @@ from address_codec_jp.storage.abr_position_dataset import AbrPositionDataset
 from address_codec_jp.storage.area_position import AreaPosition
 from address_codec_jp.storage.lot_entry import LotEntry
 from address_codec_jp.storage.lot_position import LotPosition
+from address_codec_jp.storage.lot_removal import LotRemoval
 from address_codec_jp.storage.position_record import PositionRecord
 from address_codec_jp.storage.town_position import TownPosition
 
@@ -20,9 +21,10 @@ class AbrPositionCsvReader:
     Reader for the position-related CSV files of the Address Base Registry.
 
     The dataset is identified by the header, so the files may be renamed. Both plain
-    ``.csv`` files and ``.zip`` archives are accepted. Rows that address codes cannot
-    express are skipped: abolished rows, rows without a point, residences with a second
-    residence number, parcels with a third number, and non-numeric lot numbers.
+    ``.csv`` files and ``.zip`` archives are accepted. Abolished rows of the block,
+    residence, and parcel masters become ``LotRemoval`` records. Rows that address codes
+    cannot express are skipped: rows without a point, residences with a second residence
+    number, parcels with a third number, and non-numeric lot numbers.
     """
 
     def detect(self, path: Path) -> AbrPositionDataset:
@@ -60,7 +62,8 @@ class AbrPositionCsvReader:
         Yields
         ------
         PositionRecord
-            Record for each row that address codes can express.
+            Record for each row that address codes can express, and a removal for each
+            abolished lot.
 
         Raises
         ------
@@ -116,7 +119,7 @@ class AbrPositionCsvReader:
                     values, LotSystem.RESIDENCE_INDICATION, values["blk_id"], [values["blk_num"]]
                 )
             case AbrPositionDataset.RESIDENCE:
-                if values["rsdt_num2"]:
+                if values["rsdt_num2"] and not values["ablt_date"]:
                     return None
                 return self._to_entry(
                     values,
@@ -125,7 +128,7 @@ class AbrPositionCsvReader:
                     [values["blk_num"], values["rsdt_num"]],
                 )
             case AbrPositionDataset.PARCEL:
-                if values["prc_num3"]:
+                if values["prc_num3"] and not values["ablt_date"]:
                     return None
                 return self._to_entry(
                     values,
@@ -146,9 +149,14 @@ class AbrPositionCsvReader:
 
     def _to_entry(
         self, values: dict[str, str], lot_system: LotSystem, lot_id: str, numbers: list[str]
-    ) -> LotEntry | None:
+    ) -> LotEntry | LotRemoval | None:
         if values["ablt_date"]:
-            return None
+            return LotRemoval(
+                lg_code=values["lg_code"].zfill(6),
+                machiaza_id=values["machiaza_id"].zfill(7),
+                lot_system=lot_system,
+                lot_id=lot_id,
+            )
         if not all(number.isascii() and number.isdecimal() for number in numbers):
             return None
         parsed_numbers = [int(number) for number in numbers]

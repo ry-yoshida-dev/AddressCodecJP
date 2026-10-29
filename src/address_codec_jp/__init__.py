@@ -7,12 +7,19 @@ from address_codec_jp.domain import (
     LotNumber,
     LotSystem,
     Municipality,
+    NearestAddress,
     PositionLevel,
     Prefecture,
     RepresentativePoint,
     Town,
 )
-from address_codec_jp.formatting import AddressFormat, DigitWidth, LotStyle, NumeralStyle
+from address_codec_jp.formatting import (
+    AddressFormat,
+    DigitWidth,
+    LotStyle,
+    NameScript,
+    NumeralStyle,
+)
 
 __all__ = [
     "AddressCode",
@@ -26,6 +33,8 @@ __all__ = [
     "LotStyle",
     "LotSystem",
     "Municipality",
+    "NameScript",
+    "NearestAddress",
     "NumeralStyle",
     "PositionLevel",
     "Prefecture",

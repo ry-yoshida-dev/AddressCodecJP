@@ -10,7 +10,9 @@ independently of how an address was written.
 
 Addresses and codes are also mapped to **representative points** (代表点) published in the
 position extensions (位置参照拡張) of the ABR, from the prefecture down to the residence or
-land parcel. Points are returned as `GeoCoordinate` of
+land parcel, and a coordinate is mapped back to the address with the nearest point.
+Decoded addresses can be written in katakana readings and with the registered postal
+code. Points are returned as `GeoCoordinate` of
 [GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate), which is the only runtime
 dependency (Python 3.12+).
 
@@ -49,7 +51,8 @@ carries lot numbers, because lot numbers of that oaza belong to one of its chome
 
 Input is normalized before matching:
 
-- Full-width and half-width characters, leading postal codes (`〒100-0005`)
+- Full-width and half-width characters, leading postal codes (`〒100-0005`); the postal
+  code is kept as `AddressMatch.postal_code`
 - Spaces are removed, except that a space between digits becomes a separator
   (`本市１ 12番3号` reads koaza `１` and lot `12-3`)
 - Kanji numerals before `丁目`/`番`/`号`/`条`/`の`/`-`, and at the end of the address
@@ -82,6 +85,14 @@ guessing when:
 - digits are left unread without lot numbers (`浅草橋6-1-1` must not become `浅草` +
   `橋6-1-1`)
 
+A leading postal code decides only these cases, among the municipalities or towns that
+have it registered: `〒060-0042 札幌市` is 札幌市中央区. It never overrides the written
+names, and the registry gives postal codes for only about 13% of the towns.
+
+With `is_lot_verified=True`, `match` and `encode` also require the lot numbers to be
+registered in the imported block, residence, or parcel masters. Without a residence number,
+any residence of the block counts.
+
 ### Representative points
 
 `AddressCodec.locate` returns an `AddressLocation`. When the registry has no point for the
@@ -98,15 +109,32 @@ The registry publishes points on JGD2000 or JGD2011, mixed even within one file.
 stored as published and transformed to the requested datum (JGD2011 by default) by
 `DatumTransformation` of GeoCoordinate.
 
+`AddressCodec.find_nearest` returns the block, residence, or parcel whose point is
+nearest to a coordinate, or the nearest town when no lot point is within
+`max_distance_meters` (1000 m by default), as a `NearestAddress` with the distance.
+Representative points are not areas, so the nearest point may belong to the neighboring
+lot or town.
+
+### Readings and postal codes
+
+`AddressFormat(name_script=NameScript.KATAKANA)` writes the registered katakana
+readings (`トウキョウトチヨダクマルノウチ1チョウメ2バン3ゴウ`) and raises `LookupError` for a
+town whose reading is not registered. `is_postal_code_included=True` writes the postal
+code first (`〒060-0042 北海道札幌市中央区大通西1丁目`) for towns with exactly one
+registered postal code. Oaza-level towns added on import take the postal codes of their
+chome.
+
 ## Setup
 
 1. Download the nationwide town master (日本 町字マスター データセット, about 12 MB zipped)
    from the [ABR download site](https://dataset.address-br.digital.go.jp/).
 2. Import it into a SQLite database. The master has about 730,000 rows (156 MB as CSV),
-   so it is indexed once instead of being parsed on every start. Import takes a few
-   seconds and replaces the previous contents, so towns abolished in a newer master are
-   removed. Rows repeated with identical contents (about 1,200 in the October 2026 master)
-   are stored once; an ID repeated with different contents aborts the import:
+   so it is indexed once instead of being parsed on every start. Import takes about
+   seven seconds, makes a database of about 90 MB, and replaces the previous contents,
+   so towns removed from a newer master are removed together with their imported points.
+   Rows with an abolition date are skipped. Rows repeated with identical contents (about
+   1,200 in the October 2026 master) are stored once; an ID repeated with different
+   contents aborts the import:
 
 ```bash
 uv sync
@@ -116,13 +144,15 @@ uv run address-codec-jp --database towns.sqlite3 import data/mt_town_all.csv.zip
 ```
 
 The reader requires the columns `lg_code`, `machiaza_id`, `pref`, `county`, `city`,
-`ward`, `oaza_cho`, `chome`, and `koaza`; other columns are ignored. Short rows and
-malformed codes (including a wrong check digit) raise `ValueError`.
+`ward`, `oaza_cho`, `chome`, `koaza`, their readings `pref_kana`, `county_kana`,
+`city_kana`, `ward_kana`, `oaza_cho_kana`, `chome_kana`, and `koaza_kana`, and
+`post_code` and `ablt_date`; other columns are ignored. Short rows and malformed codes
+(including a wrong check digit) raise `ValueError`.
 
 In Python, `AddressCodec.create(path)` creates a database for `import_town_master`, and
 `AddressCodec.open(path)` opens an existing one read-only; it raises `FileNotFoundError`
-for a missing file and `ValueError` for an SQLite file without the town table instead of
-modifying it. Importing again through the same codec refreshes its matching indexes.
+for a missing file and `ValueError` for an SQLite file without the town table, or one
+created by an older version, instead of modifying it. Importing again through the same codec refreshes its matching indexes.
 A codec holds one SQLite connection and must be used only in the thread that opened it;
 open one codec per thread instead of sharing it.
 
@@ -157,8 +187,11 @@ done
 uv run address-codec-jp --database towns.sqlite3 import-positions data/positions/*.zip
 ```
 
-Tokyo (about 1.75 million residences) takes about 15 seconds to import and adds about
-550 MB to the database.
+Tokyo (about 1.75 million residences) takes about 20 seconds to import and adds about
+610 MB to the database, including the coordinate index used by `find_nearest`. Lots
+that a newer number master marks abolished (`ablt_date`) are removed on import.
+
+On the Tokyo datasets, `locate` takes about 0.2 ms and `find_nearest` about 1 to 3 ms.
 
 ## Examples
 
@@ -213,7 +246,7 @@ with AddressCodec.open("towns.sqlite3") as codec:
 
 ```
 131016-0001001-6-1 RESIDENCE True
-35.66876079 139.75812148
+35.668760794 139.758121483
 131016-0011001-9 BLOCK False
 35.681252 139.767235
 131067 MUNICIPALITY False
@@ -221,7 +254,35 @@ with AddressCodec.open("towns.sqlite3") as codec:
 EPSG:4326
 ```
 
-Output above is from the Tokyo datasets released in October 2025.
+Output above is from the Tokyo datasets released in October 2026.
+
+```python
+from geo_coordinate import GeoCoordinate
+
+from address_codec_jp import AddressCodec, AddressFormat, NameScript
+
+with AddressCodec.open("towns.sqlite3") as codec:
+    print(codec.encode("〒060-0042 札幌市大通西1丁目"))
+    print(codec.encode("〒060-0042 札幌市"))
+    code = codec.encode("鳥取市面影1丁目1-1")
+    print(codec.decode(code, AddressFormat(name_script=NameScript.KATAKANA)))
+    print(codec.decode("011011-0002001", AddressFormat(is_postal_code_included=True)))
+    print(codec.encode("鳥取市面影1丁目1-1", is_lot_verified=True))
+    nearest = codec.find_nearest(GeoCoordinate.from_degrees(35.4804, 134.2459))
+    print(nearest.code, codec.decode(nearest.code), f"{nearest.distance_meters:.1f}")
+```
+
+```
+011011-0002001
+011011
+トットリケントットリシオモカゲ1チョウメ1バン1ゴウ
+〒060-0042 北海道札幌市中央区大通西1丁目
+312011-0055001-1-1
+312011-0055001-1-1 鳥取県鳥取市面影1丁目1番1号 6.6
+```
+
+Output above is from the town master released in October 2026 and the Tottori datasets
+(`pref31`) of the same release.
 
 ### Command line
 
@@ -232,7 +293,8 @@ uv run address-codec-jp decode 131016-0011001-2-3 --lot hyphen --width full --no
 ```
 
 Decode options: `--numeral {arabic,kanji}`, `--lot {residence_indication,land_parcel,hyphen}`,
-`--width {half,full}`, `--no-prefecture`, `--no-county`.
+`--width {half,full}`, `--no-prefecture`, `--no-county`, `--kana`, `--postal-code`.
+Encode option: `--verify-lot`.
 
 ```bash
 uv run address-codec-jp locate "千代田区内幸町1-6-1" "台東区浅草橋" --crs wgs84
@@ -246,10 +308,37 @@ uv run address-codec-jp locate "千代田区内幸町1-6-1" "台東区浅草橋"
 Columns: requested code, located code, level, latitude, longitude, and datum.
 Locate options: `--crs {tokyo,jgd2000,jgd2011,wgs84}`.
 
+```bash
+uv run address-codec-jp nearest 35.4804,134.2459
+```
+
+```
+312011-0055001-1-1	鳥取県鳥取市面影1丁目1番1号	RESIDENCE	35.480365560	134.245840371	6.6	EPSG:6668
+```
+
+Columns: code, address, level, latitude, longitude, distance in meters, and datum.
+Nearest options: `--crs`, `--max-distance` (meters, 1000 by default).
+
+Query commands (`encode`, `decode`, `locate`, `nearest`) read one input per line from
+standard input when no argument is given. `--output jsonl` writes one JSON object per
+input, with errors as `{"input": ..., "error": ...}` in the same position, while the
+default `tsv` writes errors to standard error. The exit status is 1 when any input fails.
+
+```bash
+printf '鳥取市面影1丁目1-1\n府中市\n' | uv run address-codec-jp encode --output jsonl
+```
+
+```
+{"input": "鳥取市面影1丁目1-1", "code": "312011-0055001-1-1", "level": "TOWN", "remainder": ""}
+{"input": "府中市", "error": "Municipality '府中市' is ambiguous: 東京都府中市, 広島県府中市. Add the prefecture or ward."}
+```
+
 ## Limitations
 
-- Block and residence numbers are parsed but not validated against the ABR residence
-  indication or land parcel masters.
+- Block and residence numbers are validated only with `is_lot_verified=True`, and only
+  against the masters that have been imported. Residences with a second residence number
+  and parcels with a third number are not imported, so `2番4号` is rejected when the
+  registry lists only `2番4号の1`.
 - Kyoto-style street directions (`通`/`上る`/`西入`) and Hokkaido/Iwate special
   notations other than `条` and `地割` are not interpreted.
 - A designated-city ward is matched only together with its city (`大阪市北区`);
@@ -262,16 +351,19 @@ Locate options: `--crs {tokyo,jgd2000,jgd2011,wgs84}`.
   (`浅草橋1丁目 ビル3F`) is rejected, because the digits cannot be told apart from
   unread lot numbers.
 - In hyphen notation, `春光台１条12-3` reads as chome 12 when that chome exists.
-- Oaza and koaza names are looked up by scanning all names of the municipality
-  (about 0.7 ms per address on the nationwide master).
+- The first address in each municipality builds its name index (a few milliseconds);
+  later addresses take about 0.07 ms each on the nationwide master.
+- Katakana readings of the oaza are missing in about 13,000 rows of the October 2026
+  master. Romaji readings are not provided, because about 150,000 rows lack them.
+- `find_nearest` ranks points on their published datum, which differs from JGD2011 by up
+  to several meters near the 2011 Tohoku earthquake; the reported distance uses the
+  transformed point.
 - Only representative points are provided; the ABR polygon columns (`plygn_*`) are empty
   in the current releases, so areas are not returned as shapes.
 - Oaza-level towns added on import (e.g. `台東区浅草橋`) have no published point and are
   located at their municipality.
 - Residences with a second residence number and parcels with a third number cannot be
   expressed as address codes and are not imported.
-- Importing a newer number master does not remove blocks, residences, or parcels that it
-  marks as abolished (`ablt_date`); rebuild the database to drop them.
 - JGD2000 points are transformed to JGD2011 without the Tohoku correction grid
   (`touhokutaiheiyouoki2011.gsb`) unless PROJ has it installed, so points in the area of
   the 2011 Tohoku earthquake can be off by several meters.

@@ -8,7 +8,8 @@ municipality names confirmed by a town name; a name shared by several
 municipalities, such as a designated city without its ward, is resolved by the town
 name. For the rest, every reading
 of oaza, chome, koaza, and lot numbers is built and ranked; ties between different towns
-are rejected as ambiguous instead of being resolved silently.
+are rejected as ambiguous instead of being resolved silently, unless a postal code
+written with the address tells them apart.
 
 ## Components
 

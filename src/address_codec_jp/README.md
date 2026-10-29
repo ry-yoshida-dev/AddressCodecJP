@@ -9,13 +9,13 @@ normalization, town matching, lot number parsing, storage, formatting, and posit
 
 | Component | Responsibility |
 | --- | --- |
-| [address_codec.py](address_codec.py) | `AddressCodec` facade: import, match, encode, decode, locate |
+| [address_codec.py](address_codec.py) | `AddressCodec` facade: import, match, encode, decode, locate, find_nearest |
 | [\_\_main\_\_.py](__main__.py) | `python -m address_codec_jp` entry point |
 | [domain/](domain/) | Immutable domain models such as `AddressCode` and `Town` |
 | [normalization/](normalization/) | Text normalization, kanji numerals, lot number parsing |
 | [matching/](matching/) | Longest-prefix matching from text to a registered town |
 | [storage/](storage/) | ABR CSV readers and SQLite town and position repositories |
-| [positioning/](positioning/) | Representative point lookup with fallback and datum transformation |
+| [positioning/](positioning/) | Representative point lookup with fallback, nearest address search, and datum transformation |
 | [formatting/](formatting/) | Output format options and address rendering |
 | [cli/](cli/) | Command line interface |
 

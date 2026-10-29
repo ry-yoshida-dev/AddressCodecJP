@@ -1,6 +1,7 @@
 import re
 from collections import defaultdict
 from collections.abc import Container
+from dataclasses import replace
 from typing import ClassVar
 
 from address_codec_jp.domain.lot_number import LotNumber
@@ -32,7 +33,8 @@ class AreaMatcher:
     no lot numbers but leaves digits unread (``浅草`` + ``橋6-1-1``), or puts lot numbers
     on an oaza-level town that the registry divides into chome. When the best readings
     point to different towns or lot numbers, the address is rejected as ambiguous instead
-    of picking one.
+    of picking one. A postal code given with the address decides only between such
+    equally ranked readings, and between municipalities that share a name.
 
     Parameters
     ----------
@@ -63,8 +65,9 @@ class AreaMatcher:
         self._municipality_index: dict[str, set[Municipality]] | None = None
         self._ward_omitted_keys: set[str] = set()
         self._oaza_indexes: dict[str, NameIndex] = {}
+        self._koaza_indexes: dict[tuple[tuple[str, str], ...], NameIndex] = {}
 
-    def match(self, normalized_address: str) -> AreaMatch:
+    def match(self, normalized_address: str, postal_code: str | None) -> AreaMatch:
         """
         Identify the most specific area at the start of a normalized address.
 
@@ -72,6 +75,8 @@ class AreaMatcher:
         ----------
         normalized_address : str
             Address normalized by ``TextNormalizer.normalize``.
+        postal_code : str | None
+            Seven-digit postal code written with the address, or ``None``.
 
         Returns
         -------
@@ -85,7 +90,10 @@ class AreaMatcher:
         RuntimeError
             If the repository contains no towns.
         """
-        municipality_matches = self._match_municipalities(normalized_address)
+        municipality_matches = [
+            self._narrow_by_postal_code(municipality_match, postal_code)
+            for municipality_match in self._match_municipalities(normalized_address)
+        ]
         if not municipality_matches:
             return self._match_prefecture_only(normalized_address)
         longest_match = municipality_matches[0]
@@ -97,7 +105,7 @@ class AreaMatcher:
             )
             interpretations = self._interpret_town(municipality_match, is_town_required)
             if interpretations:
-                return self._select(municipality_match, interpretations)
+                return self._select(municipality_match, interpretations, postal_code)
         raise LookupError(
             f"No town in {self._describe_all(longest_match.municipalities)} matches "
             + f"{longest_match.remainder!r}."
@@ -129,6 +137,25 @@ class AreaMatcher:
             for key in self._matching_prefixes(self._normalizer.fold(text), index)
         ]
 
+    def _narrow_by_postal_code(
+        self, municipality_match: MunicipalityMatch, postal_code: str | None
+    ) -> MunicipalityMatch:
+        if postal_code is None or not municipality_match.is_town_required:
+            return municipality_match
+        lg_codes = self._repository.list_municipality_codes(postal_code)
+        selected = [
+            municipality
+            for municipality in municipality_match.municipalities
+            if municipality.lg_code in lg_codes
+        ]
+        if not selected:
+            return municipality_match
+        return replace(
+            municipality_match,
+            municipalities=selected,
+            is_ward_omitted=municipality_match.is_ward_omitted and len(selected) > 1,
+        )
+
     def _match_municipality_only(self, municipality_match: MunicipalityMatch) -> AreaMatch:
         if municipality_match.is_town_required:
             raise LookupError(
@@ -156,12 +183,17 @@ class AreaMatcher:
         ]
 
     def _select(
-        self, municipality_match: MunicipalityMatch, interpretations: list[TownInterpretation]
+        self,
+        municipality_match: MunicipalityMatch,
+        interpretations: list[TownInterpretation],
+        postal_code: str | None,
     ) -> AreaMatch:
         text = municipality_match.remainder
         description = self._describe_all(municipality_match.municipalities)
         best_key = min(interpretation.ranking_key for interpretation in interpretations)
         best = [item for item in interpretations if item.ranking_key == best_key]
+        if postal_code is not None:
+            best = self._prefer_postal_code(best, postal_code)
         towns = {(town.lg_code, town.machiaza_id): town for item in best for town in item.towns}
         lots = {item.lot for item in best}
         if len(towns) == 1 and len(lots) > 1:
@@ -184,6 +216,18 @@ class AreaMatcher:
             lot=best[0].lot,
             remainder=best[0].remainder,
         )
+
+    def _prefer_postal_code(
+        self, interpretations: list[TownInterpretation], postal_code: str
+    ) -> list[TownInterpretation]:
+        narrowed = [
+            replace(
+                interpretation,
+                towns=[town for town in interpretation.towns if postal_code in town.postal_codes],
+            )
+            for interpretation in interpretations
+        ]
+        return [item for item in narrowed if item.towns] or interpretations
 
     def _interpret_all(self, municipality: Municipality, text: str) -> list[TownInterpretation]:
         return [
@@ -228,10 +272,7 @@ class AreaMatcher:
         return options
 
     def _koaza_options(self, candidates: CandidateSet) -> list[CandidateSet]:
-        koaza_index = NameIndex(self._normalizer)
-        for town in candidates.towns:
-            if town.koaza_name:
-                koaza_index.add(town.koaza_name, town)
+        koaza_index = self._get_koaza_index(candidates.towns)
         options = [
             CandidateSet(
                 towns=koaza_candidates.towns,
@@ -312,6 +353,16 @@ class AreaMatcher:
                 index.add(self._oaza_key_name(town), town)
             self._oaza_indexes[lg_code] = index
         return self._oaza_indexes[lg_code]
+
+    def _get_koaza_index(self, towns: list[Town]) -> NameIndex:
+        key = tuple((town.lg_code, town.machiaza_id) for town in towns)
+        if key not in self._koaza_indexes:
+            index = NameIndex(self._normalizer)
+            for town in towns:
+                if town.koaza_name:
+                    index.add(town.koaza_name, town)
+            self._koaza_indexes[key] = index
+        return self._koaza_indexes[key]
 
     def _oaza_key_name(self, town: Town) -> str:
         return town.oaza_name + (town.chome_name if town.chome_number is None else "")

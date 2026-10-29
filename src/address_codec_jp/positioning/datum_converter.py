@@ -35,10 +35,38 @@ class DatumConverter:
         RuntimeError
             If no transformation of known accuracy joins the datums.
         """
-        coordinate = GeoCoordinate.from_degrees(point.latitude, point.longitude)
-        if point.crs is target:
+        return self.transform(
+            GeoCoordinate.from_degrees(point.latitude, point.longitude), point.crs, target
+        )
+
+    def transform(
+        self, coordinate: GeoCoordinate, source: GeodeticCrs, target: GeodeticCrs
+    ) -> GeoCoordinate:
+        """
+        Express a coordinate given on one datum on another.
+
+        Parameters
+        ----------
+        coordinate : GeoCoordinate
+            Coordinate on ``source``.
+        source : GeodeticCrs
+            Datum of ``coordinate``.
+        target : GeodeticCrs
+            Datum of the result.
+
+        Returns
+        -------
+        GeoCoordinate
+            Coordinate on ``target``.
+
+        Raises
+        ------
+        RuntimeError
+            If no transformation of known accuracy joins the datums.
+        """
+        if source is target:
             return coordinate
-        key = (point.crs, target)
+        key = (source, target)
         if key not in self._transformations:
-            self._transformations[key] = DatumTransformation(source=point.crs, target=target)
+            self._transformations[key] = DatumTransformation(source=source, target=target)
         return self._transformations[key].transform(coordinate)

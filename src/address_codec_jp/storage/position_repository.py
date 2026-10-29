@@ -5,12 +5,17 @@ from typing import ClassVar
 
 from geo_coordinate import GeodeticCrs
 
+from address_codec_jp.domain.address_code import AddressCode
+from address_codec_jp.domain.address_point import AddressPoint
+from address_codec_jp.domain.coordinate_bounds import CoordinateBounds
 from address_codec_jp.domain.lot_number import LotNumber
 from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.representative_point import RepresentativePoint
 from address_codec_jp.storage.area_position import AreaPosition
 from address_codec_jp.storage.lot_entry import LotEntry
 from address_codec_jp.storage.lot_position import LotPosition
+from address_codec_jp.storage.lot_removal import LotRemoval
+from address_codec_jp.storage.position_changes import PositionChanges
 from address_codec_jp.storage.position_record import PositionRecord
 from address_codec_jp.storage.town_position import TownPosition
 
@@ -66,6 +71,10 @@ class PositionRepository:
         ON lot_entries (lg_code, machiaza_id, lot_system, block, residence)
         """,
         """
+        CREATE INDEX IF NOT EXISTS town_positions_by_coordinate
+        ON town_positions (latitude, longitude)
+        """,
+        """
         CREATE TABLE IF NOT EXISTS lot_positions (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
@@ -76,6 +85,10 @@ class PositionRepository:
             epsg INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id, lot_system, lot_id)
         )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS lot_positions_by_coordinate
+        ON lot_positions (latitude, longitude)
         """,
     )
     _TABLES: ClassVar[tuple[str, ...]] = (
@@ -113,12 +126,88 @@ class PositionRepository:
             self._is_position_imported = self._query_position_imported()
         return self._is_position_imported
 
-    def _query_position_imported(self) -> bool:
+    @property
+    def is_lot_imported(self) -> bool:
+        """
+        Tell whether any block, residence, or parcel number has been imported.
+
+        Returns
+        -------
+        bool
+            ``True`` when a block, residence, or parcel master has been imported.
+        """
+        if not self._is_schema_present():
+            return False
+        row = self._fetch_first("SELECT EXISTS (SELECT 1 FROM lot_entries)", ())
+        return row is not None and bool(row[0])
+
+    def has_lots(self, lg_code: str, machiaza_id: str) -> bool:
+        """
+        Tell whether any lot number of a town has been imported.
+
+        Parameters
+        ----------
+        lg_code : str
+            Six-digit local government code.
+        machiaza_id : str
+            Seven-digit town identifier.
+
+        Returns
+        -------
+        bool
+            ``True`` when a block, residence, or parcel of the town is stored.
+        """
+        row = self._fetch_first(
+            "SELECT EXISTS (SELECT 1 FROM lot_entries WHERE lg_code = ? AND machiaza_id = ?)",
+            (lg_code, machiaza_id),
+        )
+        return row is not None and bool(row[0])
+
+    def contains_lot(self, lg_code: str, machiaza_id: str, lot: LotNumber) -> bool:
+        """
+        Tell whether lot numbers are registered in a town under either numbering system.
+
+        Parameters
+        ----------
+        lg_code : str
+            Six-digit local government code.
+        machiaza_id : str
+            Seven-digit town identifier.
+        lot : LotNumber
+            Block and residence numbers. Without a residence, any residence of the block
+            counts.
+
+        Returns
+        -------
+        bool
+            ``True`` when a block, residence, or parcel with the numbers is stored.
+
+        Raises
+        ------
+        ValueError
+            If ``lot`` has no block number.
+        """
+        block, residence = self._to_number_columns(lot)
+        residence_condition = "" if lot.residence is None else " AND residence = ?"
+        parameters: list[str | int] = [lg_code, machiaza_id, block]
+        if lot.residence is not None:
+            parameters.append(residence)
+        row = self._fetch_first(
+            "SELECT EXISTS (SELECT 1 FROM lot_entries WHERE lg_code = ? AND machiaza_id = ? "
+            + f"AND block = ?{residence_condition})",
+            parameters,
+        )
+        return row is not None and bool(row[0])
+
+    def _is_schema_present(self) -> bool:
         table_count_row = self._fetch_first(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?, ?)",
             self._TABLES,
         )
-        if table_count_row is None or table_count_row[0] != len(self._TABLES):
+        return table_count_row is not None and table_count_row[0] == len(self._TABLES)
+
+    def _query_position_imported(self) -> bool:
+        if not self._is_schema_present():
             return False
         row = self._fetch_first(
             "SELECT EXISTS (SELECT 1 FROM area_positions) "
@@ -127,9 +216,12 @@ class PositionRepository:
         )
         return row is not None and bool(row[0])
 
-    def save_all(self, records: Iterable[PositionRecord]) -> int:
+    def save_all(self, records: Iterable[PositionRecord]) -> PositionChanges:
         """
         Store records in one transaction, replacing records with the same identifiers.
+
+        Removals delete the lot numbers of abolished lots, so that a newer number master
+        drops them; their points stay unused, because lots are located through numbers.
 
         Parameters
         ----------
@@ -138,15 +230,30 @@ class PositionRepository:
 
         Returns
         -------
-        int
-            Number of stored records.
+        PositionChanges
+            Numbers of stored records and of removed lot numbers.
         """
         stored_count = 0
+        removed_count = 0
         with self._connection:
             for chunk in batched(records, self._BATCH_SIZE):
+                removals = [record for record in chunk if isinstance(record, LotRemoval)]
                 self._save_chunk(chunk)
-                stored_count += len(chunk)
-        return stored_count
+                stored_count += len(chunk) - len(removals)
+                removed_count += self._connection.executemany(
+                    "DELETE FROM lot_entries WHERE lg_code = ? AND machiaza_id = ? "
+                    + "AND lot_system = ? AND lot_id = ?",
+                    [
+                        (
+                            removal.lg_code,
+                            removal.machiaza_id,
+                            removal.lot_system.value,
+                            removal.lot_id,
+                        )
+                        for removal in removals
+                    ],
+                ).rowcount
+        return PositionChanges(stored_count=stored_count, removed_count=removed_count)
 
     def _save_chunk(self, records: Sequence[PositionRecord]) -> None:
         area_rows: list[tuple[str, float, float, int]] = []
@@ -190,6 +297,8 @@ class PositionRepository:
                             record.point.crs.epsg,
                         )
                     )
+                case LotRemoval():
+                    pass
         _ = self._connection.executemany(
             "INSERT OR REPLACE INTO area_positions VALUES (?, ?, ?, ?)", area_rows
         )
@@ -203,6 +312,30 @@ class PositionRepository:
             "INSERT OR REPLACE INTO lot_positions VALUES (?, ?, ?, ?, ?, ?, ?)",
             lot_position_rows,
         )
+
+    def remove_orphans(self) -> int:
+        """
+        Remove points and lot numbers of areas that are not in the town table.
+
+        Prefecture points are kept, because prefectures have no row of their own.
+
+        Returns
+        -------
+        int
+            Number of removed rows.
+        """
+        removed_count = 0
+        with self._connection:
+            removed_count += self._connection.execute(
+                "DELETE FROM area_positions WHERE substr(lg_code, 3, 3) != '000' "
+                + "AND lg_code NOT IN (SELECT lg_code FROM towns)"
+            ).rowcount
+            for table in self._TABLES[1:]:
+                removed_count += self._connection.execute(
+                    f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM towns AS t "
+                    + f"WHERE t.lg_code = {table}.lg_code AND t.machiaza_id = {table}.machiaza_id)"
+                ).rowcount
+        return removed_count
 
     def find_area(self, lg_code: str) -> RepresentativePoint | None:
         """
@@ -293,6 +426,83 @@ class PositionRepository:
             if row is not None:
                 return self._to_point(row)
         return None
+
+    def list_lot_points(self, bounds: CoordinateBounds) -> list[AddressPoint]:
+        """
+        List the points of blocks, residences, and parcels within bounds.
+
+        Only lots whose number master and position extension are both imported are listed.
+
+        Parameters
+        ----------
+        bounds : CoordinateBounds
+            Search area on the published datums.
+
+        Returns
+        -------
+        list[AddressPoint]
+            Codes with lot numbers and their points.
+        """
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            "SELECT p.lg_code, p.machiaza_id, e.block, e.residence, "
+            + "p.longitude, p.latitude, p.epsg FROM lot_positions AS p "
+            + "JOIN lot_entries AS e USING (lg_code, machiaza_id, lot_system, lot_id) "
+            + "WHERE p.latitude BETWEEN ? AND ? AND p.longitude BETWEEN ? AND ?",
+            self._to_bound_parameters(bounds),
+        ).fetchall()
+        return [
+            AddressPoint(
+                code=AddressCode(
+                    lg_code=str(row[0]),
+                    machiaza_id=str(row[1]),
+                    lot=self._to_lot(row[2], row[3]),
+                ),
+                point=self._to_point(row[4:]),
+            )
+            for row in rows
+        ]
+
+    def list_town_points(self, bounds: CoordinateBounds) -> list[AddressPoint]:
+        """
+        List the points of towns within bounds.
+
+        Parameters
+        ----------
+        bounds : CoordinateBounds
+            Search area on the published datums.
+
+        Returns
+        -------
+        list[AddressPoint]
+            Town codes and their points.
+        """
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            "SELECT lg_code, machiaza_id, longitude, latitude, epsg FROM town_positions "
+            + "WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
+            self._to_bound_parameters(bounds),
+        ).fetchall()
+        return [
+            AddressPoint(
+                code=AddressCode(lg_code=str(row[0]), machiaza_id=str(row[1])),
+                point=self._to_point(row[2:]),
+            )
+            for row in rows
+        ]
+
+    def _to_bound_parameters(self, bounds: CoordinateBounds) -> tuple[float, float, float, float]:
+        return (
+            bounds.south_degrees,
+            bounds.north_degrees,
+            bounds.west_degrees,
+            bounds.east_degrees,
+        )
+
+    def _to_lot(self, block: object, residence: object) -> LotNumber:
+        if not (isinstance(block, int) and isinstance(residence, int)):
+            raise RuntimeError(f"Malformed lot numbers: {block!r}, {residence!r}.")
+        return LotNumber(
+            block=block, residence=None if residence == self._ABSENT_RESIDENCE else residence
+        )
 
     def _fetch_first(
         self, statement: str, parameters: Sequence[str | int]

@@ -40,7 +40,9 @@ class TextNormalizer:
             "驒": "騨",
         }
     )
-    _POSTAL_CODE: ClassVar[re.Pattern[str]] = re.compile(r"^〒?[0-9]{3}-?[0-9]{4}")
+    _POSTAL_CODE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^〒?(?P<head>[0-9]{3})-?(?P<tail>[0-9]{4})"
+    )
     _WHITESPACE: ClassVar[re.Pattern[str]] = re.compile(r"\s+")
     _WHITESPACE_BETWEEN_DIGITS: ClassVar[re.Pattern[str]] = re.compile(r"(?<=[0-9])\s+(?=[0-9])")
     _KE_VARIANTS: ClassVar[re.Pattern[str]] = re.compile(
@@ -77,6 +79,28 @@ class TextNormalizer:
             Normalized text.
         """
         return self._normalize(text, is_trailing_number_converted=True)
+
+    def extract_postal_code(self, text: str) -> str | None:
+        """
+        Read the postal code that ``normalize`` removes from the start of an address.
+
+        Parameters
+        ----------
+        text : str
+            Raw address, e.g. ``〒100-0005 東京都千代田区丸の内``.
+
+        Returns
+        -------
+        str | None
+            Seven-digit postal code, or ``None`` when the address does not start with one.
+        """
+        prepared = unicodedata.normalize("NFKC", text)
+        prepared = self._WHITESPACE_BETWEEN_DIGITS.sub("-", prepared)
+        prepared = self._normalize_dashes(self._WHITESPACE.sub("", prepared))
+        matched = self._POSTAL_CODE.match(prepared)
+        if matched is None:
+            return None
+        return matched.group("head") + matched.group("tail")
 
     def normalize_name(self, name: str) -> set[str]:
         """

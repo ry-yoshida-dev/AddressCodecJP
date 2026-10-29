@@ -12,6 +12,12 @@ from address_codec_jp import (
     NumeralStyle,
 )
 
+TOWN_MASTER_HEADER: str = (
+    "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"
+    + "pref_kana,county_kana,city_kana,ward_kana,oaza_cho_kana,chome_kana,koaza_kana,"
+    + "post_code,ablt_date\n"
+)
+
 
 @pytest.mark.parametrize(
     ("address", "expected"),
@@ -215,16 +221,14 @@ def test_round_trip(codec: AddressCodec) -> None:
 def test_reimport_refreshes_matching(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
-        "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza\n"
-        + "131067,0012000,東京都,,台東区,,浅草,,\n",
+        TOWN_MASTER_HEADER + "131067,0012000,東京都,,台東区,,浅草,,,,,,,,,,,\n",
         encoding="utf-8",
     )
     with AddressCodec.create(":memory:") as codec:
         _ = codec.import_town_master(master)
         assert str(codec.encode("台東区浅草")) == "131067-0012000"
         _ = master.write_text(
-            "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza\n"
-            + "131067,0001001,東京都,,台東区,,浅草橋,一丁目,\n",
+            TOWN_MASTER_HEADER + "131067,0001001,東京都,,台東区,,浅草橋,一丁目,,,,,,,,,,\n",
             encoding="utf-8",
         )
         _ = codec.import_town_master(master)
@@ -235,9 +239,9 @@ def test_reimport_refreshes_matching(tmp_path: Path) -> None:
 def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
-        "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza\n"
-        + "992011,0001000,試験県,,北市,,山田,,\n"
-        + "992020,0001000,試験県,,北市山,,川,,\n",
+        TOWN_MASTER_HEADER
+        + "992011,0001000,試験県,,北市,,山田,,,,,,,,,,,\n"
+        + "992020,0001000,試験県,,北市山,,川,,,,,,,,,,,\n",
         encoding="utf-8",
     )
     with AddressCodec.create(":memory:") as codec:
