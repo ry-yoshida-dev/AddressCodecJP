@@ -20,3 +20,4 @@ written with the address tells them apart.
 | [candidate_set.py](candidate_set.py) | `CandidateSet`: towns compatible with a partial reading and the loosest `MatchTier` used |
 | [town_interpretation.py](town_interpretation.py) | `TownInterpretation`: a complete reading and its ranking key |
 | [municipality_match.py](municipality_match.py) | `MunicipalityMatch`: municipalities matching the leading name and remaining text |
+| [town_source.py](town_source.py) | `TownSource`: protocol of the municipality and town lookups that matching needs, implemented by `TownRepository` |

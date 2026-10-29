@@ -23,3 +23,4 @@ Immutable value objects shared by all layers.
 | [prefecture.py](prefecture.py) | `Prefecture`: two-digit prefecture code, name, and reading |
 | [representative_point.py](representative_point.py) | `RepresentativePoint`: published longitude, latitude, and datum |
 | [town.py](town.py) | `Town`: ABR town record within its `Municipality`, with readings and postal codes |
+| [town_position.py](town_position.py) | `TownPosition`: point and lot numbering system of a town |

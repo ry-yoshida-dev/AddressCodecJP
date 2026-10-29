@@ -13,6 +13,7 @@ from address_codec_jp.domain.nearest_address import NearestAddress
 from address_codec_jp.domain.prefecture import Prefecture
 from address_codec_jp.domain.representative_point import RepresentativePoint
 from address_codec_jp.domain.town import Town
+from address_codec_jp.domain.town_position import TownPosition
 
 __all__ = [
     "Address",
@@ -30,4 +31,5 @@ __all__ = [
     "Prefecture",
     "RepresentativePoint",
     "Town",
+    "TownPosition",
 ]

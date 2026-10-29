@@ -19,7 +19,6 @@ database for lookup by code or municipality.
 | [abr_position_csv_reader.py](abr_position_csv_reader.py) | `AbrPositionCsvReader`: reads position extensions and the block, residence, and parcel number masters, turning abolished lots into removals |
 | [position_record.py](position_record.py) | `PositionRecord`: union of the records read from position datasets |
 | [area_position.py](area_position.py) | `AreaPosition`: point of a prefecture or municipality |
-| [town_position.py](town_position.py) | `TownPosition`: point and lot numbering system of a town |
 | [lot_entry.py](lot_entry.py) | `LotEntry`: registry identifier of a block, residence, or parcel and its numbers |
 | [lot_position.py](lot_position.py) | `LotPosition`: point of a block, residence, or parcel identifier |
 | [lot_removal.py](lot_removal.py) | `LotRemoval`: block, residence, or parcel marked abolished by a number master |

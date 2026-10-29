@@ -17,9 +17,9 @@ from address_codec_jp.matching.candidate_set import CandidateSet
 from address_codec_jp.matching.municipality_match import MunicipalityMatch
 from address_codec_jp.matching.name_index import NameIndex
 from address_codec_jp.matching.town_interpretation import TownInterpretation
+from address_codec_jp.matching.town_source import TownSource
 from address_codec_jp.normalization.lot_number_parser import LotNumberParser
 from address_codec_jp.normalization.text_normalizer import TextNormalizer
-from address_codec_jp.storage.town_repository import TownRepository
 
 
 class AreaMatcher:
@@ -42,8 +42,8 @@ class AreaMatcher:
 
     Parameters
     ----------
-    repository : TownRepository
-        Source of municipalities and towns.
+    repository : TownSource
+        Source of municipalities and towns, such as ``TownRepository``.
     normalizer : TextNormalizer
         Normalizer applied to registry names.
     lot_parser : LotNumberParser
@@ -60,9 +60,9 @@ class AreaMatcher:
     _PREFECTURE_SUFFIXES: ClassVar[tuple[str, ...]] = ("都", "府", "県")
 
     def __init__(
-        self, repository: TownRepository, normalizer: TextNormalizer, lot_parser: LotNumberParser
+        self, repository: TownSource, normalizer: TextNormalizer, lot_parser: LotNumberParser
     ) -> None:
-        self._repository: TownRepository = repository
+        self._repository: TownSource = repository
         self._normalizer: TextNormalizer = normalizer
         self._lot_parser: LotNumberParser = lot_parser
         self._prefecture_index: dict[str, Prefecture] | None = None

@@ -12,7 +12,6 @@ from address_codec_jp.storage.position_changes import PositionChanges
 from address_codec_jp.storage.position_import_summary import PositionImportSummary
 from address_codec_jp.storage.position_record import PositionRecord
 from address_codec_jp.storage.position_repository import PositionRepository
-from address_codec_jp.storage.town_position import TownPosition
 from address_codec_jp.storage.town_replacement import TownReplacement
 from address_codec_jp.storage.town_repository import TownRepository
 
@@ -31,7 +30,6 @@ __all__ = [
     "PositionImportSummary",
     "PositionRecord",
     "PositionRepository",
-    "TownPosition",
     "TownReplacement",
     "TownRepository",
 ]

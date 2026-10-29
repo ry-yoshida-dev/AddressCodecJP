@@ -26,4 +26,5 @@ are real; town IDs, postal codes, and some readings are illustrative.
 | [test_kana.py](test_kana.py) | Katakana readings in decoded addresses |
 | [test_lot_verification.py](test_lot_verification.py) | Lot number verification against imported masters |
 | [test_nearest.py](test_nearest.py) | Nearest address search |
+| [test_town_source.py](test_town_source.py) | Matching on an in-memory `TownSource` without a database |
 | [test_round_trip.py](test_round_trip.py) | Property-based decode and encode round trip over the sample towns |

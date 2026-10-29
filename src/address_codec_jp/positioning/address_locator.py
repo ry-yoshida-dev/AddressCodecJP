@@ -9,7 +9,7 @@ from address_codec_jp.domain.representative_point import RepresentativePoint
 from address_codec_jp.errors.dataset_not_imported_error import DatasetNotImportedError
 from address_codec_jp.errors.position_not_found_error import PositionNotFoundError
 from address_codec_jp.positioning.datum_converter import DatumConverter
-from address_codec_jp.storage.position_repository import PositionRepository
+from address_codec_jp.positioning.position_source import PositionSource
 
 
 class AddressLocator:
@@ -22,8 +22,8 @@ class AddressLocator:
 
     Parameters
     ----------
-    repository : PositionRepository
-        Imported representative points.
+    repository : PositionSource
+        Imported representative points, such as ``PositionRepository``.
     """
 
     _UNKNOWN_TOWN_LOT_SYSTEMS: ClassVar[tuple[LotSystem, ...]] = (
@@ -31,8 +31,8 @@ class AddressLocator:
         LotSystem.LAND_PARCEL,
     )
 
-    def __init__(self, repository: PositionRepository) -> None:
-        self._repository: PositionRepository = repository
+    def __init__(self, repository: PositionSource) -> None:
+        self._repository: PositionSource = repository
         self._converter: DatumConverter = DatumConverter()
 
     def locate(self, code: AddressCode, crs: GeodeticCrs) -> AddressLocation:

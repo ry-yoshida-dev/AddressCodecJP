@@ -11,13 +11,13 @@ from address_codec_jp.domain.coordinate_bounds import CoordinateBounds
 from address_codec_jp.domain.lot_number import LotNumber
 from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.representative_point import RepresentativePoint
+from address_codec_jp.domain.town_position import TownPosition
 from address_codec_jp.storage.area_position import AreaPosition
 from address_codec_jp.storage.lot_entry import LotEntry
 from address_codec_jp.storage.lot_position import LotPosition
 from address_codec_jp.storage.lot_removal import LotRemoval
 from address_codec_jp.storage.position_changes import PositionChanges
 from address_codec_jp.storage.position_record import PositionRecord
-from address_codec_jp.storage.town_position import TownPosition
 
 
 class PositionRepository:
