@@ -90,7 +90,7 @@ with AddressCodec.open(cache=DatabaseCache.default(max_age=timedelta(days=30))) 
 | No downloads on use | `is_download_allowed=False`: a missing database raises `DatasetNotImportedError`; missing points and shapes fall back to the enclosing areas |
 | Follow new releases | `max_age=timedelta(...)` refreshes on first use when older, keeping the current data with a warning if that fails; `refresh()` on demand |
 | Inspect or delete | `describe()` returns a `CacheStatus`; `clear()` |
-| See what it downloads | INFO records of the `address_codec_jp.caching.database_cache` logger |
+| See what it downloads | INFO records of the `address_codec_jp.database.cache.database_cache` logger |
 | Mirror the download site | `ADDRESS_CODEC_JP_BASE_URL` |
 
 Writes are serialized across processes by a lock file in the cache directory, so the
@@ -197,7 +197,7 @@ RUN pip install "address-codec-jp[api] @ git+https://github.com/ry-yoshida-dev/A
 ENV ADDRESS_CODEC_JP_CACHE_DIR=/var/lib/addresses
 ENV ADDRESS_CODEC_JP_API_PUBLISHER="Example Maps Inc."
 RUN address-codec-jp cache prepare --prefecture 13
-CMD ["uvicorn", "--factory", "address_codec_jp.api:ApplicationFactory.from_environment", \
+CMD ["uvicorn", "--factory", "address_codec_jp.frontends.api:ApplicationFactory.from_environment", \
      "--host", "0.0.0.0", "--workers", "4"]
 ```
 

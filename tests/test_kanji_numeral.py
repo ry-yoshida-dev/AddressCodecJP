@@ -1,6 +1,6 @@
 import pytest
 
-from address_codec_jp.normalization import KanjiNumeral
+from address_codec_jp.text.normalization import KanjiNumeral
 
 
 @pytest.mark.parametrize(

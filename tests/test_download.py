@@ -1,4 +1,9 @@
+import email.message
+import io
 import shutil
+import time
+import urllib.request
+import urllib.response
 import zipfile
 from pathlib import Path
 from typing import BinaryIO
@@ -13,7 +18,8 @@ from address_codec_jp import (
     RegistryDownloader,
     RegistryDownloadError,
 )
-from address_codec_jp.cli import CommandLineInterface
+from address_codec_jp.datasets.download import FileFetcher
+from address_codec_jp.frontends.cli import CommandLineInterface
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 FIXTURE_NAMES: dict[AbrDataset, str] = {
@@ -156,3 +162,42 @@ def test_failed_write_raises_and_leaves_nothing(
     with pytest.raises(RegistryDownloadError, match="No space left"):
         _ = downloader.download(DistributedFile(AbrDataset.TOWN), directory)
     assert list(directory.iterdir()) == []
+
+
+def test_remote_requests_are_spaced_and_identified(monkeypatch: pytest.MonkeyPatch) -> None:
+    user_agents: list[str | None] = []
+    waits: list[float] = []
+
+    def respond(request: urllib.request.Request, timeout: float) -> urllib.response.addinfourl:
+        user_agents.append(request.get_header("User-agent"))
+        return urllib.response.addinfourl(
+            io.BytesIO(b"{}"), email.message.Message(), request.full_url, 200
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", respond)
+    monkeypatch.setattr(time, "sleep", waits.append)
+    fetcher = FileFetcher(request_interval_seconds=1.0)
+    _ = fetcher.read("https://example.com/first")
+    _ = fetcher.read("https://example.com/second")
+    assert len(waits) == 1
+    assert 0.5 < waits[0] <= 1.0
+    assert all(
+        user_agent is not None and user_agent.startswith("address-codec-jp/")
+        for user_agent in user_agents
+    )
+
+
+def test_local_files_are_read_without_waiting(
+    mirror: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+    downloader = RegistryDownloader(mirror.as_uri())
+    for dataset in (AbrDataset.TOWN, AbrDataset.PREFECTURE_POSITION):
+        _ = downloader.download(DistributedFile(dataset), tmp_path)
+    assert waits == []
+
+
+def test_negative_request_interval_is_rejected() -> None:
+    with pytest.raises(ValueError, match="request_interval_seconds"):
+        _ = FileFetcher(request_interval_seconds=-1.0)

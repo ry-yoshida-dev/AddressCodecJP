@@ -23,9 +23,9 @@ from address_codec_jp import (
     RegistryDownloadError,
     RegistryImporter,
 )
-from address_codec_jp.boundary import CensusBoundaryReader, RegistryMapReader
-from address_codec_jp.cli import CommandLineInterface
-from address_codec_jp.domain import Polygon
+from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
+from address_codec_jp.frontends.cli import CommandLineInterface
+from address_codec_jp.geometry import Polygon
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 AREA_DIRECTORY: Path = FIXTURE_DIRECTORY / "areas"

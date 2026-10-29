@@ -1,7 +1,7 @@
 import pytest
 
 from address_codec_jp import AddressCodec, AddressFormat, DigitWidth
-from address_codec_jp.normalization import TextNormalizer
+from address_codec_jp.text.normalization import TextNormalizer
 
 
 @pytest.mark.parametrize(

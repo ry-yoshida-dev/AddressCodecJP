@@ -1,4 +1,4 @@
-from address_codec_jp.domain.address_code import AddressCode
+from address_codec_jp.address import AddressCode
 from address_codec_jp.errors.address_codec_error import AddressCodecError
 
 

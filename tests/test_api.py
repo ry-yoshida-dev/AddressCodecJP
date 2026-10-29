@@ -22,7 +22,7 @@ from address_codec_jp import (
     RegistryFormatError,
     RegistryImporter,
 )
-from address_codec_jp.api import (
+from address_codec_jp.frontends.api import (
     ApplicationFactory,
     CodecPool,
     DatasetCoverage,

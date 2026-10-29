@@ -14,7 +14,7 @@ from address_codec_jp import (
     RegistryImporter,
     UnsupportedDatabaseError,
 )
-from address_codec_jp.registry import AbrTownCsvReader
+from address_codec_jp.datasets.address_base_registry import AbrTownCsvReader
 
 HEADER: str = (
     "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"

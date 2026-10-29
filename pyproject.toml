@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-address-codec-jp = "address_codec_jp.cli:main"
+address-codec-jp = "address_codec_jp.frontends.cli:main"
 
 [project.optional-dependencies]
 api = [

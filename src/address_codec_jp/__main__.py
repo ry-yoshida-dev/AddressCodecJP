@@ -1,3 +1,3 @@
-from address_codec_jp.cli import main
+from address_codec_jp.frontends.cli import main
 
 main()

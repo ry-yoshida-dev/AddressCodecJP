@@ -1,25 +1,28 @@
-from address_codec_jp.address_codec import AddressCodec
-from address_codec_jp.area_importer import AreaImporter
-from address_codec_jp.caching import CacheStatus, DatabaseCache
-from address_codec_jp.domain import (
+from address_codec_jp.address import (
     Address,
-    AddressArea,
     AddressCode,
     AddressLevel,
-    AddressLocation,
-    AddressMatch,
-    AreaShape,
-    AreaSource,
     LotNumber,
     LotSystem,
-    MatchTier,
     Municipality,
-    NearestAddress,
     Prefecture,
-    RepresentativePoint,
     Town,
 )
-from address_codec_jp.download import BoundaryDownloader, DistributedFile, RegistryDownloader
+from address_codec_jp.address_codec import AddressCodec
+from address_codec_jp.database.cache import CacheStatus, DatabaseCache
+from address_codec_jp.database.importing.area_importer import AreaImporter
+from address_codec_jp.database.importing.registry_importer import RegistryImporter
+from address_codec_jp.database.storage import AddressDatabase, AreaImport, DatasetImport
+from address_codec_jp.datasets.address_base_registry import (
+    AbrDataset,
+    DistributionScope,
+    ImportSummary,
+)
+from address_codec_jp.datasets.download import (
+    BoundaryDownloader,
+    DistributedFile,
+    RegistryDownloader,
+)
 from address_codec_jp.errors import (
     AddressCodecError,
     AddressNotFoundError,
@@ -33,16 +36,22 @@ from address_codec_jp.errors import (
     RegistryFormatError,
     UnsupportedDatabaseError,
 )
-from address_codec_jp.formatting import (
+from address_codec_jp.geometry import AreaShape, RepresentativePoint
+from address_codec_jp.results import (
+    AddressArea,
+    AddressLocation,
+    AddressMatch,
+    AreaSource,
+    MatchTier,
+    NearestAddress,
+)
+from address_codec_jp.text.formatting import (
     AddressFormat,
     DigitWidth,
     LotStyle,
     NameScript,
     NumeralStyle,
 )
-from address_codec_jp.registry import AbrDataset, DistributionScope, ImportSummary
-from address_codec_jp.registry_importer import RegistryImporter
-from address_codec_jp.storage import AddressDatabase, AreaImport, DatasetImport
 
 __all__ = [
     "AbrDataset",

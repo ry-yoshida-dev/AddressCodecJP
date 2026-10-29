@@ -13,7 +13,7 @@ from address_codec_jp import (
     RegistryFormatError,
     RegistryImporter,
 )
-from address_codec_jp.registry import (
+from address_codec_jp.datasets.address_base_registry import (
     AbrCsvFile,
     AbrDataset,
     AbrPositionCsvReader,

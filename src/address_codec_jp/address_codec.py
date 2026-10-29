@@ -4,27 +4,15 @@ from typing import ClassVar, Self
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.caching.database_cache import DatabaseCache
-from address_codec_jp.domain.address import Address
-from address_codec_jp.domain.address_area import AddressArea
-from address_codec_jp.domain.address_code import AddressCode
-from address_codec_jp.domain.address_level import AddressLevel
-from address_codec_jp.domain.address_location import AddressLocation
-from address_codec_jp.domain.address_match import AddressMatch
-from address_codec_jp.domain.nearest_address import NearestAddress
-from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
-from address_codec_jp.errors.dataset_not_imported_error import DatasetNotImportedError
-from address_codec_jp.formatting.address_format import AddressFormat
-from address_codec_jp.formatting.address_formatter import AddressFormatter
-from address_codec_jp.matching.area_matcher import AreaMatcher
-from address_codec_jp.normalization.lot_number_parser import LotNumberParser
-from address_codec_jp.normalization.text_normalizer import TextNormalizer
-from address_codec_jp.positioning.address_locator import AddressLocator
-from address_codec_jp.positioning.area_finder import AreaFinder
-from address_codec_jp.positioning.nearest_address_finder import NearestAddressFinder
-from address_codec_jp.storage.address_database import AddressDatabase
-from address_codec_jp.storage.area_import import AreaImport
-from address_codec_jp.storage.dataset_import import DatasetImport
+from address_codec_jp.address import Address, AddressCode, AddressLevel
+from address_codec_jp.database.cache import DatabaseCache
+from address_codec_jp.database.storage import AddressDatabase, AreaImport, DatasetImport
+from address_codec_jp.errors import AddressNotFoundError, DatasetNotImportedError
+from address_codec_jp.geocoding import AddressLocator, AreaFinder, NearestAddressFinder
+from address_codec_jp.results import AddressArea, AddressLocation, AddressMatch, NearestAddress
+from address_codec_jp.text.formatting import AddressFormat, AddressFormatter
+from address_codec_jp.text.matching import AreaMatcher
+from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
 
 
 class AddressCodec:

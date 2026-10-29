@@ -1,7 +1,7 @@
 import pytest
 
 from address_codec_jp import LotNumber
-from address_codec_jp.normalization import LotNumberParser
+from address_codec_jp.text.normalization import LotNumberParser
 
 
 @pytest.mark.parametrize(

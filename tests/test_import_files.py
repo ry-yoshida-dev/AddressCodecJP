@@ -9,7 +9,7 @@ from address_codec_jp import (
     RegistryFormatError,
     RegistryImporter,
 )
-from address_codec_jp.cli import CommandLineInterface
+from address_codec_jp.frontends.cli import CommandLineInterface
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 TOWN_MASTER: Path = FIXTURE_DIRECTORY / "mt_town_sample.csv"

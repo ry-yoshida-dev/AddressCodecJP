@@ -4,7 +4,7 @@
 
 Public package of AddressCodecJP. `RegistryImporter` imports registry datasets into a
 database, and `AddressCodec` is the read-only facade that combines normalization, town
-matching, lot number parsing, formatting, and positioning on that database.
+matching, lot number parsing, formatting, and geocoding on that database.
 `DatabaseCache` builds a nationwide town-level database in the user cache directory on
 first use and adds the blocks, residences, and land parcels of each municipality and its
 area shapes when needed; `AddressCodec.open()` uses it when no path is given.
@@ -14,23 +14,16 @@ area shapes when needed; `AddressCodec.open()` uses it when no path is given.
 | Component | Responsibility |
 | --- | --- |
 | [address_codec.py](address_codec.py) | `AddressCodec` facade: match, encode, resolve, decode, list_by_postal_code, locate, find_nearest, find_area, find_areas_at |
-| [area_importer.py](area_importer.py) | `AreaImporter`: matches census boundaries and registry map parcels to address codes and stores their shapes |
-| [registry_importer.py](registry_importer.py) | `RegistryImporter`: identifies registry files by header and imports each atomically, the town master first |
 | [\_\_main\_\_.py](__main__.py) | `python -m address_codec_jp` entry point |
-| [caching/](caching/) | `DatabaseCache`: the default database in the user cache directory, built on first use and extended per municipality, with its directory layout, lock, and import ledger |
-| [domain/](domain/) | Immutable domain models such as `AddressCode`, `Address`, and `Town` |
-| [download/](download/) | Downloaders of registry files, census boundaries, and registry maps |
-| [boundary/](boundary/) | Readers of census boundary shapefiles and registry map XML |
+| [address/](address/) | Address codes and registered units: prefecture, municipality, town, and lot numbers |
+| [geometry/](geometry/) | Representative points and polygons |
+| [results/](results/) | Values returned by `AddressCodec`: matches, locations, nearest addresses, and areas |
 | [errors/](errors/) | Exception hierarchy rooted at `AddressCodecError` |
-| [normalization/](normalization/) | Text normalization, kanji numerals, lot number parsing |
-| [matching/](matching/) | Longest-prefix matching from text to a registered town |
-| [registry/](registry/) | ABR CSV readers, dataset detection, and the records read from registry files |
-| [storage/](storage/) | Versioned SQLite `AddressDatabase`, its transactions, and its town, position, and import log repositories |
-| [positioning/](positioning/) | Representative point lookup with fallback, nearest address search, and datum transformation |
-| [formatting/](formatting/) | Output format options and address rendering |
-| [serialization/](serialization/) | JSON fields of codec results and errors, shared by the command line and the web API |
-| [cli/](cli/) | Command line interface |
-| [api/](api/) | Optional FastAPI web API on a prepared cache (`api` extra) |
+| [text/](text/) | Normalization, town matching, and formatting of address text |
+| [geocoding/](geocoding/) | Address to point and shape with fallback, coordinate to nearest address and containing areas, and datum transformation |
+| [datasets/](datasets/) | Downloading and reading the Address Base Registry, census boundaries, and registry maps |
+| [database/](database/) | SQLite storage, the importers that fill it, and the default database in the user cache directory |
+| [frontends/](frontends/) | Command line, optional web API, and their shared JSON serialization |
 
 ## Examples
 

@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from address_codec_jp import AddressCodec
-from address_codec_jp.cli import CommandLineInterface
-from address_codec_jp.normalization import TextNormalizer
+from address_codec_jp.frontends.cli import CommandLineInterface
+from address_codec_jp.text.normalization import TextNormalizer
 
 TOWN_MASTER: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
 

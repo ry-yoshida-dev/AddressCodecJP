@@ -11,8 +11,8 @@ from address_codec_jp import (
     MatchTier,
     RegistryImporter,
 )
-from address_codec_jp.matching import AreaMatcher
-from address_codec_jp.normalization import LotNumberParser, TextNormalizer
+from address_codec_jp.text.matching import AreaMatcher
+from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
 
 
 @pytest.mark.parametrize(

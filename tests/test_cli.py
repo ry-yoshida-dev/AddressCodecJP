@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from address_codec_jp.cli import CommandLineInterface
+from address_codec_jp.frontends.cli import CommandLineInterface
 
 FIXTURE: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
 

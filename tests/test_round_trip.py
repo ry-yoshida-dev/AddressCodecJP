@@ -16,7 +16,7 @@ from address_codec_jp import (
     RegistryImporter,
     Town,
 )
-from address_codec_jp.registry import AbrTownCsvReader
+from address_codec_jp.datasets.address_base_registry import AbrTownCsvReader
 
 FIXTURE: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
 DOCUMENTED_AMBIGUOUS_TOWNS: frozenset[tuple[str, str]] = frozenset(
