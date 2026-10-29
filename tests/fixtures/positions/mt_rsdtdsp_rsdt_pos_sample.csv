@@ -1,0 +1,3 @@
+lg_code,machiaza_id,blk_id,rsdt_id,rsdt2_id,rep_lon,rep_lat,rep_srid,rep_scale
+131016,0001001,001,003,,139.765123,35.682456,EPSG:6668,2500
+131016,0001001,001,004,001,139.765500,35.682500,EPSG:6668,2500

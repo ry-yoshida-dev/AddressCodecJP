@@ -4,6 +4,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from geo_coordinate import GeodeticCrs
+
 from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.cli.command import Command
 from address_codec_jp.cli.command_arguments import CommandArguments
@@ -65,6 +67,20 @@ class CommandLineInterface:
                 )
                 with AddressCodec.open(database_path) as codec:
                     return self._decode(codec, namespace.codes, address_format)
+            case Command.IMPORT_POSITIONS:
+                with AddressCodec.create(database_path) as codec:
+                    for source in namespace.sources:
+                        position_summary = codec.import_positions(Path(source))
+                        print(
+                            f"Imported {position_summary.stored_count} rows of "
+                            + f"{position_summary.dataset.value} from {source}."
+                        )
+                return 0
+            case Command.LOCATE:
+                with AddressCodec.open(database_path) as codec:
+                    return self._locate(
+                        codec, namespace.addresses, GeodeticCrs[namespace.crs.upper()]
+                    )
 
     def _encode(self, codec: AddressCodec, addresses: list[str]) -> int:
         exit_status = 0
@@ -88,6 +104,29 @@ class CommandLineInterface:
                 exit_status = 1
                 continue
             print(address)
+        return exit_status
+
+    def _locate(self, codec: AddressCodec, addresses: list[str], crs: GeodeticCrs) -> int:
+        exit_status = 0
+        for address in addresses:
+            try:
+                location = codec.locate(address, crs)
+            except (LookupError, ValueError) as error:
+                print(f"{address}\tERROR: {error}", file=sys.stderr)
+                exit_status = 1
+                continue
+            print(
+                "\t".join(
+                    [
+                        str(location.code),
+                        str(location.located_code),
+                        location.level.name,
+                        f"{location.coordinate.latitude.degree[0]:.9f}",
+                        f"{location.coordinate.longitude.degree[0]:.9f}",
+                        str(location.crs),
+                    ]
+                )
+            )
         return exit_status
 
     def _build_parser(self) -> argparse.ArgumentParser:
@@ -130,5 +169,23 @@ class CommandLineInterface:
         )
         _ = decode_parser.add_argument(
             "--no-county", dest="is_county_excluded", action="store_true"
+        )
+
+        positions_parser = subparsers.add_parser(
+            Command.IMPORT_POSITIONS.value,
+            help="Import position datasets and block, residence, or parcel masters.",
+        )
+        _ = positions_parser.add_argument(
+            "sources", nargs="+", help="Registry CSV files or their ZIP archives."
+        )
+
+        locate_parser = subparsers.add_parser(
+            Command.LOCATE.value, help="Address to representative point."
+        )
+        _ = locate_parser.add_argument("addresses", nargs="+", help="Addresses to locate.")
+        _ = locate_parser.add_argument(
+            "--crs",
+            choices=[crs.name.lower() for crs in GeodeticCrs],
+            default=GeodeticCrs.JGD2011.name.lower(),
         )
         return parser

@@ -10,8 +10,10 @@ are real; town IDs are illustrative.
 
 | Component | Responsibility |
 | --- | --- |
-| [conftest.py](conftest.py) | `codec` fixture backed by the sample town master |
+| [conftest.py](conftest.py) | `codec` and `located_codec` fixtures backed by the sample datasets |
 | [fixtures/mt_town_sample.csv](fixtures/mt_town_sample.csv) | Sample town master in ABR format |
+| [fixtures/positions/](fixtures/positions/) | Sample position extensions and block, residence, and parcel masters with illustrative points |
+| [test_locate.py](test_locate.py) | Representative points, fallback, lot systems, datums, and position imports |
 | [test_address_codec.py](test_address_codec.py) | Encoding, decoding, formats, and error cases |
 | [test_address_code.py](test_address_code.py) | Code parsing and validation |
 | [test_text_normalizer.py](test_text_normalizer.py) | Normalization of notation variants |

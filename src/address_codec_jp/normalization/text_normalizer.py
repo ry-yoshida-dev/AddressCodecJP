@@ -58,9 +58,7 @@ class TextNormalizer:
     _KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(
         f"[{KanjiNumeral.CHARACTERS}]+(?=丁目|丁|番|号|条|線|地割|の|ノ|-)"
     )
-    _TRAILING_KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(
-        f"[{KanjiNumeral.CHARACTERS}]+$"
-    )
+    _TRAILING_KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(f"[{KanjiNumeral.CHARACTERS}]+$")
     _NAME_ENDING_NUMERAL: ClassVar[str] = "一"
     _REPEATED_DASH: ClassVar[re.Pattern[str]] = re.compile("-{2,}")
 

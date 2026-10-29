@@ -5,7 +5,9 @@ description = "Normalize Japanese addresses and convert them to and from address
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "geo-coordinate @ git+https://github.com/ry-yoshida-dev/GeoCoordinate.git@4c33a80c97fe939070e5515092e59b68b21f6b07",
+]
 
 [project.scripts]
 address-codec-jp = "address_codec_jp.cli:main"
@@ -14,13 +16,18 @@ address-codec-jp = "address_codec_jp.cli:main"
 dev = [
     "basedpyright>=1.20",
     "mypy>=1.13",
+    "numpy>=2.0",
     "pytest>=8.3",
     "ruff>=0.8",
+    "units @ git+https://github.com/ry-yoshida-dev/Units.git@61372604eb6f2347258bbf52df7224f590cdfb48",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/address_codec_jp"]

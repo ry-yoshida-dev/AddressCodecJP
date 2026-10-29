@@ -9,6 +9,7 @@ class CommandArguments(argparse.Namespace):
         self.command: str = ""
         self.database: str = ""
         self.source: str = ""
+        self.sources: list[str] = []
         self.addresses: list[str] = []
         self.codes: list[str] = []
         self.numeral: str = ""
@@ -16,3 +17,4 @@ class CommandArguments(argparse.Namespace):
         self.width: str = ""
         self.is_prefecture_excluded: bool = False
         self.is_county_excluded: bool = False
+        self.crs: str = ""

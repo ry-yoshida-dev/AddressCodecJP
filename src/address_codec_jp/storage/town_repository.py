@@ -99,6 +99,18 @@ class TownRepository:
         _ = connection.execute(cls._SCHEMA)
         return cls(connection)
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """
+        Connection to the database, shared with the position repository.
+
+        Returns
+        -------
+        sqlite3.Connection
+            Open connection owned by this repository.
+        """
+        return self._connection
+
     def __enter__(self) -> Self:
         return self
 

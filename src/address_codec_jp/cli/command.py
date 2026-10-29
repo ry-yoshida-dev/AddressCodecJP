@@ -7,3 +7,5 @@ class Command(Enum):
     IMPORT = "import"
     ENCODE = "encode"
     DECODE = "decode"
+    IMPORT_POSITIONS = "import-positions"
+    LOCATE = "locate"

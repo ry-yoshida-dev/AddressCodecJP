@@ -2,27 +2,36 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
+from geo_coordinate import GeodeticCrs
+
 from address_codec_jp.domain.address_code import AddressCode
 from address_codec_jp.domain.address_level import AddressLevel
+from address_codec_jp.domain.address_location import AddressLocation
 from address_codec_jp.domain.address_match import AddressMatch
 from address_codec_jp.formatting.address_format import AddressFormat
 from address_codec_jp.formatting.address_formatter import AddressFormatter
 from address_codec_jp.matching.area_matcher import AreaMatcher
 from address_codec_jp.normalization.lot_number_parser import LotNumberParser
 from address_codec_jp.normalization.text_normalizer import TextNormalizer
+from address_codec_jp.positioning.address_locator import AddressLocator
+from address_codec_jp.storage.abr_position_csv_reader import AbrPositionCsvReader
 from address_codec_jp.storage.abr_town_csv_reader import AbrTownCsvReader
 from address_codec_jp.storage.import_summary import ImportSummary
+from address_codec_jp.storage.position_import_summary import PositionImportSummary
+from address_codec_jp.storage.position_repository import PositionRepository
 from address_codec_jp.storage.town_repository import TownRepository
 
 
 class AddressCodec:
     """
-    Converter between free-form Japanese addresses and address codes.
+    Converter between free-form Japanese addresses, address codes, and coordinates.
 
     Parameters
     ----------
     repository : TownRepository
         Town dictionary used for matching and decoding.
+    position_repository : PositionRepository
+        Representative points used for locating. It shares the town database.
 
     Examples
     --------
@@ -32,8 +41,10 @@ class AddressCodec:
     '東京都千代田区丸の内1丁目2番3号'
     """
 
-    def __init__(self, repository: TownRepository) -> None:
+    def __init__(self, repository: TownRepository, position_repository: PositionRepository) -> None:
         self._repository: TownRepository = repository
+        self._locator: AddressLocator = AddressLocator(position_repository)
+        self._position_repository: PositionRepository = position_repository
         self._normalizer: TextNormalizer = TextNormalizer()
         self._matcher: AreaMatcher = self._create_matcher()
         self._formatter: AddressFormatter = AddressFormatter()
@@ -65,14 +76,15 @@ class AddressCodec:
         ValueError
             If the file is an SQLite database without a town table.
         """
-        return cls(TownRepository.open(database_path))
+        repository = TownRepository.open(database_path)
+        return cls(repository, PositionRepository(repository.connection))
 
     @classmethod
     def create(cls, database_path: Path | str) -> Self:
         """
         Open a codec backed by a town database, creating the file if needed.
 
-        Use this before ``import_town_master``.
+        Use this before ``import_town_master`` and ``import_positions``.
 
         Parameters
         ----------
@@ -84,7 +96,10 @@ class AddressCodec:
         Self
             Codec bound to the database.
         """
-        return cls(TownRepository.create(database_path))
+        repository = TownRepository.create(database_path)
+        position_repository = PositionRepository(repository.connection)
+        position_repository.create_schema()
+        return cls(repository, position_repository)
 
     def __enter__(self) -> Self:
         return self
@@ -129,6 +144,39 @@ class AddressCodec:
         summary = self._repository.replace_all(AbrTownCsvReader().read(path))
         self._matcher = self._create_matcher()
         return summary
+
+    def import_positions(self, path: Path) -> PositionImportSummary:
+        """
+        Add one position-related dataset of the Address Base Registry to the database.
+
+        Accepted are the position extensions of the prefecture, municipality, town,
+        block, residence, and parcel masters, and the block, residence, and parcel
+        masters that map lot numbers to the identifiers of the extensions. A lot is
+        located only when both its master and its extension are imported, in any order.
+        Rows with the same identifiers as earlier imports are replaced.
+
+        Parameters
+        ----------
+        path : Path
+            Registry CSV file or its ZIP archive, e.g. ``mt_town_pos_pref13.csv.zip``.
+
+        Returns
+        -------
+        PositionImportSummary
+            Dataset of the file and number of stored rows.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the file does not exist.
+        ValueError
+            If the file is not a position-related dataset or is malformed. Nothing is
+            stored in that case.
+        """
+        reader = AbrPositionCsvReader()
+        dataset = reader.detect(path)
+        stored_count = self._position_repository.save_all(reader.read(path))
+        return PositionImportSummary(dataset=dataset, stored_count=stored_count)
 
     def match(self, address: str) -> AddressMatch:
         """
@@ -236,3 +284,65 @@ class AddressCodec:
                         + "numbers only under a chome."
                     )
                 return self._formatter.format_town(town, address_code.lot, selected_format)
+
+    def locate(self, address: str, crs: GeodeticCrs = GeodeticCrs.JGD2011) -> AddressLocation:
+        """
+        Find the representative point of a free-form address.
+
+        Parameters
+        ----------
+        address : str
+            Address in any common notation.
+        crs : GeodeticCrs
+            Datum of the returned coordinate.
+
+        Returns
+        -------
+        AddressLocation
+            Point of the address, or of its nearest enclosing area when the registry has
+            no point for the address itself.
+
+        Raises
+        ------
+        ValueError
+            If the address is blank.
+        LookupError
+            If the address does not match a registered area, or neither the address nor
+            any enclosing area has an imported point.
+        RuntimeError
+            If no town or no position has been imported, or the published datum cannot
+            be transformed to ``crs``.
+        """
+        return self._locator.locate(self.encode(address), crs)
+
+    def locate_code(
+        self, code: AddressCode | str, crs: GeodeticCrs = GeodeticCrs.JGD2011
+    ) -> AddressLocation:
+        """
+        Find the representative point of an address code.
+
+        Parameters
+        ----------
+        code : AddressCode | str
+            Address code or its string form.
+        crs : GeodeticCrs
+            Datum of the returned coordinate.
+
+        Returns
+        -------
+        AddressLocation
+            Point of the code, or of its nearest enclosing area when the registry has no
+            point for the code itself.
+
+        Raises
+        ------
+        ValueError
+            If a string code is malformed.
+        LookupError
+            If neither the code nor any enclosing area has an imported point.
+        RuntimeError
+            If no position has been imported, or the published datum cannot be
+            transformed to ``crs``.
+        """
+        address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
+        return self._locator.locate(address_code, crs)

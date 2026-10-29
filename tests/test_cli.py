@@ -70,3 +70,27 @@ def test_import_of_missing_file_is_reported(
     ]
     assert CommandLineInterface().run(arguments) == 1
     assert "not found" in capsys.readouterr().err
+
+
+def test_import_positions_and_locate(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    cli = CommandLineInterface()
+    sources = sorted(str(path) for path in (FIXTURE.parent / "positions").glob("*.csv"))
+    assert cli.run(["--database", str(database), "import-positions", *sources]) == 0
+    assert cli.run(["--database", str(database), "locate", "千代田区丸の内1-2-9"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "\t".join(
+        [
+            "131016-0001001-2-9",
+            "131016-0001001-2",
+            "BLOCK",
+            "35.682000000",
+            "139.765000000",
+            "EPSG:6668",
+        ]
+    )
+
+
+def test_locate_without_positions_is_reported(
+    database: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert CommandLineInterface().run(["--database", str(database), "locate", "東京都"]) == 1
+    assert "No positions" in capsys.readouterr().err

@@ -8,7 +8,11 @@ stable **address codes**. Codes are anchored to the town master (町字マスタ
 (アドレス・ベース・レジストリ, ABR) published by the Digital Agency, so they stay valid
 independently of how an address was written.
 
-The library has no runtime dependencies beyond the Python standard library (3.12+).
+Addresses and codes are also mapped to **representative points** (代表点) published in the
+position extensions (位置参照拡張) of the ABR, from the prefecture down to the residence or
+land parcel. Points are returned as `GeoCoordinate` of
+[GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate), which is the only runtime
+dependency (Python 3.12+).
 
 ### Address code format
 
@@ -76,6 +80,21 @@ guessing when:
 - digits are left unread without lot numbers (`浅草橋6-1-1` must not become `浅草` +
   `橋6-1-1`)
 
+### Representative points
+
+`AddressCodec.locate` returns an `AddressLocation`. When the registry has no point for the
+address itself, the point of the nearest enclosing area is returned instead, in this order:
+residence (`号`) or sub-parcel → block (`番`) or parcel (`番地`) → town → oaza (for a chome
+or koaza) → municipality → prefecture. `located_code` and `level` tell which area the point
+stands for, and `is_exact` whether it is the address itself.
+
+Whether `1番2号` is looked up as a residence indication or as a land parcel follows the
+`rsdt_addr_flg` of the town, since residence indication towns also keep parcel numbers.
+
+The registry publishes points on JGD2000 or JGD2011, mixed even within one file. They are
+stored as published and transformed to the requested datum (JGD2011 by default) by
+`DatumTransformation` of GeoCoordinate.
+
 ## Setup
 
 1. Download the nationwide town master (日本 町字マスター データセット, about 12 MB zipped)
@@ -102,6 +121,40 @@ In Python, `AddressCodec.create(path)` creates a database for `import_town_maste
 for a missing file and `ValueError` for an SQLite file without the town table instead of
 modifying it. Importing again through the same codec refreshes its matching indexes.
 
+### Representative points
+
+Download the position-related datasets from the ABR download site and import them with
+`import-positions`. Points are added to the same database, and files can be added
+prefecture by prefecture in any order; rows with the same identifiers are replaced.
+
+| Dataset | Unit of distribution | URL path under `https://data.address-br.digital.go.jp/` |
+| --- | --- | --- |
+| Prefecture points | Nationwide | `mt_pref_pos/mt_pref_pos_all.csv.zip` |
+| Municipality points | Nationwide | `mt_city_pos/mt_city_pos_all.csv.zip` |
+| Town points | Prefecture | `mt_town_pos/pref/mt_town_pos_pref{NN}.csv.zip` |
+| Blocks and their points | Prefecture | `mt_rsdtdsp_blk/pref/mt_rsdtdsp_blk_pref{NN}.csv.zip`, `mt_rsdtdsp_blk_pos/pref/mt_rsdtdsp_blk_pos_pref{NN}.csv.zip` |
+| Residences and their points | Prefecture | `mt_rsdtdsp_rsdt/pref/mt_rsdtdsp_rsdt_pref{NN}.csv.zip`, `mt_rsdtdsp_rsdt_pos/pref/mt_rsdtdsp_rsdt_pos_pref{NN}.csv.zip` |
+| Parcels and their points | Municipality | `mt_parcel/city/mt_parcel_city{lg_code}.csv.zip`, `mt_parcel_pos/city/mt_parcel_pos_city{lg_code}.csv.zip` |
+
+Blocks, residences, and parcels need both the number master and its position extension,
+because the extension identifies a lot only by its registry ID. The dataset is identified
+by the CSV header, so files may be renamed.
+
+```bash
+mkdir -p data/positions
+base=https://data.address-br.digital.go.jp
+for dataset in mt_pref_pos/mt_pref_pos_all mt_city_pos/mt_city_pos_all \
+    mt_town_pos/pref/mt_town_pos_pref13 \
+    mt_rsdtdsp_blk/pref/mt_rsdtdsp_blk_pref13 mt_rsdtdsp_blk_pos/pref/mt_rsdtdsp_blk_pos_pref13 \
+    mt_rsdtdsp_rsdt/pref/mt_rsdtdsp_rsdt_pref13 mt_rsdtdsp_rsdt_pos/pref/mt_rsdtdsp_rsdt_pos_pref13; do
+  curl -o "data/positions/${dataset##*/}.csv.zip" "$base/$dataset.csv.zip"
+done
+uv run address-codec-jp --database towns.sqlite3 import-positions data/positions/*.zip
+```
+
+Tokyo (about 1.75 million residences) takes about 15 seconds to import and adds about
+550 MB to the database.
+
 ## Examples
 
 ### Python
@@ -114,7 +167,9 @@ with AddressCodec.open("towns.sqlite3") as codec:
     print(code)
     print(codec.decode(code))
     print(codec.decode(code, AddressFormat(numeral_style=NumeralStyle.KANJI)))
-    print(codec.decode(code, AddressFormat(lot_style=LotStyle.HYPHEN, is_prefecture_included=False)))
+    print(
+        codec.decode(code, AddressFormat(lot_style=LotStyle.HYPHEN, is_prefecture_included=False))
+    )
 
     for address in ["東京都", "台東区", "台東区浅草橋"]:
         address_code = codec.encode(address)
@@ -137,6 +192,32 @@ with AddressCodec.open("towns.sqlite3") as codec:
 
 Output above is from the ABR town master released in October 2026.
 
+```python
+from geo_coordinate import GeodeticCrs
+
+from address_codec_jp import AddressCodec
+
+with AddressCodec.open("towns.sqlite3") as codec:
+    for address in ["千代田区内幸町1-6-1", "千代田区丸の内1-9-1", "台東区浅草橋"]:
+        location = codec.locate(address)
+        print(location.located_code, location.level.name, location.is_exact)
+        print(location.coordinate.latitude.degree, location.coordinate.longitude.degree)
+
+    print(codec.locate_code("131016-0001001-6-1", GeodeticCrs.WGS84).crs)
+```
+
+```
+131016-0001001-6-1 RESIDENCE True
+[35.66876079] [139.75812148]
+131016-0011001-9 BLOCK False
+[35.681252] [139.767235]
+131067 MUNICIPALITY False
+[35.712607] [139.779984]
+EPSG:4326
+```
+
+Output above is from the Tokyo datasets released in October 2025.
+
 ### Command line
 
 ```bash
@@ -147,6 +228,18 @@ uv run address-codec-jp decode 131016-0011001-2-3 --lot hyphen --width full --no
 
 Decode options: `--numeral {arabic,kanji}`, `--lot {residence_indication,land_parcel,hyphen}`,
 `--width {half,full}`, `--no-prefecture`, `--no-county`.
+
+```bash
+uv run address-codec-jp locate "千代田区内幸町1-6-1" "台東区浅草橋" --crs wgs84
+```
+
+```
+131016-0001001-6-1	131016-0001001-6-1	RESIDENCE	35.668760794	139.758121483	EPSG:4326
+131067-0004000	131067	MUNICIPALITY	35.712607000	139.779984000	EPSG:4326
+```
+
+Columns: requested code, located code, level, latitude, longitude, and datum.
+Locate options: `--crs {tokyo,jgd2000,jgd2011,wgs84}`.
 
 ## Limitations
 
@@ -166,6 +259,17 @@ Decode options: `--numeral {arabic,kanji}`, `--lot {residence_indication,land_pa
 - In hyphen notation, `春光台１条12-3` reads as chome 12 when that chome exists.
 - Oaza and koaza names are looked up by scanning all names of the municipality
   (about 0.7 ms per address on the nationwide master).
+- Only representative points are provided; the ABR polygon columns (`plygn_*`) are empty
+  in the current releases, so areas are not returned as shapes.
+- Oaza-level towns added on import (e.g. `台東区浅草橋`) have no published point and are
+  located at their municipality.
+- Residences with a second residence number and parcels with a third number cannot be
+  expressed as address codes and are not imported.
+- Importing a newer number master does not remove blocks, residences, or parcels that it
+  marks as abolished (`ablt_date`); rebuild the database to drop them.
+- JGD2000 points are transformed to JGD2011 without the Tohoku correction grid
+  (`touhokutaiheiyouoki2011.gsb`) unless PROJ has it installed, so points in the area of
+  the 2011 Tohoku earthquake can be off by several meters.
 
 ## Development
 
