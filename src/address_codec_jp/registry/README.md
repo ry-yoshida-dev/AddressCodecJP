@@ -2,12 +2,9 @@
 
 ## Overview
 
-Reads the files of the Address Base Registry. A file is identified by its CSV header
-(prefecture and municipality points, which share one header, by the code of the first
-row), so files may be renamed, and both plain `.csv` files and `.zip` archives are
-accepted.
-The town master is read as `Town` records, and the position-related datasets as
-`PositionRecord`s that `storage` persists.
+Reads Address Base Registry files, plain `.csv` or `.zip`. The dataset is identified by
+the CSV header, so files may be renamed. The town master is read as `Town` records, and
+the position-related datasets as `PositionRecord`s that `storage` persists.
 
 ## Components
 

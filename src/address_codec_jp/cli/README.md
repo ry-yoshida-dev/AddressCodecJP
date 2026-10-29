@@ -26,11 +26,11 @@ output stays aligned with the input.
 ```bash
 address-codec-jp --database towns.sqlite3 download data --prefecture 13 --import
 address-codec-jp --database towns.sqlite3 import data/*.zip
-address-codec-jp --database towns.sqlite3 encode "千代田区丸の内1-2-3" --verify-lot
-address-codec-jp --database towns.sqlite3 decode 131016-0001001-2-3 --numeral kanji
-address-codec-jp --database towns.sqlite3 decode 131016-0001001-2-3 --kana --postal-code
-address-codec-jp --database towns.sqlite3 postal 100-0005
-address-codec-jp --database towns.sqlite3 locate "千代田区丸の内1-2-3" --crs wgs84
+address-codec-jp --database towns.sqlite3 encode "千代田区内幸町1-6-1" --verify-lot
+address-codec-jp --database towns.sqlite3 decode 131016-0011001-2-3 --numeral kanji
+address-codec-jp --database towns.sqlite3 decode 131016-0001001-6-1 --kana
+address-codec-jp --database towns.sqlite3 postal 060-0042
+address-codec-jp --database towns.sqlite3 locate "千代田区内幸町1-6-1" --crs wgs84
 address-codec-jp --database towns.sqlite3 nearest 35.6812,139.7671 --max-distance 500
 address-codec-jp --database towns.sqlite3 info
 cut -f1 addresses.tsv | address-codec-jp --database towns.sqlite3 encode --output jsonl

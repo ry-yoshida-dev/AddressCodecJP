@@ -3,13 +3,10 @@
 ## Overview
 
 Identifies the most specific registered area at the start of a normalized address.
-The prefecture or municipality is found by longest prefix, falling back to shorter
-municipality names confirmed by a town name; a name shared by several
-municipalities, such as a designated city without its ward, is resolved by the town
-name. For the rest, every reading
-of oaza, chome, koaza, and lot numbers is built and ranked; ties between different towns
-are rejected as ambiguous instead of being resolved silently, unless a postal code
-written with the address tells them apart.
+The municipality is found by longest prefix, and a name shared by several
+municipalities is resolved by the town name. Every reading of oaza, chome, koaza, and
+lot numbers is then ranked; ties between different towns raise `AmbiguousAddressError`
+unless a written postal code tells them apart.
 
 ## Components
 
