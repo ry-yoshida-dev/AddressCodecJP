@@ -36,14 +36,24 @@ chome part) on import. It never carries lot numbers.
 ## Setup
 
 ```bash
-uv sync
-uv run address-codec-jp --database towns.sqlite3 download data --prefecture 13 --import
+pip install git+https://github.com/ry-yoshida-dev/AddressCodecJP.git
 ```
 
-This downloads the nationwide town master, prefecture and municipality points, and the
-town, block, and residence files of Tokyo, and imports them into `towns.sqlite3`.
-`--municipality LG_CODE` adds land parcel files. Files already downloaded can be imported
-with `import`, and `info` lists what a database was built from.
+No database setup is needed. On first use, `AddressCodec.open()` and the command line
+download the nationwide town master and the prefecture, municipality, and town points
+(about 15 MB) from the ABR download site and build a database (about 180 MB) in the
+user cache directory. Set `ADDRESS_CODEC_JP_CACHE_DIR` to use another directory, e.g. in
+a container image. A new schema version of the library builds its own database.
+
+This database encodes and decodes addresses of every level, but locates them only to
+the town point. Block and residence points of some prefectures are added with
+
+```bash
+address-codec-jp download data --prefecture 13 --import
+```
+
+`--municipality LG_CODE` adds land parcel files, `--database PATH` works on another
+database file, and `info` lists what a database was built from.
 
 ## Examples
 
@@ -54,7 +64,7 @@ from geo_coordinate import GeoCoordinate
 
 from address_codec_jp import AddressCodec, AddressFormat, LotStyle, NameScript, NumeralStyle
 
-with AddressCodec.open("towns.sqlite3") as codec:
+with AddressCodec.open() as codec:
     code = codec.encode("東京都千代田区丸の内１丁目２番３号")
     print(code, code.level.name)
     print(codec.decode(code, AddressFormat(numeral_style=NumeralStyle.KANJI)))
@@ -82,8 +92,8 @@ with AddressCodec.open("towns.sqlite3") as codec:
 ```
 
 `locate` falls back to the nearest enclosing area that has a point; `is_exact` tells
-whether the point is the address itself. Output is from the Tokyo datasets released in
-October 2026.
+whether the point is the address itself. Output is from the datasets released in
+October 2026, with the block and residence points of Tokyo added.
 
 ### Command line
 

@@ -1,5 +1,4 @@
 import argparse
-from typing import ClassVar
 
 from geo_coordinate import GeodeticCrs
 
@@ -19,11 +18,9 @@ class CommandArguments(argparse.Namespace):
     initial values here are only placeholders.
     """
 
-    DEFAULT_DATABASE: ClassVar[str] = "towns.sqlite3"
-
     def __init__(self) -> None:
         super().__init__()
-        self.database: str = self.DEFAULT_DATABASE
+        self.database: str | None = None
         self.command: str = ""
         self.sources: list[str] = []
         self.inputs: list[str] = []

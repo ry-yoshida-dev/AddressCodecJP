@@ -4,6 +4,7 @@ from typing import ClassVar, Self
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
+from address_codec_jp.database_cache import DatabaseCache
 from address_codec_jp.domain.address import Address
 from address_codec_jp.domain.address_code import AddressCode
 from address_codec_jp.domain.address_level import AddressLevel
@@ -38,7 +39,7 @@ class AddressCodec:
 
     Examples
     --------
-    >>> with AddressCodec.open("towns.sqlite3") as codec:  # doctest: +SKIP
+    >>> with AddressCodec.open() as codec:  # doctest: +SKIP
     ...     code = codec.encode("東京都千代田区丸の内１丁目２番３号")
     ...     codec.decode(code)
     '東京都千代田区丸の内1丁目2番3号'
@@ -57,14 +58,15 @@ class AddressCodec:
         self._nearest_finder: NearestAddressFinder = NearestAddressFinder(database.positions)
 
     @classmethod
-    def open(cls, database_path: Path | str) -> Self:
+    def open(cls, database_path: Path | str | None = None) -> Self:
         """
-        Open a codec on an existing database in read-only mode.
+        Open a codec on a database in read-only mode.
 
         Parameters
         ----------
-        database_path : Path | str
-            SQLite file created by ``RegistryImporter``.
+        database_path : Path | str | None
+            SQLite file created by ``RegistryImporter``, or ``None`` for the database of
+            ``DatabaseCache.default``, which is downloaded and built on first use.
 
         Returns
         -------
@@ -77,8 +79,12 @@ class AddressCodec:
             If the database file does not exist.
         UnsupportedDatabaseError
             If the file is not a database of this version of the library.
+        RegistryDownloadError
+            If the default database has to be built and a registry file cannot be
+            downloaded.
         """
-        return cls(AddressDatabase.open_read_only(database_path))
+        resolved_path = DatabaseCache.default().ensure() if database_path is None else database_path
+        return cls(AddressDatabase.open_read_only(resolved_path))
 
     def __enter__(self) -> Self:
         return self

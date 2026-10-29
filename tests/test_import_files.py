@@ -75,17 +75,6 @@ def test_import_command_accepts_every_dataset(
     assert capsys.readouterr().out.splitlines()[0].startswith("Imported 42 rows of mt_town")
 
 
-def test_database_option_defaults_to_towns_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    cli = CommandLineInterface()
-    assert cli.run(["import", str(TOWN_MASTER)]) == 0
-    assert (tmp_path / "towns.sqlite3").is_file()
-    assert cli.run(["encode", "千代田区丸の内1-2-3"]) == 0
-    assert capsys.readouterr().out.splitlines()[-1] == "131016-0011001-2-3"
-
-
 def test_a_path_given_twice_is_imported_once(tmp_path: Path) -> None:
     with RegistryImporter.open(tmp_path / "towns.sqlite3") as importer:
         summaries = importer.import_files([TOWN_MASTER, TOWN_MASTER])

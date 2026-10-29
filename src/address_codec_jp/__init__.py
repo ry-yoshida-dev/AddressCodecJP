@@ -1,4 +1,5 @@
 from address_codec_jp.address_codec import AddressCodec
+from address_codec_jp.database_cache import DatabaseCache
 from address_codec_jp.domain import (
     Address,
     AddressCode,
@@ -50,6 +51,7 @@ __all__ = [
     "AddressMatch",
     "AddressNotFoundError",
     "AmbiguousAddressError",
+    "DatabaseCache",
     "DatasetImport",
     "DatasetNotImportedError",
     "DigitWidth",

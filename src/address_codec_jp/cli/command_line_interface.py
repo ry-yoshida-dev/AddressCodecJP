@@ -15,6 +15,7 @@ from address_codec_jp.cli.enum_argument import EnumArgument
 from address_codec_jp.cli.output_format import OutputFormat
 from address_codec_jp.cli.output_value import OutputValue
 from address_codec_jp.cli.record_writer import RecordWriter
+from address_codec_jp.database_cache import DatabaseCache
 from address_codec_jp.download.registry_downloader import RegistryDownloader
 from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
 from address_codec_jp.formatting.address_format import AddressFormat
@@ -63,7 +64,7 @@ class CommandLineInterface:
             return 1
 
     def _execute(self, command: Command, namespace: CommandArguments) -> int:
-        database_path = Path(namespace.database)
+        database_path = self._resolve_database(namespace)
         match command:
             case Command.IMPORT:
                 self._import(database_path, [Path(source) for source in namespace.sources])
@@ -94,6 +95,17 @@ class CommandLineInterface:
                     return self._query(command, codec, namespace, writer)
             case _:
                 assert_never(command)
+
+    def _resolve_database(self, namespace: CommandArguments) -> Path:
+        if namespace.database is not None:
+            return Path(namespace.database)
+        cache = DatabaseCache.default()
+        if not cache.is_built:
+            print(
+                f"Building the address database in {cache.path}; this runs only once.",
+                file=sys.stderr,
+            )
+        return cache.ensure()
 
     def _import(self, database_path: Path, sources: list[Path]) -> None:
         with RegistryImporter.open(database_path) as importer:
@@ -268,8 +280,8 @@ class CommandLineInterface:
         )
         _ = parser.add_argument(
             "--database",
-            default=CommandArguments.DEFAULT_DATABASE,
-            help=f"SQLite address database path ({CommandArguments.DEFAULT_DATABASE} by default).",
+            help="SQLite address database path. By default, a database of all towns is "
+            + "downloaded and built once in the user cache directory.",
         )
         subparsers = parser.add_subparsers(dest="command", required=True)
 

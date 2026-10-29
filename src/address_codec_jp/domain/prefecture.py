@@ -50,3 +50,15 @@ class Prefecture:
             ``True`` for ``01`` to ``47``.
         """
         return cls._CODE.fullmatch(text) is not None
+
+    @classmethod
+    def list_codes(cls) -> list[str]:
+        """
+        List all prefecture codes.
+
+        Returns
+        -------
+        list[str]
+            ``01`` to ``47`` in ascending order.
+        """
+        return [f"{number:02d}" for number in range(1, 48)]

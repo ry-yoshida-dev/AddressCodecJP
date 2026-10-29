@@ -6,7 +6,8 @@ Command line front end installed as `address-codec-jp`. Import commands go throu
 `RegistryImporter`, and query commands through a read-only `AddressCodec`. Query commands
 read their inputs from the arguments, or line by line from standard input, and write
 tab-separated text or JSON Lines; blank input lines are reported as errors, so JSON Lines
-output stays aligned with the input.
+output stays aligned with the input. Without `--database`, every command uses the
+database of `DatabaseCache`, built on first use.
 
 ## Components
 
@@ -24,14 +25,15 @@ output stays aligned with the input.
 ## Examples
 
 ```bash
-address-codec-jp --database towns.sqlite3 download data --prefecture 13 --import
+address-codec-jp encode "千代田区内幸町1-6-1"
+address-codec-jp decode 131016-0011001-2-3 --numeral kanji
+address-codec-jp decode 131016-0001001-6-1 --kana
+address-codec-jp postal 060-0042
+address-codec-jp nearest 35.6812,139.7671 --max-distance 500
+address-codec-jp download data --prefecture 13 --import
+address-codec-jp encode "千代田区内幸町1-6-1" --verify-lot
+address-codec-jp locate "千代田区内幸町1-6-1" --crs wgs84
+address-codec-jp info
+cut -f1 addresses.tsv | address-codec-jp encode --output jsonl
 address-codec-jp --database towns.sqlite3 import data/*.zip
-address-codec-jp --database towns.sqlite3 encode "千代田区内幸町1-6-1" --verify-lot
-address-codec-jp --database towns.sqlite3 decode 131016-0011001-2-3 --numeral kanji
-address-codec-jp --database towns.sqlite3 decode 131016-0001001-6-1 --kana
-address-codec-jp --database towns.sqlite3 postal 060-0042
-address-codec-jp --database towns.sqlite3 locate "千代田区内幸町1-6-1" --crs wgs84
-address-codec-jp --database towns.sqlite3 nearest 35.6812,139.7671 --max-distance 500
-address-codec-jp --database towns.sqlite3 info
-cut -f1 addresses.tsv | address-codec-jp --database towns.sqlite3 encode --output jsonl
 ```
