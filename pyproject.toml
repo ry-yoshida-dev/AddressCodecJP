@@ -1,0 +1,47 @@
+[project]
+name = "address-codec-jp"
+version = "0.1.0"
+description = "Normalize Japanese addresses and convert them to and from address codes based on the Address Base Registry."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+address-codec-jp = "address_codec_jp.cli:main"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.20",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/address_codec_jp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "N", "ISC"]
+ignore = ["ISC003", "RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "src"
+
+[tool.basedpyright]
+pythonVersion = "3.12"
+include = ["src", "tests"]
+typeCheckingMode = "recommended"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

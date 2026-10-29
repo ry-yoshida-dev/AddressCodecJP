@@ -1,0 +1,319 @@
+import re
+from collections import defaultdict
+from collections.abc import Iterable
+from typing import ClassVar
+
+from address_codec_jp.domain.lot_number import LotNumber
+from address_codec_jp.domain.municipality import Municipality
+from address_codec_jp.domain.prefecture import Prefecture
+from address_codec_jp.domain.town import Town
+from address_codec_jp.matching.area_match import AreaMatch
+from address_codec_jp.matching.candidate_set import CandidateSet
+from address_codec_jp.matching.municipality_match import MunicipalityMatch
+from address_codec_jp.matching.name_index import NameIndex
+from address_codec_jp.matching.town_interpretation import TownInterpretation
+from address_codec_jp.normalization.lot_number_parser import LotNumberParser
+from address_codec_jp.normalization.text_normalizer import TextNormalizer
+from address_codec_jp.storage.town_repository import TownRepository
+
+
+class AreaMatcher:
+    """
+    Matcher from a normalized address to the most specific registered area.
+
+    The prefecture or municipality is found by longest prefix. Prefecture and county
+    names may be omitted, the prefecture may be written without ``都``/``府``/``県``
+    (``東京``), and the ward of a designated city may be omitted (``横浜市山下町``). When
+    such a name fits several municipalities, the town name must decide among them. For
+    the text after the municipality, every combination of oaza, chome, koaza, and lot
+    numbers is tried, and the best ``TownInterpretation`` wins. A reading is discarded when it reads
+    no lot numbers but leaves digits unread (``浅草`` + ``橋6-1-1``), or puts lot numbers
+    on an oaza-level town that the registry divides into chome. When the best readings
+    point to different towns or lot numbers, the address is rejected as ambiguous instead
+    of picking one.
+
+    Parameters
+    ----------
+    repository : TownRepository
+        Source of municipalities and towns.
+    normalizer : TextNormalizer
+        Normalizer applied to registry names.
+    lot_parser : LotNumberParser
+        Parser for the numbers after the town name.
+    """
+
+    _CHOME: ClassVar[re.Pattern[str]] = re.compile(
+        r"-?(?P<number>[0-9]+)(?P<marker>丁目|丁|-|の|ノ)?"
+    )
+    _EXPLICIT_CHOME_MARKERS: ClassVar[frozenset[str]] = frozenset({"丁目", "丁"})
+    _SEPARATOR_MARKERS: ClassVar[frozenset[str]] = frozenset({"-", "の", "ノ"})
+    _UNREAD_CHOME: ClassVar[re.Pattern[str]] = re.compile(r"[0-9]+丁")
+    _ASCII_DIGITS: ClassVar[frozenset[str]] = frozenset("0123456789")
+    _PREFECTURE_SUFFIXES: ClassVar[tuple[str, ...]] = ("都", "府", "県")
+
+    def __init__(
+        self, repository: TownRepository, normalizer: TextNormalizer, lot_parser: LotNumberParser
+    ) -> None:
+        self._repository: TownRepository = repository
+        self._normalizer: TextNormalizer = normalizer
+        self._lot_parser: LotNumberParser = lot_parser
+        self._prefecture_index: dict[str, Prefecture] | None = None
+        self._municipality_index: dict[str, set[Municipality]] | None = None
+        self._ward_omitted_keys: set[str] = set()
+        self._oaza_indexes: dict[str, NameIndex] = {}
+
+    def match(self, normalized_address: str) -> AreaMatch:
+        """
+        Identify the most specific area at the start of a normalized address.
+
+        Parameters
+        ----------
+        normalized_address : str
+            Address normalized by ``TextNormalizer.normalize``.
+
+        Returns
+        -------
+        AreaMatch
+            Matched prefecture, municipality, town, lot numbers, and unconsumed text.
+
+        Raises
+        ------
+        LookupError
+            If nothing matches, or the address is ambiguous.
+        RuntimeError
+            If the repository contains no towns.
+        """
+        municipality_match = self._match_municipality(normalized_address)
+        if municipality_match is None:
+            return self._match_prefecture_only(normalized_address)
+        municipalities = municipality_match.municipalities
+        if not NameIndex.strip_prefix(municipality_match.remainder):
+            if municipality_match.is_ward_omitted or len(municipalities) > 1:
+                raise LookupError(
+                    f"Municipality {municipality_match.name!r} is ambiguous: "
+                    + f"{self._describe_all(municipalities)}. Add the prefecture or ward."
+                )
+            municipality = municipalities[0]
+            return AreaMatch(
+                prefecture=municipality.prefecture,
+                municipality=municipality,
+                town=None,
+                lot=LotNumber(),
+                remainder="",
+            )
+        return self._match_town(
+            municipalities,
+            municipality_match.remainder,
+            is_town_required=municipality_match.is_ward_omitted or len(municipalities) > 1,
+        )
+
+    def _match_prefecture_only(self, text: str) -> AreaMatch:
+        index = self._get_prefecture_index()
+        key = self._longest_prefix(self._normalizer.fold(text), index)
+        if key is None:
+            raise LookupError(f"No prefecture or municipality matches {text!r}.")
+        prefecture = index[key]
+        remainder = text[len(key) :]
+        if remainder:
+            raise LookupError(f"No municipality in {prefecture.name} matches {remainder!r}.")
+        return AreaMatch(
+            prefecture=prefecture, municipality=None, town=None, lot=LotNumber(), remainder=""
+        )
+
+    def _match_municipality(self, text: str) -> MunicipalityMatch | None:
+        index = self._get_municipality_index()
+        key = self._longest_prefix(self._normalizer.fold(text), index)
+        if key is None:
+            return None
+        return MunicipalityMatch(
+            name=text[: len(key)],
+            municipalities=sorted(index[key], key=lambda municipality: municipality.lg_code),
+            remainder=text[len(key) :],
+            is_ward_omitted=key in self._ward_omitted_keys,
+        )
+
+    def _match_town(
+        self, municipalities: list[Municipality], text: str, is_town_required: bool
+    ) -> AreaMatch:
+        interpretations = [
+            interpretation
+            for municipality in municipalities
+            for interpretation in self._interpret_all(municipality, text)
+            if not is_town_required or interpretation.name_length > 0
+        ]
+        description = self._describe_all(municipalities)
+        if not interpretations:
+            raise LookupError(f"No town in {description} matches {text!r}.")
+        best_key = min(interpretation.ranking_key for interpretation in interpretations)
+        best = [item for item in interpretations if item.ranking_key == best_key]
+        towns = {(town.lg_code, town.machiaza_id): town for item in best for town in item.towns}
+        lots = {item.lot for item in best}
+        if len(towns) == 1 and len(lots) > 1:
+            raise LookupError(
+                f"Lot numbers of {text!r} in {description} are ambiguous: "
+                + f"{sorted(map(str, lots))}."
+            )
+        if len(towns) > 1:
+            names = sorted(
+                f"{self._describe(town.municipality)}{town.oaza_name}{town.chome_name}"
+                + f"{town.koaza_name}({town.lg_code}-{town.machiaza_id})"
+                for town in towns.values()
+            )
+            raise LookupError(f"{text!r} in {description} is ambiguous: {names}.")
+        town = next(iter(towns.values()))
+        return AreaMatch(
+            prefecture=town.municipality.prefecture,
+            municipality=town.municipality,
+            town=town,
+            lot=best[0].lot,
+            remainder=best[0].remainder,
+        )
+
+    def _interpret_all(self, municipality: Municipality, text: str) -> list[TownInterpretation]:
+        return [
+            interpretation
+            for oaza_candidates in self._get_oaza_index(municipality.lg_code).match_all(text)
+            for chome_candidates in self._chome_options(oaza_candidates)
+            for town_candidates in self._koaza_options(chome_candidates)
+            if (interpretation := self._interpret(town_candidates, len(text))) is not None
+        ]
+
+    def _chome_options(self, candidates: CandidateSet) -> list[CandidateSet]:
+        options: list[CandidateSet] = []
+        matched = self._CHOME.match(candidates.remainder)
+        if matched is not None:
+            marker = matched.group("marker")
+            is_chome_like = (
+                marker in self._EXPLICIT_CHOME_MARKERS
+                or marker in self._SEPARATOR_MARKERS
+                or matched.end() == len(candidates.remainder)
+            )
+            number = int(matched.group("number"))
+            selected = [town for town in candidates.towns if town.chome_number == number]
+            if is_chome_like and selected:
+                options.append(
+                    CandidateSet(
+                        towns=selected,
+                        remainder=candidates.remainder[matched.end() :],
+                        penalty=candidates.penalty,
+                        split_digit_count=candidates.split_digit_count,
+                    )
+                )
+        without_chome = [town for town in candidates.towns if town.chome_number is None]
+        if without_chome:
+            options.append(
+                CandidateSet(
+                    towns=without_chome,
+                    remainder=candidates.remainder,
+                    penalty=candidates.penalty,
+                    split_digit_count=candidates.split_digit_count,
+                )
+            )
+        return options
+
+    def _koaza_options(self, candidates: CandidateSet) -> list[CandidateSet]:
+        koaza_index = NameIndex(self._normalizer)
+        for town in candidates.towns:
+            if town.koaza_name:
+                koaza_index.add(town.koaza_name, town)
+        options = [
+            CandidateSet(
+                towns=koaza_candidates.towns,
+                remainder=koaza_candidates.remainder,
+                penalty=candidates.penalty + koaza_candidates.penalty,
+                split_digit_count=candidates.split_digit_count + koaza_candidates.split_digit_count,
+            )
+            for koaza_candidates in koaza_index.match_all(candidates.remainder)
+        ]
+        without_koaza = [town for town in candidates.towns if not town.koaza_name]
+        if without_koaza:
+            options.append(
+                CandidateSet(
+                    towns=without_koaza,
+                    remainder=candidates.remainder,
+                    penalty=candidates.penalty,
+                    split_digit_count=candidates.split_digit_count,
+                )
+            )
+        return options
+
+    def _interpret(self, candidates: CandidateSet, text_length: int) -> TownInterpretation | None:
+        lot_result = self._lot_parser.parse(candidates.remainder)
+        if self._UNREAD_CHOME.match(lot_result.remainder):
+            return None
+        if not lot_result.lot.numbers and not self._ASCII_DIGITS.isdisjoint(lot_result.remainder):
+            return None
+        towns = [
+            town for town in candidates.towns if town.is_registered or not lot_result.lot.numbers
+        ]
+        if not towns:
+            return None
+        return TownInterpretation(
+            towns=towns,
+            lot=lot_result.lot,
+            remainder=lot_result.remainder,
+            name_length=text_length - len(candidates.remainder) - candidates.split_digit_count,
+            penalty=candidates.penalty,
+        )
+
+    def _get_prefecture_index(self) -> dict[str, Prefecture]:
+        if self._prefecture_index is None:
+            self._prefecture_index = {
+                self._fold_name(alias): municipality.prefecture
+                for municipality in self._repository.list_municipalities()
+                for alias in self._prefecture_aliases(municipality.prefecture_name)
+            }
+        return self._prefecture_index
+
+    def _get_municipality_index(self) -> dict[str, set[Municipality]]:
+        if self._municipality_index is None:
+            index: dict[str, set[Municipality]] = defaultdict(set)
+            municipalities = self._repository.list_municipalities()
+            if not municipalities:
+                raise RuntimeError("The town database is empty. Import the town master first.")
+            for municipality in municipalities:
+                prefixes = {
+                    prefecture + county
+                    for prefecture in {"", *self._prefecture_aliases(municipality.prefecture_name)}
+                    for county in {"", municipality.county_name}
+                }
+                for prefix in prefixes:
+                    full_key = self._fold_name(
+                        prefix + municipality.city_name + municipality.ward_name
+                    )
+                    index[full_key].add(municipality)
+                    if municipality.ward_name:
+                        ward_omitted_key = self._fold_name(prefix + municipality.city_name)
+                        index[ward_omitted_key].add(municipality)
+                        self._ward_omitted_keys.add(ward_omitted_key)
+            self._municipality_index = dict(index)
+        return self._municipality_index
+
+    def _get_oaza_index(self, lg_code: str) -> NameIndex:
+        if lg_code not in self._oaza_indexes:
+            index = NameIndex(self._normalizer)
+            for town in self._repository.list_towns(lg_code):
+                index.add(self._oaza_key_name(town), town)
+            self._oaza_indexes[lg_code] = index
+        return self._oaza_indexes[lg_code]
+
+    def _oaza_key_name(self, town: Town) -> str:
+        return town.oaza_name + (town.chome_name if town.chome_number is None else "")
+
+    def _prefecture_aliases(self, prefecture_name: str) -> set[str]:
+        if prefecture_name.endswith(self._PREFECTURE_SUFFIXES):
+            return {prefecture_name, prefecture_name[:-1]}
+        return {prefecture_name}
+
+    def _fold_name(self, name: str) -> str:
+        return self._normalizer.fold(self._normalizer.normalize(name))
+
+    def _longest_prefix(self, text: str, keys: Iterable[str]) -> str | None:
+        matching_keys = [key for key in keys if key and text.startswith(key)]
+        return max(matching_keys, key=len, default=None)
+
+    def _describe(self, municipality: Municipality) -> str:
+        return municipality.prefecture_name + municipality.city_name + municipality.ward_name
+
+    def _describe_all(self, municipalities: list[Municipality]) -> str:
+        return ", ".join(self._describe(municipality) for municipality in municipalities)
