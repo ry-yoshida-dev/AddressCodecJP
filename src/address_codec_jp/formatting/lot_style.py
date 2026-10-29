@@ -7,6 +7,10 @@ class LotStyle(Enum):
 
     Attributes
     ----------
+    AUTOMATIC
+        ``LAND_PARCEL`` in towns that use land parcel numbers only, and
+        ``RESIDENCE_INDICATION`` in towns where residence indication covers all or part
+        of the town.
     RESIDENCE_INDICATION
         Residence indication style, e.g. ``1丁目2番3号``.
     LAND_PARCEL
@@ -15,6 +19,7 @@ class LotStyle(Enum):
         Hyphenated style, e.g. ``1-2-3``.
     """
 
+    AUTOMATIC = auto()
     RESIDENCE_INDICATION = auto()
     LAND_PARCEL = auto()
     HYPHEN = auto()

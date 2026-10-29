@@ -1,6 +1,6 @@
 from pathlib import Path
 from types import TracebackType
-from typing import Self
+from typing import ClassVar, Self
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
@@ -43,6 +43,8 @@ class AddressCodec:
     ...     codec.decode(code)
     '東京都千代田区丸の内1丁目2番3号'
     """
+
+    DEFAULT_FORMAT: ClassVar[AddressFormat] = AddressFormat()
 
     def __init__(self, database: AddressDatabase) -> None:
         self._database: AddressDatabase = database
@@ -220,19 +222,17 @@ class AddressCodec:
         address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
         towns = self._database.towns
         if address_code.machiaza_id is not None:
-            town = towns.get_town(address_code.lg_code, address_code.machiaza_id)
-            return Address(
-                prefecture=town.municipality.prefecture,
-                municipality=town.municipality,
-                town=town,
-                lot=address_code.lot,
+            return Address.for_town(
+                towns.get_town(address_code.lg_code, address_code.machiaza_id), address_code.lot
             )
         if address_code.level is AddressLevel.PREFECTURE:
             return Address(prefecture=towns.get_prefecture(address_code.prefecture_code))
         municipality = towns.get_municipality(address_code.lg_code)
         return Address(prefecture=municipality.prefecture, municipality=municipality)
 
-    def decode(self, code: AddressCode | str, address_format: AddressFormat | None = None) -> str:
+    def decode(
+        self, code: AddressCode | str, address_format: AddressFormat = DEFAULT_FORMAT
+    ) -> str:
         """
         Convert an address code to address text.
 
@@ -240,8 +240,8 @@ class AddressCodec:
         ----------
         code : AddressCode | str
             Address code or its string form.
-        address_format : AddressFormat | None
-            Output format. The default format is used when omitted.
+        address_format : AddressFormat
+            Output format.
 
         Returns
         -------
@@ -258,7 +258,32 @@ class AddressCodec:
         ReadingNotFoundError
             If katakana is requested and the registry has no reading of a name.
         """
-        return self._formatter.format(self.resolve(code), address_format or AddressFormat())
+        return self._formatter.format(self.resolve(code), address_format)
+
+    def list_by_postal_code(self, postal_code: str) -> list[Address]:
+        """
+        List the towns registered with a postal code.
+
+        Parameters
+        ----------
+        postal_code : str
+            Postal code such as ``100-0005``, ``〒1000005``, or with full-width digits.
+
+        Returns
+        -------
+        list[Address]
+            Town-level addresses ordered by code. Empty when no town has the postal code;
+            the registry gives postal codes for only about 13% of the towns.
+
+        Raises
+        ------
+        ValueError
+            If the text is not a postal code.
+        """
+        towns = self._database.towns.list_towns_by_postal_code(
+            self._normalizer.parse_postal_code(postal_code)
+        )
+        return [Address.for_town(town) for town in towns]
 
     def locate(self, address: str, crs: GeodeticCrs = GeodeticCrs.JGD2011) -> AddressLocation:
         """

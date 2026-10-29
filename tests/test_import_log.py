@@ -16,12 +16,12 @@ def test_imports_are_logged_with_digests(tmp_path: Path) -> None:
     database = tmp_path / "towns.sqlite3"
     started_at = datetime.now(UTC)
     with RegistryImporter.open(database) as importer:
-        town_summary = importer.import_town_master(TOWN_MASTER)
-        position_summary = importer.import_positions(TOWN_POSITIONS)
+        town_summary = importer.import_file(TOWN_MASTER)
+        position_summary = importer.import_file(TOWN_POSITIONS)
     with AddressCodec.open(database) as codec:
         imports = codec.list_imports()
     assert [(item.dataset, item.source_name, item.row_count) for item in imports] == [
-        (AbrDataset.TOWN, "mt_town_sample.csv", town_summary.registered_count),
+        (AbrDataset.TOWN, "mt_town_sample.csv", town_summary.stored_count),
         (AbrDataset.TOWN_POSITION, "mt_town_pos_sample.csv", position_summary.stored_count),
     ]
     assert imports[0].source_sha256 == hashlib.sha256(TOWN_MASTER.read_bytes()).hexdigest()
@@ -32,7 +32,7 @@ def test_failed_import_is_not_logged(importer: RegistryImporter, tmp_path: Path)
     broken = tmp_path / "broken.csv"
     _ = broken.write_text("lg_code,rep_lon,rep_lat,rep_srid\n130001,139.0,35.0,EPSG:1\n")
     with pytest.raises(ValueError, match="Row 2"):
-        _ = importer.import_positions(broken)
+        _ = importer.import_file(broken)
     assert [item.dataset for item in AddressCodec(importer.database).list_imports()] == [
         AbrDataset.TOWN
     ]

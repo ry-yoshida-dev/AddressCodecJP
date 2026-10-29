@@ -2,7 +2,7 @@ import sqlite3
 from datetime import datetime
 from typing import ClassVar
 
-from address_codec_jp.storage.abr_dataset import AbrDataset
+from address_codec_jp.registry.abr_dataset import AbrDataset
 from address_codec_jp.storage.dataset_import import DatasetImport
 
 
@@ -36,26 +36,25 @@ class ImportLogRepository:
 
     def add(self, dataset_import: DatasetImport) -> None:
         """
-        Append an import to the log.
+        Append an import to the log within the caller's transaction.
 
         Parameters
         ----------
         dataset_import : DatasetImport
             Completed import.
         """
-        with self._connection:
-            _ = self._connection.execute(
-                "INSERT INTO dataset_imports "
-                + "(dataset, source_name, source_sha256, imported_at, row_count) "
-                + "VALUES (?, ?, ?, ?, ?)",
-                (
-                    dataset_import.dataset.name,
-                    dataset_import.source_name,
-                    dataset_import.source_sha256,
-                    dataset_import.imported_at.isoformat(),
-                    dataset_import.row_count,
-                ),
-            )
+        _ = self._connection.execute(
+            "INSERT INTO dataset_imports "
+            + "(dataset, source_name, source_sha256, imported_at, row_count) "
+            + "VALUES (?, ?, ?, ?, ?)",
+            (
+                dataset_import.dataset.name,
+                dataset_import.source_name,
+                dataset_import.source_sha256,
+                dataset_import.imported_at.isoformat(),
+                dataset_import.row_count,
+            ),
+        )
 
     def list_all(self) -> list[DatasetImport]:
         """

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from address_codec_jp.storage.abr_dataset import AbrDataset
+from address_codec_jp.registry.abr_dataset import AbrDataset
 
 
 @dataclass(frozen=True, slots=True)

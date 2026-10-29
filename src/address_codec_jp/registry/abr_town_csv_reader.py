@@ -3,12 +3,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
+from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.municipality import Municipality
 from address_codec_jp.domain.town import Town
 from address_codec_jp.errors.registry_format_error import RegistryFormatError
 from address_codec_jp.normalization.kanji_numeral import KanjiNumeral
-from address_codec_jp.storage.abr_csv_file import AbrCsvFile
-from address_codec_jp.storage.abr_dataset import AbrDataset
+from address_codec_jp.registry.abr_csv_file import AbrCsvFile
+from address_codec_jp.registry.abr_dataset import AbrDataset
 
 
 class AbrTownCsvReader:
@@ -56,32 +57,22 @@ class AbrTownCsvReader:
         FileNotFoundError
             If the file does not exist.
         RegistryFormatError
-            If the archive has no CSV file, required columns are missing, a row is short,
-            or a code is malformed. The message names the row.
+            If the file is not the town master, the archive has no CSV file, required
+            columns are missing, a row is short, or a value is malformed. The message
+            names the row.
         """
-        rows = AbrCsvFile(path).read_rows()
-        header = next(rows, None)
-        if header is None:
-            raise RegistryFormatError("Town master CSV is empty.")
-        missing_columns = [
-            column for column in AbrDataset.TOWN.required_columns if column not in header
-        ]
-        if missing_columns:
-            raise RegistryFormatError(f"Town master CSV lacks required columns: {missing_columns}.")
-        column_index = {column: header.index(column) for column in AbrDataset.TOWN.required_columns}
+        csv_file = AbrCsvFile(path)
+        dataset = csv_file.detect_dataset()
+        if dataset is not AbrDataset.TOWN:
+            raise RegistryFormatError(f"{path} is {dataset.value}, not the town master.")
         municipalities: dict[tuple[str, ...], Municipality] = {}
-        for row_number, row in enumerate(rows, start=2):
-            if len(row) < len(header):
-                raise RegistryFormatError(
-                    f"Row {row_number} has {len(row)} columns, expected {len(header)}."
-                )
-            values = {column: row[index] for column, index in column_index.items()}
-            if values["ablt_date"]:
+        for row in csv_file.read_records(AbrDataset.TOWN):
+            if row.values["ablt_date"]:
                 continue
             try:
-                town = self._to_town(values, municipalities)
+                town = self._to_town(row.values, municipalities)
             except ValueError as error:
-                raise RegistryFormatError(f"Row {row_number}: {error}") from error
+                raise RegistryFormatError(f"Row {row.number}: {error}") from error
             yield town
 
     def _to_town(
@@ -100,6 +91,9 @@ class AbrTownCsvReader:
             oaza_kana=values["oaza_cho_kana"],
             chome_kana=values["chome_kana"],
             koaza_kana=values["koaza_kana"],
+            lot_systems=frozenset(
+                {LotSystem.from_residence_indication_flag(values["rsdt_addr_flg"])}
+            ),
             postal_codes=self._parse_postal_codes(values["post_code"]),
             is_registered=True,
         )

@@ -1,30 +1,32 @@
+import shutil
 import zipfile
 from pathlib import Path
+from typing import BinaryIO
 
 import pytest
 
 from address_codec_jp import (
+    AbrDataset,
     AddressCodec,
     AddressLevel,
-    DownloadTarget,
+    DistributedFile,
     RegistryDownloader,
     RegistryDownloadError,
-    RegistryFile,
 )
 from address_codec_jp.cli import CommandLineInterface
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
-FIXTURE_NAMES: dict[RegistryFile, str] = {
-    RegistryFile.TOWN: "mt_town_sample.csv",
-    RegistryFile.PREFECTURE_POSITION: "positions/mt_pref_pos_sample.csv",
-    RegistryFile.MUNICIPALITY_POSITION: "positions/mt_city_pos_sample.csv",
-    RegistryFile.TOWN_POSITION: "positions/mt_town_pos_sample.csv",
-    RegistryFile.BLOCK: "positions/mt_rsdtdsp_blk_sample.csv",
-    RegistryFile.BLOCK_POSITION: "positions/mt_rsdtdsp_blk_pos_sample.csv",
-    RegistryFile.RESIDENCE: "positions/mt_rsdtdsp_rsdt_sample.csv",
-    RegistryFile.RESIDENCE_POSITION: "positions/mt_rsdtdsp_rsdt_pos_sample.csv",
-    RegistryFile.PARCEL: "positions/mt_parcel_sample.csv",
-    RegistryFile.PARCEL_POSITION: "positions/mt_parcel_pos_sample.csv",
+FIXTURE_NAMES: dict[AbrDataset, str] = {
+    AbrDataset.TOWN: "mt_town_sample.csv",
+    AbrDataset.PREFECTURE_POSITION: "positions/mt_pref_pos_sample.csv",
+    AbrDataset.MUNICIPALITY_POSITION: "positions/mt_city_pos_sample.csv",
+    AbrDataset.TOWN_POSITION: "positions/mt_town_pos_sample.csv",
+    AbrDataset.BLOCK: "positions/mt_rsdtdsp_blk_sample.csv",
+    AbrDataset.BLOCK_POSITION: "positions/mt_rsdtdsp_blk_pos_sample.csv",
+    AbrDataset.RESIDENCE: "positions/mt_rsdtdsp_rsdt_sample.csv",
+    AbrDataset.RESIDENCE_POSITION: "positions/mt_rsdtdsp_rsdt_pos_sample.csv",
+    AbrDataset.PARCEL: "positions/mt_parcel_sample.csv",
+    AbrDataset.PARCEL_POSITION: "positions/mt_parcel_pos_sample.csv",
 }
 
 
@@ -36,7 +38,7 @@ def mirror(tmp_path: Path) -> Path:
         archive_path = root / target.url_path
         archive_path.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(archive_path, "w") as archive:
-            archive.write(FIXTURE_DIRECTORY / FIXTURE_NAMES[target.registry_file], "data.csv")
+            archive.write(FIXTURE_DIRECTORY / FIXTURE_NAMES[target.dataset], "data.csv")
     return root
 
 
@@ -57,26 +59,26 @@ def test_plan_lists_files_in_import_order() -> None:
 
 
 @pytest.mark.parametrize(
-    ("registry_file", "area_code"),
+    ("dataset", "area_code"),
     [
-        (RegistryFile.TOWN, "13"),
-        (RegistryFile.TOWN_POSITION, None),
-        (RegistryFile.TOWN_POSITION, "48"),
-        (RegistryFile.TOWN_POSITION, "131016"),
-        (RegistryFile.PARCEL, "130001"),
-        (RegistryFile.PARCEL, "131017"),
+        (AbrDataset.TOWN, "13"),
+        (AbrDataset.TOWN_POSITION, None),
+        (AbrDataset.TOWN_POSITION, "48"),
+        (AbrDataset.TOWN_POSITION, "131016"),
+        (AbrDataset.PARCEL, "130001"),
+        (AbrDataset.PARCEL, "131017"),
     ],
 )
-def test_target_rejects_area_codes_of_another_scope(
-    registry_file: RegistryFile, area_code: str | None
+def test_distributed_file_rejects_area_codes_of_another_scope(
+    dataset: AbrDataset, area_code: str | None
 ) -> None:
     with pytest.raises(ValueError, match=r"area code|prefecture code|check digit"):
-        _ = DownloadTarget(registry_file, area_code)
+        _ = DistributedFile(dataset, area_code)
 
 
 def test_download_writes_the_file(mirror: Path, tmp_path: Path) -> None:
     downloader = RegistryDownloader(mirror.as_uri())
-    path = downloader.download(DownloadTarget(RegistryFile.TOWN), tmp_path / "data")
+    path = downloader.download(DistributedFile(AbrDataset.TOWN), tmp_path / "data")
     assert path == tmp_path / "data" / "mt_town_all.csv.zip"
     assert path.read_bytes() == (mirror / "mt_town" / "mt_town_all.csv.zip").read_bytes()
 
@@ -85,7 +87,7 @@ def test_missing_file_raises_and_leaves_nothing(mirror: Path, tmp_path: Path) ->
     downloader = RegistryDownloader(mirror.as_uri())
     directory = tmp_path / "data"
     with pytest.raises(RegistryDownloadError, match="mt_town_pos_pref01"):
-        _ = downloader.download(DownloadTarget(RegistryFile.TOWN_POSITION, "01"), directory)
+        _ = downloader.download(DistributedFile(AbrDataset.TOWN_POSITION, "01"), directory)
     assert list(directory.iterdir()) == []
 
 
@@ -95,7 +97,7 @@ def test_existing_file_can_be_kept(mirror: Path, tmp_path: Path) -> None:
     existing = directory / "mt_town_all.csv.zip"
     _ = existing.write_bytes(b"kept")
     downloader = RegistryDownloader(mirror.as_uri())
-    target = DownloadTarget(RegistryFile.TOWN)
+    target = DistributedFile(AbrDataset.TOWN)
     _ = downloader.download(target, directory, is_existing_kept=True)
     assert existing.read_bytes() == b"kept"
     _ = downloader.download(target, directory)
@@ -124,3 +126,33 @@ def test_download_command_imports_the_files(
     with AddressCodec.open(database) as codec:
         assert codec.locate("千代田区丸の内1-2-3").level is AddressLevel.RESIDENCE
         assert len(codec.list_imports()) == 10
+
+
+def test_truncated_download_raises_and_leaves_nothing(
+    mirror: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def copy_half(source: BinaryIO, destination: BinaryIO) -> None:
+        content = source.read()
+        _ = destination.write(content[: len(content) // 2])
+
+    monkeypatch.setattr(shutil, "copyfileobj", copy_half)
+    directory = tmp_path / "data"
+    downloader = RegistryDownloader(mirror.as_uri())
+    with pytest.raises(RegistryDownloadError, match="Received"):
+        _ = downloader.download(DistributedFile(AbrDataset.TOWN), directory)
+    assert list(directory.iterdir()) == []
+
+
+def test_failed_write_raises_and_leaves_nothing(
+    mirror: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_to_write(source: BinaryIO, destination: BinaryIO) -> None:
+        _ = destination.write(source.read(10))
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(shutil, "copyfileobj", fail_to_write)
+    directory = tmp_path / "data"
+    downloader = RegistryDownloader(mirror.as_uri())
+    with pytest.raises(RegistryDownloadError, match="No space left"):
+        _ = downloader.download(DistributedFile(AbrDataset.TOWN), directory)
+    assert list(directory.iterdir()) == []

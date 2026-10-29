@@ -12,12 +12,12 @@ from address_codec_jp.domain.lot_number import LotNumber
 from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.representative_point import RepresentativePoint
 from address_codec_jp.domain.town_position import TownPosition
-from address_codec_jp.storage.area_position import AreaPosition
-from address_codec_jp.storage.lot_entry import LotEntry
-from address_codec_jp.storage.lot_position import LotPosition
-from address_codec_jp.storage.lot_removal import LotRemoval
+from address_codec_jp.registry.area_position import AreaPosition
+from address_codec_jp.registry.lot_entry import LotEntry
+from address_codec_jp.registry.lot_position import LotPosition
+from address_codec_jp.registry.lot_removal import LotRemoval
+from address_codec_jp.registry.position_record import PositionRecord
 from address_codec_jp.storage.position_changes import PositionChanges
-from address_codec_jp.storage.position_record import PositionRecord
 
 
 class PositionRepository:
@@ -101,8 +101,6 @@ class PositionRepository:
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection: sqlite3.Connection = connection
-        self._is_position_imported: bool = False
-        self._is_lot_imported: bool = False
 
     def create_schema(self) -> None:
         """Create the position tables."""
@@ -114,38 +112,30 @@ class PositionRepository:
         """
         Tell whether any representative point has been imported.
 
-        A positive answer is cached, because imports only add points.
-
         Returns
         -------
         bool
             ``True`` when a point of a prefecture, municipality, or town is stored.
         """
-        if not self._is_position_imported:
-            row = self._fetch_first(
-                "SELECT EXISTS (SELECT 1 FROM area_positions) "
-                + "OR EXISTS (SELECT 1 FROM town_positions)",
-                (),
-            )
-            self._is_position_imported = row is not None and bool(row[0])
-        return self._is_position_imported
+        row = self._fetch_first(
+            "SELECT EXISTS (SELECT 1 FROM area_positions) "
+            + "OR EXISTS (SELECT 1 FROM town_positions)",
+            (),
+        )
+        return row is not None and bool(row[0])
 
     @property
     def is_lot_imported(self) -> bool:
         """
         Tell whether any block, residence, or parcel number has been imported.
 
-        A positive answer is cached, because imports only add numbers.
-
         Returns
         -------
         bool
             ``True`` when a block, residence, or parcel master has been imported.
         """
-        if not self._is_lot_imported:
-            row = self._fetch_first("SELECT EXISTS (SELECT 1 FROM lot_entries)", ())
-            self._is_lot_imported = row is not None and bool(row[0])
-        return self._is_lot_imported
+        row = self._fetch_first("SELECT EXISTS (SELECT 1 FROM lot_entries)", ())
+        return row is not None and bool(row[0])
 
     def has_lots(self, lg_code: str, machiaza_id: str) -> bool:
         """
@@ -207,10 +197,11 @@ class PositionRepository:
 
     def save_all(self, records: Iterable[PositionRecord]) -> PositionChanges:
         """
-        Store records in one transaction, replacing records with the same identifiers.
+        Store records, replacing records with the same identifiers.
 
-        Removals delete the lot numbers of abolished lots, so that a newer number master
-        drops them; their points stay unused, because lots are located through numbers.
+        Runs within the caller's transaction. Removals delete the lot numbers of abolished
+        lots, so that a newer number master drops them; their points stay unused, because
+        lots are located through numbers.
 
         Parameters
         ----------
@@ -224,24 +215,23 @@ class PositionRepository:
         """
         stored_count = 0
         removed_count = 0
-        with self._connection:
-            for chunk in batched(records, self._BATCH_SIZE):
-                removals = [record for record in chunk if isinstance(record, LotRemoval)]
-                self._save_chunk(chunk)
-                stored_count += len(chunk) - len(removals)
-                removed_count += self._connection.executemany(
-                    "DELETE FROM lot_entries WHERE lg_code = ? AND machiaza_id = ? "
-                    + "AND lot_system = ? AND lot_id = ?",
-                    [
-                        (
-                            removal.lg_code,
-                            removal.machiaza_id,
-                            removal.lot_system.value,
-                            removal.lot_id,
-                        )
-                        for removal in removals
-                    ],
-                ).rowcount
+        for chunk in batched(records, self._BATCH_SIZE):
+            removals = [record for record in chunk if isinstance(record, LotRemoval)]
+            self._save_chunk(chunk)
+            stored_count += len(chunk) - len(removals)
+            removed_count += self._connection.executemany(
+                "DELETE FROM lot_entries WHERE lg_code = ? AND machiaza_id = ? "
+                + "AND lot_system = ? AND lot_id = ?",
+                [
+                    (
+                        removal.lg_code,
+                        removal.machiaza_id,
+                        removal.lot_system.value,
+                        removal.lot_id,
+                    )
+                    for removal in removals
+                ],
+            ).rowcount
         return PositionChanges(stored_count=stored_count, removed_count=removed_count)
 
     def _save_chunk(self, records: Sequence[PositionRecord]) -> None:
@@ -306,6 +296,8 @@ class PositionRepository:
         """
         Remove points and lot numbers of areas that are not in the town table.
 
+        Runs within the caller's transaction.
+
         Prefecture points are kept, because prefectures have no row of their own.
 
         Returns
@@ -314,16 +306,15 @@ class PositionRepository:
             Number of removed rows.
         """
         removed_count = 0
-        with self._connection:
+        removed_count += self._connection.execute(
+            "DELETE FROM area_positions WHERE substr(lg_code, 3, 3) != '000' "
+            + "AND lg_code NOT IN (SELECT lg_code FROM towns)"
+        ).rowcount
+        for table in self._TOWN_KEYED_TABLES:
             removed_count += self._connection.execute(
-                "DELETE FROM area_positions WHERE substr(lg_code, 3, 3) != '000' "
-                + "AND lg_code NOT IN (SELECT lg_code FROM towns)"
+                f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM towns AS t "
+                + f"WHERE t.lg_code = {table}.lg_code AND t.machiaza_id = {table}.machiaza_id)"
             ).rowcount
-            for table in self._TOWN_KEYED_TABLES:
-                removed_count += self._connection.execute(
-                    f"DELETE FROM {table} WHERE NOT EXISTS (SELECT 1 FROM towns AS t "
-                    + f"WHERE t.lg_code = {table}.lg_code AND t.machiaza_id = {table}.machiaza_id)"
-                ).rowcount
         return removed_count
 
     def find_area(self, lg_code: str) -> RepresentativePoint | None:

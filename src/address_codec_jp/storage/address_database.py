@@ -1,4 +1,6 @@
 import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
@@ -27,7 +29,7 @@ class AddressDatabase:
     """
 
     APPLICATION_ID: ClassVar[int] = 0x41434A50
-    SCHEMA_VERSION: ClassVar[int] = 2
+    SCHEMA_VERSION: ClassVar[int] = 3
     MEMORY_PATH: ClassVar[str] = ":memory:"
 
     def __init__(self, connection: sqlite3.Connection, *, is_writable: bool) -> None:
@@ -85,12 +87,17 @@ class AddressDatabase:
         Raises
         ------
         UnsupportedDatabaseError
-            If the file holds other tables than a database of this version. Delete it
-            and import again in that case.
+            If the file is not an SQLite database or holds other tables than a database
+            of this version. Delete it and import again in that case.
         """
         target = database_path if database_path == cls.MEMORY_PATH else Path(database_path)
         database = cls(sqlite3.connect(target), is_writable=True)
-        if database._is_empty():
+        try:
+            is_empty = database._is_empty()
+        except sqlite3.DatabaseError as error:
+            database.close()
+            raise UnsupportedDatabaseError(f"{database_path} is not an SQLite database.") from error
+        if is_empty:
             database._create_schema()
         else:
             database._check_version(str(database_path))
@@ -143,6 +150,30 @@ class AddressDatabase:
             Repository on this database.
         """
         return self._imports
+
+    @contextmanager
+    def transaction(self) -> Generator[None]:
+        """
+        Group writes of the repositories into one transaction.
+
+        The writes are committed when the block ends and rolled back when it raises, so
+        that an import is stored completely or not at all. Repositories never commit on
+        their own.
+
+        Yields
+        ------
+        None
+            Control to the block that writes.
+
+        Raises
+        ------
+        RuntimeError
+            If the database was opened read-only.
+        """
+        if not self._is_writable:
+            raise RuntimeError("The database was opened read-only.")
+        with self._connection:
+            yield
 
     def __enter__(self) -> Self:
         return self

@@ -1,20 +1,19 @@
-import re
 from dataclasses import dataclass
-from typing import ClassVar
 
 from address_codec_jp.domain.address_code import AddressCode
-from address_codec_jp.download.distribution_scope import DistributionScope
-from address_codec_jp.download.registry_file import RegistryFile
+from address_codec_jp.domain.prefecture import Prefecture
+from address_codec_jp.registry.abr_dataset import AbrDataset
+from address_codec_jp.registry.distribution_scope import DistributionScope
 
 
 @dataclass(frozen=True, slots=True)
-class DownloadTarget:
+class DistributedFile:
     """
     One distributed file of a registry dataset.
 
     Parameters
     ----------
-    registry_file : RegistryFile
+    dataset : AbrDataset
         Dataset of the file.
     area_code : str | None
         Two-digit prefecture code for a per-prefecture dataset, six-digit local
@@ -26,16 +25,14 @@ class DownloadTarget:
         If ``area_code`` does not fit the distribution scope of the dataset.
     """
 
-    _PREFECTURE_CODE: ClassVar[re.Pattern[str]] = re.compile(r"0[1-9]|[1-3][0-9]|4[0-7]")
-
-    registry_file: RegistryFile
+    dataset: AbrDataset
     area_code: str | None = None
 
     def __post_init__(self) -> None:
-        match self.registry_file.scope, self.area_code:
+        match self.dataset.scope, self.area_code:
             case DistributionScope.NATIONWIDE, None:
                 pass
-            case DistributionScope.PREFECTURE, str(code) if self._PREFECTURE_CODE.fullmatch(code):
+            case DistributionScope.PREFECTURE, str(code) if Prefecture.is_code(code):
                 pass
             case DistributionScope.MUNICIPALITY, str(code):
                 _ = AddressCode(lg_code=code)
@@ -43,7 +40,7 @@ class DownloadTarget:
                     raise ValueError(f"{code} is a prefecture code, not a municipality code.")
             case scope, code:
                 raise ValueError(
-                    f"{self.registry_file.name} is distributed {scope.name.lower()}, "
+                    f"{self.dataset.name} is distributed {scope.name.lower()}, "
                     + f"which does not take the area code {code!r}."
                 )
 
@@ -57,8 +54,8 @@ class DownloadTarget:
         str
             File name such as ``mt_town_pos_pref13.csv.zip``.
         """
-        prefix = self.registry_file.value
-        match self.registry_file.scope:
+        prefix = self.dataset.value
+        match self.dataset.scope:
             case DistributionScope.NATIONWIDE:
                 return f"{prefix}_all.csv.zip"
             case DistributionScope.PREFECTURE:
@@ -76,8 +73,8 @@ class DownloadTarget:
         str
             Path such as ``mt_town_pos/pref/mt_town_pos_pref13.csv.zip``.
         """
-        prefix = self.registry_file.value
-        match self.registry_file.scope:
+        prefix = self.dataset.value
+        match self.dataset.scope:
             case DistributionScope.NATIONWIDE:
                 return f"{prefix}/{self.file_name}"
             case DistributionScope.PREFECTURE:

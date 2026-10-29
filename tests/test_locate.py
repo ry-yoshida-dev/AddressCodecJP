@@ -13,7 +13,8 @@ from address_codec_jp import (
     RegistryFormatError,
     RegistryImporter,
 )
-from address_codec_jp.storage import (
+from address_codec_jp.registry import (
+    AbrCsvFile,
     AbrDataset,
     AbrPositionCsvReader,
     LotEntry,
@@ -91,7 +92,7 @@ def test_locate_on_another_datum(located_codec: AddressCodec) -> None:
 
 def test_import_order_does_not_matter(importer: RegistryImporter, codec: AddressCodec) -> None:
     for path in reversed(POSITION_FIXTURES):
-        _ = importer.import_positions(path)
+        _ = importer.import_file(path)
     assert codec.locate("千代田区丸の内1-2-3").level is AddressLevel.RESIDENCE
 
 
@@ -102,8 +103,8 @@ def test_reimport_replaces_rows(
     _ = moved.write_text(
         "lg_code,rep_lon,rep_lat,rep_srid\n130001,139.0,35.0,EPSG:6668\n", encoding="utf-8"
     )
-    summary = importer.import_positions(moved)
-    assert (summary.dataset, summary.stored_count) == (AbrDataset.AREA_POSITION, 1)
+    summary = importer.import_file(moved)
+    assert (summary.dataset, summary.stored_count) == (AbrDataset.PREFECTURE_POSITION, 1)
     assert degrees(located_codec.locate("東京都")) == pytest.approx((35.0, 139.0))
 
 
@@ -113,7 +114,7 @@ def test_import_reads_zip_archives(
     archive_path = tmp_path / "mt_pref_pos_all.csv.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.write(FIXTURE_DIRECTORY / "positions" / "mt_pref_pos_sample.csv", "pref.csv")
-    assert importer.import_positions(archive_path).stored_count == 2
+    assert importer.import_file(archive_path).stored_count == 2
     assert codec.locate("東京都").level is AddressLevel.PREFECTURE
 
 
@@ -127,9 +128,9 @@ def test_locate_without_any_enclosing_point_raises(located_codec: AddressCodec) 
         _ = located_codec.locate("広島県府中市府川町5")
 
 
-def test_town_master_is_not_a_position_dataset(importer: RegistryImporter) -> None:
-    with pytest.raises(RegistryFormatError, match="import_town_master"):
-        _ = importer.import_positions(FIXTURE_DIRECTORY / "mt_town_sample.csv")
+def test_position_reader_rejects_the_town_master() -> None:
+    with pytest.raises(RegistryFormatError, match="AbrTownCsvReader"):
+        _ = list(AbrPositionCsvReader().read(FIXTURE_DIRECTORY / "mt_town_sample.csv"))
 
 
 def test_failed_import_stores_nothing(
@@ -141,15 +142,15 @@ def test_failed_import_stores_nothing(
         encoding="utf-8",
     )
     with pytest.raises(RegistryFormatError, match="Row 3"):
-        _ = importer.import_positions(broken)
+        _ = importer.import_file(broken)
     assert degrees(located_codec.locate("東京都")) == pytest.approx((35.689568, 139.691717))
 
 
 @pytest.mark.parametrize(
     ("file_name", "dataset"),
     [
-        ("mt_pref_pos_sample.csv", AbrDataset.AREA_POSITION),
-        ("mt_city_pos_sample.csv", AbrDataset.AREA_POSITION),
+        ("mt_pref_pos_sample.csv", AbrDataset.PREFECTURE_POSITION),
+        ("mt_city_pos_sample.csv", AbrDataset.MUNICIPALITY_POSITION),
         ("mt_town_pos_sample.csv", AbrDataset.TOWN_POSITION),
         ("mt_rsdtdsp_blk_sample.csv", AbrDataset.BLOCK),
         ("mt_rsdtdsp_blk_pos_sample.csv", AbrDataset.BLOCK_POSITION),
@@ -160,7 +161,7 @@ def test_failed_import_stores_nothing(
     ],
 )
 def test_dataset_is_detected_by_header(file_name: str, dataset: AbrDataset) -> None:
-    assert AbrPositionCsvReader().detect(FIXTURE_DIRECTORY / "positions" / file_name) is dataset
+    assert AbrCsvFile(FIXTURE_DIRECTORY / "positions" / file_name).detect_dataset() is dataset
 
 
 def test_unexpressible_lots_are_skipped_and_abolished_lots_removed() -> None:
@@ -182,7 +183,7 @@ def test_newer_master_removes_abolished_lots(
         + "131016,0001001,001,千代田区,丸の内,一丁目,2,2026-04-01\n",
         encoding="utf-8",
     )
-    summary = importer.import_positions(newer_master)
+    summary = importer.import_file(newer_master)
     assert (summary.stored_count, summary.removed_count) == (0, 1)
     assert located_codec.locate("千代田区丸の内1-2").level is AddressLevel.TOWN
 

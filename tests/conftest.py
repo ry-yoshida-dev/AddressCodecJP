@@ -13,7 +13,7 @@ POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*
 def importer() -> Iterator[RegistryImporter]:
     """Provide an importer on an in-memory database loaded with the sample town master."""
     with RegistryImporter.open(":memory:") as registry_importer:
-        _ = registry_importer.import_town_master(FIXTURE_DIRECTORY / "mt_town_sample.csv")
+        _ = registry_importer.import_file(FIXTURE_DIRECTORY / "mt_town_sample.csv")
         yield registry_importer
 
 
@@ -27,5 +27,5 @@ def codec(importer: RegistryImporter) -> AddressCodec:
 def located_codec(importer: RegistryImporter) -> AddressCodec:
     """Provide a codec whose database also holds the sample position datasets."""
     for path in POSITION_FIXTURES:
-        _ = importer.import_positions(path)
+        _ = importer.import_file(path)
     return AddressCodec(importer.database)

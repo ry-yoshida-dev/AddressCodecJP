@@ -8,13 +8,13 @@ from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.representative_point import RepresentativePoint
 from address_codec_jp.domain.town_position import TownPosition
 from address_codec_jp.errors.registry_format_error import RegistryFormatError
-from address_codec_jp.storage.abr_csv_file import AbrCsvFile
-from address_codec_jp.storage.abr_dataset import AbrDataset
-from address_codec_jp.storage.area_position import AreaPosition
-from address_codec_jp.storage.lot_entry import LotEntry
-from address_codec_jp.storage.lot_position import LotPosition
-from address_codec_jp.storage.lot_removal import LotRemoval
-from address_codec_jp.storage.position_record import PositionRecord
+from address_codec_jp.registry.abr_csv_file import AbrCsvFile
+from address_codec_jp.registry.abr_dataset import AbrDataset
+from address_codec_jp.registry.area_position import AreaPosition
+from address_codec_jp.registry.lot_entry import LotEntry
+from address_codec_jp.registry.lot_position import LotPosition
+from address_codec_jp.registry.lot_removal import LotRemoval
+from address_codec_jp.registry.position_record import PositionRecord
 
 
 class AbrPositionCsvReader:
@@ -27,29 +27,6 @@ class AbrPositionCsvReader:
     cannot express are skipped: rows without a point, residences with a second residence
     number, parcels with a third number, and non-numeric lot numbers.
     """
-
-    def detect(self, path: Path) -> AbrDataset:
-        """
-        Identify the dataset of a file.
-
-        Parameters
-        ----------
-        path : Path
-            Registry file.
-
-        Returns
-        -------
-        AbrDataset
-            Dataset of the file.
-
-        Raises
-        ------
-        FileNotFoundError
-            If the file does not exist.
-        RegistryFormatError
-            If the file is empty or not a position-related dataset.
-        """
-        return AbrDataset.detect(self._read_header(AbrCsvFile(path).read_rows()))
 
     def read(self, path: Path) -> Iterator[PositionRecord]:
         """
@@ -74,44 +51,24 @@ class AbrPositionCsvReader:
             If the file is not a position-related dataset, required columns are
             missing, a row is short, or a value is malformed. The message names the row.
         """
-        rows = AbrCsvFile(path).read_rows()
-        header = self._read_header(rows)
-        dataset = AbrDataset.detect(header)
+        csv_file = AbrCsvFile(path)
+        dataset = csv_file.detect_dataset()
         if not dataset.is_position_related:
-            raise RegistryFormatError(
-                "The file is the town master. Import it with import_town_master."
-            )
-        missing_columns = [column for column in dataset.required_columns if column not in header]
-        if missing_columns:
-            raise RegistryFormatError(
-                f"{dataset.value} CSV lacks required columns: {missing_columns}."
-            )
-        column_index = {column: header.index(column) for column in dataset.required_columns}
-        for row_number, row in enumerate(rows, start=2):
-            if len(row) < len(header):
-                raise RegistryFormatError(
-                    f"Row {row_number} has {len(row)} columns, expected {len(header)}."
-                )
-            values = {column: row[index] for column, index in column_index.items()}
+            raise RegistryFormatError("The file is the town master. Read it with AbrTownCsvReader.")
+        for row in csv_file.read_records(dataset):
             try:
-                record = self._to_record(dataset, values)
+                record = self._to_record(dataset, row.values)
             except ValueError as error:
-                raise RegistryFormatError(f"Row {row_number}: {error}") from error
+                raise RegistryFormatError(f"Row {row.number}: {error}") from error
             if record is not None:
                 yield record
-
-    def _read_header(self, rows: Iterator[list[str]]) -> list[str]:
-        header = next(rows, None)
-        if header is None:
-            raise RegistryFormatError("Registry CSV is empty.")
-        return header
 
     def _to_record(self, dataset: AbrDataset, values: dict[str, str]) -> PositionRecord | None:
         lg_code = values["lg_code"].zfill(6)
         match dataset:
             case AbrDataset.TOWN:
                 raise RuntimeError("The town master has no position records.")
-            case AbrDataset.AREA_POSITION:
+            case AbrDataset.PREFECTURE_POSITION | AbrDataset.MUNICIPALITY_POSITION:
                 point = self._to_point(values)
                 return None if point is None else AreaPosition(lg_code=lg_code, point=point)
             case AbrDataset.TOWN_POSITION:
@@ -121,7 +78,7 @@ class AbrPositionCsvReader:
                 return TownPosition(
                     lg_code=lg_code,
                     machiaza_id=values["machiaza_id"].zfill(7),
-                    lot_system=self._to_lot_system(values["rsdt_addr_flg"]),
+                    lot_system=LotSystem.from_residence_indication_flag(values["rsdt_addr_flg"]),
                     point=point,
                 )
             case AbrDataset.BLOCK:
@@ -211,14 +168,3 @@ class AbrPositionCsvReader:
             latitude=float(values["rep_lat"]),
             crs=GeodeticCrs(int(srid.removeprefix("EPSG:"))),
         )
-
-    def _to_lot_system(self, residence_indication_flag: str) -> LotSystem:
-        match residence_indication_flag:
-            case "1":
-                return LotSystem.RESIDENCE_INDICATION
-            case "0":
-                return LotSystem.LAND_PARCEL
-            case _:
-                raise ValueError(
-                    f"rsdt_addr_flg must be 0 or 1, got {residence_indication_flag!r}."
-                )

@@ -13,8 +13,8 @@ position extensions (位置参照拡張) of the ABR, from the prefecture down to
 land parcel, and a coordinate is mapped back to the address with the nearest point.
 Decoded addresses can be written in katakana readings and with the registered postal
 code. Points are returned as `GeoCoordinate` of
-[GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate), which is the only runtime
-dependency (Python 3.12+).
+[GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate). The runtime dependencies
+are GeoCoordinate and NumPy (Python 3.12+).
 
 ### Address code format
 
@@ -129,6 +129,15 @@ nearest to a coordinate, or the nearest town when no lot point is within
 Representative points are not areas, so the nearest point may belong to the neighboring
 lot or town.
 
+### Lot notation
+
+`AddressFormat.lot_style` is `LotStyle.AUTOMATIC` by default: lot numbers are written as
+`番地` (`埼玉県入間郡三芳町大字竹間沢123番地4`) in towns that use land parcel numbers only,
+and as `番`/`号` (`東京都千代田区丸の内1丁目2番3号`) in towns where residence indication
+covers all or part of the town, following the residence indication flag
+(`rsdt_addr_flg`) of the town master. `Town.lot_systems` holds the numbering systems of a
+town. `RESIDENCE_INDICATION`, `LAND_PARCEL`, and `HYPHEN` force one notation.
+
 ### Readings and postal codes
 
 `AddressFormat(name_script=NameScript.KATAKANA)` writes the registered katakana
@@ -137,6 +146,14 @@ town whose reading is not registered. `is_postal_code_included=True` writes the 
 code first (`〒060-0042 北海道札幌市中央区大通西1丁目`) for towns with exactly one
 registered postal code. Oaza-level towns added on import take the postal codes of their
 chome.
+
+`AddressCodec.list_by_postal_code` lists the towns registered with a postal code
+(`100-0005`, `〒1000005`, or with full-width digits) as town-level `Address`es; the
+`postal` command does the same from the command line. Oaza-level towns added on import
+are left out, because their chome are listed.
+
+`AddressCode.contains` tells whether a code lies within the area of another, e.g.
+`131067` contains `131067-0004001-2`.
 
 ## Setup
 
@@ -151,10 +168,12 @@ uv sync
 uv run address-codec-jp --database towns.sqlite3 download data --prefecture 13 --import
 ```
 
-Files are written under their distributed names and replaced atomically;
-`--keep-existing` skips files already in the directory, and `--base-url` points to a
-mirror (a `file://` URL works too). In Python, `RegistryDownloader.plan` and
-`RegistryDownloader.download` do the same. The steps below do it by hand.
+Files are written under their distributed names and replaced atomically; a download
+that fails or delivers fewer bytes than announced raises `RegistryDownloadError` and
+leaves nothing behind. `--keep-existing` skips files already in the directory, and
+`--base-url` points to a mirror (a `file://` URL works too). In Python,
+`RegistryDownloader.plan` lists the files as `DistributedFile`s and
+`RegistryDownloader.download` fetches one. The steps below do it by hand.
 
 1. Download the nationwide town master (日本 町字マスター データセット, about 12 MB zipped)
    from the [ABR download site](https://dataset.address-br.digital.go.jp/).
@@ -162,9 +181,10 @@ mirror (a `file://` URL works too). In Python, `RegistryDownloader.plan` and
    so it is indexed once instead of being parsed on every start. Import takes about
    seven seconds, makes a database of about 90 MB, and replaces the previous contents,
    so towns removed from a newer master are removed together with their imported points.
-   Rows with an abolition date are skipped. Rows repeated with identical contents (about
-   1,200 in the October 2026 master) are stored once; an ID repeated with different
-   contents aborts the import:
+   Rows with an abolition date are skipped. A town that the registry lists once per
+   numbering system, because residence indication covers only part of it (about 1,250
+   towns in the October 2026 master), is stored once with both systems; an ID repeated
+   with other different contents aborts the import:
 
 ```bash
 uv sync
@@ -176,11 +196,15 @@ uv run address-codec-jp --database towns.sqlite3 import data/mt_town_all.csv.zip
 The reader requires the columns `lg_code`, `machiaza_id`, `pref`, `county`, `city`,
 `ward`, `oaza_cho`, `chome`, `koaza`, their readings `pref_kana`, `county_kana`,
 `city_kana`, `ward_kana`, `oaza_cho_kana`, `chome_kana`, and `koaza_kana`, and
-`post_code` and `ablt_date`; other columns are ignored. Short rows and malformed codes
+`rsdt_addr_flg`, `post_code`, and `ablt_date`; other columns are ignored. Short rows and malformed codes
 (including a wrong check digit) raise `RegistryFormatError` naming the row.
 
 In Python, `RegistryImporter.open(path)` opens a database for import, creating the file
-if needed, and `AddressCodec.open(path)` opens it read-only for queries. Both raise
+if needed, and `AddressCodec.open(path)` opens it read-only for queries.
+`RegistryImporter.import_file` imports one file of any dataset, identified by its CSV
+header, and `import_files` imports several, the town master first. Each file is imported
+in one transaction together with its log entry, so a failed import leaves the database
+as it was. A path given twice is imported once. Both raise
 `UnsupportedDatabaseError` for a file that is not a database of this version of the
 library (the file is marked with an SQLite application ID and schema version), instead of
 modifying it; delete such a file and import again. `AddressCodec.open` raises
@@ -196,13 +220,16 @@ checked later with `AddressCodec.list_imports()` or the `info` command:
 uv run address-codec-jp --database towns.sqlite3 info
 ```
 
-Columns: import time (UTC), dataset, stored rows, file name, and SHA-256 digest.
+Columns: import time (UTC), dataset (`mt_town`, `mt_pref_pos`, ...), stored rows, file
+name, and SHA-256 digest.
 
 ### Representative points
 
 Download the position-related datasets from the ABR download site (or with the
-`download` command above) and import them with `import-positions`. Points are added to the same database, and files can be added
-prefecture by prefecture in any order; rows with the same identifiers are replaced.
+`download` command above) and import them with the same `import` command. Points are
+added to the same database, and files can be added prefecture by prefecture in any order;
+rows with the same identifiers are replaced. The `import` command accepts files of any
+dataset at once and imports a town master among them first.
 
 | Dataset | Unit of distribution | URL path under `https://data.address-br.digital.go.jp/` |
 | --- | --- | --- |
@@ -226,7 +253,7 @@ for dataset in mt_pref_pos/mt_pref_pos_all mt_city_pos/mt_city_pos_all \
     mt_rsdtdsp_rsdt/pref/mt_rsdtdsp_rsdt_pref13 mt_rsdtdsp_rsdt_pos/pref/mt_rsdtdsp_rsdt_pos_pref13; do
   curl -o "data/positions/${dataset##*/}.csv.zip" "$base/$dataset.csv.zip"
 done
-uv run address-codec-jp --database towns.sqlite3 import-positions data/positions/*.zip
+uv run address-codec-jp --database towns.sqlite3 import data/positions/*.zip
 ```
 
 Tokyo (about 1.75 million residences) takes about 20 seconds to import and adds about
@@ -234,6 +261,8 @@ Tokyo (about 1.75 million residences) takes about 20 seconds to import and adds 
 that a newer number master marks abolished (`ablt_date`) are removed on import.
 
 On the Tokyo datasets, `locate` takes about 0.2 ms and `find_nearest` about 1 to 3 ms.
+Distances to the candidate points of `find_nearest` are computed as one array, so dense
+areas with tens of thousands of candidates stay within a few milliseconds.
 
 ## Examples
 
@@ -251,8 +280,8 @@ from address_codec_jp import (
 )
 
 with RegistryImporter.open("towns.sqlite3") as importer:
-    summary = importer.import_town_master(Path("data/mt_town_all.csv.zip"))
-    print(summary.registered_count, summary.complemented_count)
+    summary = importer.import_file(Path("data/mt_town_all.csv.zip"))
+    print(summary.dataset, summary.stored_count, summary.complemented_count)
 
 with AddressCodec.open("towns.sqlite3") as codec:
     code = codec.encode("東京都千代田区丸の内１丁目２番３号")
@@ -346,7 +375,8 @@ uv run address-codec-jp decode 131016-0011001-2-3 --numeral kanji --lot land_par
 uv run address-codec-jp decode 131016-0011001-2-3 --lot hyphen --width full --no-prefecture
 ```
 
-Decode options: `--numeral {arabic,kanji}`, `--lot {residence_indication,land_parcel,hyphen}`,
+Decode options: `--numeral {arabic,kanji}`,
+`--lot {automatic,residence_indication,land_parcel,hyphen}`,
 `--width {half,full}`, `--no-prefecture`, `--no-county`, `--kana`, `--postal-code`.
 Encode option: `--verify-lot`.
 
@@ -373,7 +403,16 @@ uv run address-codec-jp nearest 35.4804,134.2459
 Columns: code, address, level, latitude, longitude, distance in meters, and datum.
 Nearest options: `--crs`, `--max-distance` (meters, 1000 by default).
 
-Query commands (`encode`, `decode`, `locate`, `nearest`) read one input per line from
+```bash
+uv run address-codec-jp postal 100-0005
+```
+
+Writes one line per registered town: code and address. It takes the decode options, and
+in `jsonl` writes the towns as a `towns` list of `code` and `address` objects.
+
+`--database` defaults to `towns.sqlite3` in the current directory.
+
+Query commands (`encode`, `decode`, `locate`, `nearest`, `postal`) read one input per line from
 standard input when no argument is given, processing each line as it arrives. `--output
 jsonl` writes one JSON object per input, with errors as `{"input": ..., "error": ...,
 "error_type": ...}` in the same position (blank lines included), and adds `candidates`

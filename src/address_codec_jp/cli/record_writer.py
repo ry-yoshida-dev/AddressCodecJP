@@ -19,7 +19,7 @@ class RecordWriter:
     def __init__(self, output_format: OutputFormat) -> None:
         self._output_format: OutputFormat = output_format
 
-    def write(self, input_text: str, columns: list[str], fields: dict[str, OutputValue]) -> None:
+    def write(self, input_text: str, rows: list[list[str]], fields: dict[str, OutputValue]) -> None:
         """
         Write the result of one input.
 
@@ -27,14 +27,15 @@ class RecordWriter:
         ----------
         input_text : str
             Input the result belongs to.
-        columns : list[str]
-            Values written as tab-separated text.
+        rows : list[list[str]]
+            Lines of values written as tab-separated text, usually one.
         fields : dict[str, OutputValue]
-            Values written as a JSON object after ``input``.
+            Values written as one JSON object after ``input``.
         """
         match self._output_format:
             case OutputFormat.TSV:
-                print("\t".join(columns))
+                for row in rows:
+                    print("\t".join(row))
             case OutputFormat.JSONL:
                 print(json.dumps({"input": input_text, **fields}, ensure_ascii=False))
 

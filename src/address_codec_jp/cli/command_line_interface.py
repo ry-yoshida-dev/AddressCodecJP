@@ -11,21 +11,24 @@ from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.cli.command import Command
 from address_codec_jp.cli.command_arguments import CommandArguments
 from address_codec_jp.cli.coordinate_text import CoordinateText
+from address_codec_jp.cli.enum_argument import EnumArgument
 from address_codec_jp.cli.output_format import OutputFormat
+from address_codec_jp.cli.output_value import OutputValue
 from address_codec_jp.cli.record_writer import RecordWriter
 from address_codec_jp.download.registry_downloader import RegistryDownloader
-from address_codec_jp.download.registry_file import RegistryFile
+from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
 from address_codec_jp.formatting.address_format import AddressFormat
 from address_codec_jp.formatting.digit_width import DigitWidth
 from address_codec_jp.formatting.lot_style import LotStyle
 from address_codec_jp.formatting.name_script import NameScript
 from address_codec_jp.formatting.numeral_style import NumeralStyle
+from address_codec_jp.registry.import_summary import ImportSummary
 from address_codec_jp.registry_importer import RegistryImporter
 
 
 class CommandLineInterface:
     """
-    Command line front end of ``AddressCodec``.
+    Command line front end of ``AddressCodec`` and ``RegistryImporter``.
 
     Query commands read their inputs from the arguments, or from standard input, one
     per line, when no argument is given. Standard input is processed line by line, and
@@ -63,13 +66,7 @@ class CommandLineInterface:
         database_path = Path(namespace.database)
         match command:
             case Command.IMPORT:
-                with RegistryImporter.open(database_path) as importer:
-                    self._import_town_master(importer, Path(namespace.source))
-                return 0
-            case Command.IMPORT_POSITIONS:
-                with RegistryImporter.open(database_path) as importer:
-                    for source in namespace.sources:
-                        self._import_positions(importer, Path(source))
+                self._import(database_path, [Path(source) for source in namespace.sources])
                 return 0
             case Command.DOWNLOAD:
                 self._download(namespace, database_path)
@@ -89,46 +86,43 @@ class CommandLineInterface:
                             )
                         )
                 return 0
-            case Command.ENCODE | Command.DECODE | Command.LOCATE | Command.NEAREST:
-                writer = RecordWriter(OutputFormat(namespace.output))
+            case (
+                Command.ENCODE | Command.DECODE | Command.LOCATE | Command.NEAREST | Command.POSTAL
+            ):
+                writer = RecordWriter(namespace.output)
                 with AddressCodec.open(database_path) as codec:
                     return self._query(command, codec, namespace, writer)
             case _:
                 assert_never(command)
 
-    def _import_town_master(self, importer: RegistryImporter, source: Path) -> None:
-        summary = importer.import_town_master(source)
-        print(
-            f"Imported {summary.registered_count} towns and added "
-            + f"{summary.complemented_count} oaza-level towns from {source}; "
-            + f"removed {summary.removed_position_count} position rows of other towns."
-        )
+    def _import(self, database_path: Path, sources: list[Path]) -> None:
+        with RegistryImporter.open(database_path) as importer:
+            for summary in importer.import_files(sources):
+                self._report(summary)
 
-    def _import_positions(self, importer: RegistryImporter, source: Path) -> None:
-        summary = importer.import_positions(source)
+    def _report(self, summary: ImportSummary) -> None:
+        complemented = (
+            f", added {summary.complemented_count} oaza-level towns"
+            if summary.complemented_count
+            else ""
+        )
         print(
-            f"Imported {summary.stored_count} rows of {summary.dataset.value} from {source}; "
-            + f"removed {summary.removed_count} abolished lots."
+            f"Imported {summary.stored_count} rows of {summary.dataset.value} from "
+            + f"{summary.source}{complemented}; removed {summary.removed_count} rows."
         )
 
     def _download(self, namespace: CommandArguments, database_path: Path) -> None:
         downloader = RegistryDownloader(namespace.base_url)
         directory = Path(namespace.directory)
-        targets = downloader.plan(namespace.prefectures, namespace.municipalities)
-        for target in targets:
+        paths: list[Path] = []
+        for target in downloader.plan(namespace.prefectures, namespace.municipalities):
             path = downloader.download(
                 target, directory, is_existing_kept=namespace.is_existing_kept
             )
             print(f"Downloaded {downloader.url_of(target)} to {path}")
-        if not namespace.is_imported:
-            return
-        with RegistryImporter.open(database_path) as importer:
-            for target in targets:
-                source = directory / target.file_name
-                if target.registry_file is RegistryFile.TOWN:
-                    self._import_town_master(importer, source)
-                else:
-                    self._import_positions(importer, source)
+            paths.append(path)
+        if namespace.is_imported:
+            self._import(database_path, paths)
 
     def _query(
         self,
@@ -166,9 +160,11 @@ class CommandLineInterface:
                 address_match = codec.match(input_text, is_lot_verified=namespace.is_lot_verified)
                 writer.write(
                     input_text,
-                    [str(address_match.code), address_match.remainder]
-                    if address_match.remainder
-                    else [str(address_match.code)],
+                    [
+                        [str(address_match.code), address_match.remainder]
+                        if address_match.remainder
+                        else [str(address_match.code)]
+                    ],
                     {
                         "code": str(address_match.code),
                         "level": address_match.code.level.name,
@@ -180,18 +176,20 @@ class CommandLineInterface:
                 )
             case Command.DECODE:
                 address = codec.decode(input_text, self._address_format(namespace))
-                writer.write(input_text, [address], {"address": address})
+                writer.write(input_text, [[address]], {"address": address})
             case Command.LOCATE:
-                location = codec.locate(input_text, GeodeticCrs[namespace.crs.upper()])
+                location = codec.locate(input_text, namespace.crs)
                 writer.write(
                     input_text,
                     [
-                        str(location.code),
-                        str(location.located_code),
-                        location.level.name,
-                        f"{location.latitude_degrees:.9f}",
-                        f"{location.longitude_degrees:.9f}",
-                        str(location.crs),
+                        [
+                            str(location.code),
+                            str(location.located_code),
+                            location.level.name,
+                            f"{location.latitude_degrees:.9f}",
+                            f"{location.longitude_degrees:.9f}",
+                            str(location.crs),
+                        ]
                     ],
                     {
                         "code": str(location.code),
@@ -204,22 +202,22 @@ class CommandLineInterface:
                 )
             case Command.NEAREST:
                 nearest = codec.find_nearest(
-                    self._coordinate_text.parse(input_text),
-                    GeodeticCrs[namespace.crs.upper()],
-                    namespace.max_distance,
+                    self._coordinate_text.parse(input_text), namespace.crs, namespace.max_distance
                 )
                 location = nearest.location
                 address = codec.decode(nearest.code)
                 writer.write(
                     input_text,
                     [
-                        str(nearest.code),
-                        address,
-                        location.level.name,
-                        f"{location.latitude_degrees:.9f}",
-                        f"{location.longitude_degrees:.9f}",
-                        f"{nearest.distance_meters:.1f}",
-                        str(location.crs),
+                        [
+                            str(nearest.code),
+                            address,
+                            location.level.name,
+                            f"{location.latitude_degrees:.9f}",
+                            f"{location.longitude_degrees:.9f}",
+                            f"{nearest.distance_meters:.1f}",
+                            str(location.crs),
+                        ]
                     ],
                     {
                         "code": str(nearest.code),
@@ -231,16 +229,32 @@ class CommandLineInterface:
                         "crs": str(location.crs),
                     },
                 )
-            case Command.IMPORT | Command.IMPORT_POSITIONS | Command.INFO | Command.DOWNLOAD:
+            case Command.POSTAL:
+                address_format = self._address_format(namespace)
+                towns = [
+                    (str(address.code), codec.decode(address.code, address_format))
+                    for address in codec.list_by_postal_code(input_text)
+                ]
+                if not towns:
+                    raise AddressNotFoundError(f"No town is registered with {input_text!r}.")
+                town_values: list[OutputValue] = [
+                    {"code": code, "address": address} for code, address in towns
+                ]
+                writer.write(
+                    input_text,
+                    [[code, address] for code, address in towns],
+                    {"towns": town_values},
+                )
+            case Command.IMPORT | Command.DOWNLOAD | Command.INFO:
                 raise RuntimeError(f"{command.value} is not a query command.")
             case _:
                 assert_never(command)
 
     def _address_format(self, namespace: CommandArguments) -> AddressFormat:
         return AddressFormat(
-            numeral_style=NumeralStyle[namespace.numeral.upper()],
-            lot_style=LotStyle[namespace.lot.upper()],
-            digit_width=DigitWidth[namespace.width.upper()],
+            numeral_style=namespace.numeral,
+            lot_style=namespace.lot,
+            digit_width=namespace.width,
             is_prefecture_included=not namespace.is_prefecture_excluded,
             is_county_included=not namespace.is_county_excluded,
             name_script=NameScript.KATAKANA if namespace.is_kana else NameScript.KANJI,
@@ -253,28 +267,51 @@ class CommandLineInterface:
             description="Convert Japanese addresses to and from address codes.",
         )
         _ = parser.add_argument(
-            "--database", default="towns.sqlite3", help="SQLite town database path."
+            "--database",
+            default=CommandArguments.DEFAULT_DATABASE,
+            help=f"SQLite address database path ({CommandArguments.DEFAULT_DATABASE} by default).",
         )
         subparsers = parser.add_subparsers(dest="command", required=True)
 
         query_parser = argparse.ArgumentParser(add_help=False)
+        output_argument = EnumArgument(OutputFormat)
         _ = query_parser.add_argument(
             "--output",
-            choices=[output_format.value for output_format in OutputFormat],
-            default=OutputFormat.TSV.value,
+            type=output_argument,
+            metavar=output_argument.metavar,
+            default=OutputFormat.TSV,
             help="tsv, or jsonl with one object per input including errors.",
         )
         crs_parser = argparse.ArgumentParser(add_help=False)
+        crs_argument = EnumArgument(GeodeticCrs)
         _ = crs_parser.add_argument(
             "--crs",
-            choices=[crs.name.lower() for crs in GeodeticCrs],
-            default=GeodeticCrs.JGD2011.name.lower(),
+            type=crs_argument,
+            metavar=crs_argument.metavar,
+            default=GeodeticCrs.JGD2011,
+            help="Datum of coordinates (jgd2011 by default).",
         )
+        format_parser = argparse.ArgumentParser(add_help=False)
+        self._add_format_arguments(format_parser)
 
         import_parser = subparsers.add_parser(
-            Command.IMPORT.value, help="Import the Address Base Registry town master."
+            Command.IMPORT.value,
+            help="Import registry files of any dataset; the town master is imported first.",
         )
-        _ = import_parser.add_argument("source", help="mt_town_all.csv or its ZIP archive.")
+        _ = import_parser.add_argument(
+            "sources", nargs="+", help="Registry CSV files or their ZIP archives."
+        )
+
+        download_parser = subparsers.add_parser(
+            Command.DOWNLOAD.value,
+            help="Download the town master, nationwide points, and files of chosen areas.",
+        )
+        self._add_download_arguments(download_parser)
+
+        _ = subparsers.add_parser(
+            Command.INFO.value,
+            help="List imported registry files: time, dataset, rows, file name, and SHA-256.",
+        )
 
         encode_parser = subparsers.add_parser(
             Command.ENCODE.value, parents=[query_parser], help="Address to code."
@@ -291,48 +328,10 @@ class CommandLineInterface:
         )
 
         decode_parser = subparsers.add_parser(
-            Command.DECODE.value, parents=[query_parser], help="Code to address."
+            Command.DECODE.value, parents=[query_parser, format_parser], help="Code to address."
         )
         _ = decode_parser.add_argument(
             "inputs", nargs="*", metavar="code", help="Address codes; standard input if none."
-        )
-        _ = decode_parser.add_argument(
-            "--numeral",
-            choices=[style.name.lower() for style in NumeralStyle],
-            default=NumeralStyle.ARABIC.name.lower(),
-        )
-        _ = decode_parser.add_argument(
-            "--lot",
-            choices=[style.name.lower() for style in LotStyle],
-            default=LotStyle.RESIDENCE_INDICATION.name.lower(),
-        )
-        _ = decode_parser.add_argument(
-            "--width",
-            choices=[width.name.lower() for width in DigitWidth],
-            default=DigitWidth.HALF.name.lower(),
-        )
-        _ = decode_parser.add_argument(
-            "--no-prefecture", dest="is_prefecture_excluded", action="store_true"
-        )
-        _ = decode_parser.add_argument(
-            "--no-county", dest="is_county_excluded", action="store_true"
-        )
-        _ = decode_parser.add_argument(
-            "--kana", dest="is_kana", action="store_true", help="Write katakana readings."
-        )
-        _ = decode_parser.add_argument(
-            "--postal-code",
-            dest="is_postal_code_included",
-            action="store_true",
-            help="Prefix the registered postal code of the town.",
-        )
-
-        positions_parser = subparsers.add_parser(
-            Command.IMPORT_POSITIONS.value,
-            help="Import position datasets and block, residence, or parcel masters.",
-        )
-        _ = positions_parser.add_argument(
-            "sources", nargs="+", help="Registry CSV files or their ZIP archives."
         )
 
         locate_parser = subparsers.add_parser(
@@ -362,12 +361,60 @@ class CommandLineInterface:
             default=1000.0,
             help="Largest accepted distance in meters.",
         )
-        download_parser = subparsers.add_parser(
-            Command.DOWNLOAD.value,
-            help="Download the town master, nationwide points, and files of chosen areas.",
+
+        postal_parser = subparsers.add_parser(
+            Command.POSTAL.value,
+            parents=[query_parser, format_parser],
+            help="Postal code to the towns registered with it.",
         )
-        _ = download_parser.add_argument("directory", help="Directory for the downloaded files.")
-        _ = download_parser.add_argument(
+        _ = postal_parser.add_argument(
+            "inputs",
+            nargs="*",
+            metavar="postal_code",
+            help="Postal codes such as 100-0005; standard input if none.",
+        )
+        return parser
+
+    def _add_format_arguments(self, parser: argparse.ArgumentParser) -> None:
+        numeral_argument = EnumArgument(NumeralStyle)
+        _ = parser.add_argument(
+            "--numeral",
+            type=numeral_argument,
+            metavar=numeral_argument.metavar,
+            default=NumeralStyle.ARABIC,
+        )
+        lot_argument = EnumArgument(LotStyle)
+        _ = parser.add_argument(
+            "--lot",
+            type=lot_argument,
+            metavar=lot_argument.metavar,
+            default=LotStyle.AUTOMATIC,
+            help="Lot notation; automatic follows the numbering system of the town.",
+        )
+        width_argument = EnumArgument(DigitWidth)
+        _ = parser.add_argument(
+            "--width",
+            type=width_argument,
+            metavar=width_argument.metavar,
+            default=DigitWidth.HALF,
+        )
+        _ = parser.add_argument(
+            "--no-prefecture", dest="is_prefecture_excluded", action="store_true"
+        )
+        _ = parser.add_argument("--no-county", dest="is_county_excluded", action="store_true")
+        _ = parser.add_argument(
+            "--kana", dest="is_kana", action="store_true", help="Write katakana readings."
+        )
+        _ = parser.add_argument(
+            "--postal-code",
+            dest="is_postal_code_included",
+            action="store_true",
+            help="Prefix the registered postal code of the town.",
+        )
+
+    def _add_download_arguments(self, parser: argparse.ArgumentParser) -> None:
+        _ = parser.add_argument("directory", help="Directory for the downloaded files.")
+        _ = parser.add_argument(
             "--prefecture",
             dest="prefectures",
             action="append",
@@ -375,7 +422,7 @@ class CommandLineInterface:
             metavar="CODE",
             help="Two-digit prefecture code for town, block, and residence files; repeatable.",
         )
-        _ = download_parser.add_argument(
+        _ = parser.add_argument(
             "--municipality",
             dest="municipalities",
             action="append",
@@ -383,26 +430,20 @@ class CommandLineInterface:
             metavar="LG_CODE",
             help="Six-digit local government code for land parcel files; repeatable.",
         )
-        _ = download_parser.add_argument(
+        _ = parser.add_argument(
             "--import",
             dest="is_imported",
             action="store_true",
             help="Import the downloaded files into --database.",
         )
-        _ = download_parser.add_argument(
+        _ = parser.add_argument(
             "--keep-existing",
             dest="is_existing_kept",
             action="store_true",
             help="Skip files already present in the directory.",
         )
-        _ = download_parser.add_argument(
+        _ = parser.add_argument(
             "--base-url",
             default=RegistryDownloader.DEFAULT_BASE_URL,
             help="Download site or a mirror, e.g. a file:// URL.",
         )
-
-        _ = subparsers.add_parser(
-            Command.INFO.value,
-            help="List imported registry files: time, dataset, rows, file name, and SHA-256.",
-        )
-        return parser

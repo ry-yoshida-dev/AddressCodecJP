@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from address_codec_jp.domain.address_code import AddressCode
+from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.municipality import Municipality
 
 
@@ -31,6 +32,10 @@ class Town:
         Katakana reading of ``chome_name``, such as ``１チョウメ``.
     koaza_kana : str
         Katakana reading of ``koaza_name``.
+    lot_systems : frozenset[LotSystem]
+        Numbering systems of the lot numbers, given by the residence indication flag
+        (``rsdt_addr_flg``) of the registry. Both where residence indication covers only
+        part of the town. Residence indication towns also keep land parcel numbers.
     postal_codes : tuple[str, ...]
         Seven-digit postal codes registered for the town, in ascending order. The
         registry gives them only for some towns.
@@ -44,7 +49,7 @@ class Town:
     Raises
     ------
     ValueError
-        If ``machiaza_id`` or a postal code is malformed.
+        If ``machiaza_id`` or a postal code is malformed, or no numbering system is given.
     """
 
     municipality: Municipality
@@ -56,6 +61,7 @@ class Town:
     oaza_kana: str
     chome_kana: str
     koaza_kana: str
+    lot_systems: frozenset[LotSystem]
     postal_codes: tuple[str, ...]
     is_registered: bool
 
@@ -63,6 +69,8 @@ class Town:
 
     def __post_init__(self) -> None:
         _ = AddressCode(lg_code=self.lg_code, machiaza_id=self.machiaza_id)
+        if not self.lot_systems:
+            raise ValueError("A town requires at least one numbering system.")
         for postal_code in self.postal_codes:
             if not self._POSTAL_CODE.fullmatch(postal_code):
                 raise ValueError(f"Postal codes must be seven digits, got {postal_code!r}.")

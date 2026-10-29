@@ -16,7 +16,8 @@ class AddressFormat:
     numeral_style : NumeralStyle
         Arabic or kanji numerals for chome and lot numbers.
     lot_style : LotStyle
-        ``番``/``号``, ``番地``, or hyphen notation.
+        ``番``/``号``, ``番地``, or hyphen notation. ``AUTOMATIC`` follows the numbering
+        system of the town.
     digit_width : DigitWidth
         Half-width or full-width digits and hyphens.
     is_prefecture_included : bool
@@ -32,7 +33,7 @@ class AddressFormat:
     """
 
     numeral_style: NumeralStyle = NumeralStyle.ARABIC
-    lot_style: LotStyle = LotStyle.RESIDENCE_INDICATION
+    lot_style: LotStyle = LotStyle.AUTOMATIC
     digit_width: DigitWidth = DigitWidth.HALF
     is_prefecture_included: bool = True
     is_county_included: bool = True

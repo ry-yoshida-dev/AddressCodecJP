@@ -102,6 +102,33 @@ class TextNormalizer:
             return None
         return matched.group("head") + matched.group("tail")
 
+    def parse_postal_code(self, text: str) -> str:
+        """
+        Read a postal code written on its own.
+
+        Parameters
+        ----------
+        text : str
+            Postal code such as ``100-0005``, ``〒1000005``, or ``１００－０００５``.
+
+        Returns
+        -------
+        str
+            Seven-digit postal code.
+
+        Raises
+        ------
+        ValueError
+            If the text is not a postal code.
+        """
+        prepared = self._normalize_dashes(
+            self._WHITESPACE.sub("", unicodedata.normalize("NFKC", text))
+        )
+        matched = self._POSTAL_CODE.fullmatch(prepared)
+        if matched is None:
+            raise ValueError(f"Invalid postal code: {text!r}.")
+        return matched.group("head") + matched.group("tail")
+
     def normalize_name(self, name: str) -> set[str]:
         """
         Normalize a registry name into every strict form it can take inside an address.

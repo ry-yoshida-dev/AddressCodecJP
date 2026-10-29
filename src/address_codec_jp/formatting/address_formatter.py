@@ -2,6 +2,7 @@ from typing import ClassVar
 
 from address_codec_jp.domain.address import Address
 from address_codec_jp.domain.lot_number import LotNumber
+from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.municipality import Municipality
 from address_codec_jp.domain.town import Town
 from address_codec_jp.errors.reading_not_found_error import ReadingNotFoundError
@@ -115,7 +116,7 @@ class AddressFormatter:
         return (
             self._format_chome(town, address_format)
             + self._name(town.koaza_name, town.koaza_kana, address_format)
-            + self._format_lot(lot_numbers, address_format)
+            + self._format_lot(town, lot_numbers, address_format)
         )
 
     def _format_chome(self, town: Town, address_format: AddressFormat) -> str:
@@ -133,11 +134,11 @@ class AddressFormatter:
                 suffix = "チョウメ"
         return self._format_numeral(town.chome_number, address_format) + suffix
 
-    def _format_lot(self, lot_numbers: list[str], address_format: AddressFormat) -> str:
+    def _format_lot(self, town: Town, lot_numbers: list[str], address_format: AddressFormat) -> str:
         block_marker, residence_marker, parcel_marker = self._lot_markers(
             address_format.name_script
         )
-        match address_format.lot_style, lot_numbers:
+        match self._resolve_lot_style(town, address_format.lot_style), lot_numbers:
             case _, []:
                 return ""
             case LotStyle.RESIDENCE_INDICATION, [block]:
@@ -152,6 +153,15 @@ class AddressFormatter:
                 return "-".join(lot_numbers)
             case _:
                 raise ValueError(f"Unsupported lot numbers: {lot_numbers}.")
+
+    def _resolve_lot_style(self, town: Town, lot_style: LotStyle) -> LotStyle:
+        match lot_style:
+            case LotStyle.AUTOMATIC if LotSystem.RESIDENCE_INDICATION in town.lot_systems:
+                return LotStyle.RESIDENCE_INDICATION
+            case LotStyle.AUTOMATIC:
+                return LotStyle.LAND_PARCEL
+            case _:
+                return lot_style
 
     def _lot_markers(self, name_script: NameScript) -> tuple[str, str, str]:
         match name_script:

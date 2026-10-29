@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from itertools import batched
 from typing import ClassVar
 
+from address_codec_jp.domain.lot_system import LotSystem
 from address_codec_jp.domain.municipality import Municipality
 from address_codec_jp.domain.prefecture import Prefecture
 from address_codec_jp.domain.town import Town
@@ -15,8 +16,8 @@ class TownRepository:
     """
     SQLite-backed store of municipalities and town records.
 
-    Municipality names are stored once per municipality, and postal codes in a table of
-    their own, because a town may have several.
+    Municipality names are stored once per municipality, and postal codes and numbering
+    systems in tables of their own, because a town may have several.
 
     Parameters
     ----------
@@ -56,9 +57,16 @@ class TownRepository:
         "SELECT "
         + ", ".join(f"t.{name}" for name in _TOWN_COLUMN_NAMES)
         + ", (SELECT group_concat(p.postal_code, ';') FROM town_postal_codes AS p "
-        + "WHERE p.lg_code = t.lg_code AND p.machiaza_id = t.machiaza_id) FROM towns AS t"
+        + "WHERE p.lg_code = t.lg_code AND p.machiaza_id = t.machiaza_id)"
+        + ", (SELECT group_concat(l.lot_system, ';') FROM town_lot_systems AS l "
+        + "WHERE l.lg_code = t.lg_code AND l.machiaza_id = t.machiaza_id) FROM towns AS t"
     )
-    _TABLES: ClassVar[tuple[str, ...]] = ("municipalities", "towns", "town_postal_codes")
+    _TABLES: ClassVar[tuple[str, ...]] = (
+        "municipalities",
+        "towns",
+        "town_postal_codes",
+        "town_lot_systems",
+    )
     _SCHEMA: ClassVar[tuple[str, ...]] = (
         """
         CREATE TABLE municipalities (
@@ -100,8 +108,16 @@ class TownRepository:
         CREATE INDEX town_postal_codes_by_code
         ON town_postal_codes (postal_code)
         """,
+        """
+        CREATE TABLE town_lot_systems (
+            lg_code TEXT NOT NULL,
+            machiaza_id TEXT NOT NULL,
+            lot_system TEXT NOT NULL,
+            PRIMARY KEY (lg_code, machiaza_id, lot_system)
+        )
+        """,
     )
-    _POSTAL_CODE_SEPARATOR: ClassVar[str] = ";"
+    _VALUE_SEPARATOR: ClassVar[str] = ";"
     _CONFLICT_REPORT_LIMIT: ClassVar[int] = 5
     _BATCH_SIZE: ClassVar[int] = 10000
 
@@ -115,13 +131,17 @@ class TownRepository:
 
     def replace_all(self, towns: Iterable[Town]) -> TownReplacement:
         """
-        Replace every stored municipality and town with the given towns in one transaction.
+        Replace every stored municipality and town with the given towns.
 
-        Rows repeated with identical contents are stored once. Oaza-level towns are then
-        added for oaza registered only by chome. An ABR town ID consists of a four-digit
-        oaza part and a three-digit chome part, so such a town gets the chome part ``000``
-        and ``is_registered`` set to ``False``. It takes the postal codes of all its
-        chome.
+        Runs within the caller's transaction, so that a failure keeps the previous towns.
+
+        Rows repeated with identical contents are stored once. The registry lists a town
+        once per numbering system where residence indication covers only part of it, so
+        rows that differ only in their numbering systems are merged. Oaza-level towns are
+        then added for oaza registered only by chome. An ABR town ID consists of a
+        four-digit oaza part and a three-digit chome part, so such a town gets the chome
+        part ``000`` and ``is_registered`` set to ``False``. It takes the postal codes and
+        numbering systems of all its chome.
 
         Parameters
         ----------
@@ -137,38 +157,43 @@ class TownRepository:
         ------
         RegistryFormatError
             If one town ID appears with different contents, or one local government code
-            with different municipality names. Nothing is changed then.
+            with different municipality names.
         """
-        with self._connection:
-            self._load_incoming(towns)
-            self._reject_conflicts()
-            for table in self._TABLES:
-                _ = self._connection.execute(f"DELETE FROM {table}")
+        self._load_incoming(towns)
+        self._reject_conflicts()
+        for table in self._TABLES:
+            _ = self._connection.execute(f"DELETE FROM {table}")
+        _ = self._connection.execute(
+            f"INSERT INTO municipalities ({self._MUNICIPALITY_COLUMNS}) "
+            + f"SELECT DISTINCT {self._MUNICIPALITY_COLUMNS} FROM incoming_towns"
+        )
+        registered_cursor = self._connection.execute(
+            f"INSERT INTO towns ({self._TOWN_COLUMNS}) "
+            + f"SELECT DISTINCT {self._TOWN_COLUMNS} FROM incoming_towns"
+        )
+        _ = self._connection.execute(
+            "INSERT OR IGNORE INTO town_postal_codes SELECT * FROM incoming_postal_codes"
+        )
+        _ = self._connection.execute(
+            "INSERT OR IGNORE INTO town_lot_systems SELECT * FROM incoming_lot_systems"
+        )
+        self._drop_incoming()
+        complemented_cursor = self._connection.execute(
+            f"INSERT OR IGNORE INTO towns ({self._TOWN_COLUMNS}) "
+            + "SELECT lg_code, substr(machiaza_id, 1, 4) || '000', oaza_name, '', NULL, '', "
+            + "oaza_kana, '', '', 0 FROM towns WHERE chome_number IS NOT NULL "
+            + "GROUP BY lg_code, substr(machiaza_id, 1, 4)"
+        )
+        for table, column in (
+            ("town_postal_codes", "postal_code"),
+            ("town_lot_systems", "lot_system"),
+        ):
             _ = self._connection.execute(
-                f"INSERT INTO municipalities ({self._MUNICIPALITY_COLUMNS}) "
-                + f"SELECT DISTINCT {self._MUNICIPALITY_COLUMNS} FROM incoming_towns"
-            )
-            registered_cursor = self._connection.execute(
-                f"INSERT INTO towns ({self._TOWN_COLUMNS}) "
-                + f"SELECT DISTINCT {self._TOWN_COLUMNS} FROM incoming_towns"
-            )
-            _ = self._connection.execute(
-                "INSERT OR IGNORE INTO town_postal_codes SELECT * FROM incoming_postal_codes"
-            )
-            self._drop_incoming()
-            complemented_cursor = self._connection.execute(
-                f"INSERT OR IGNORE INTO towns ({self._TOWN_COLUMNS}) "
-                + "SELECT lg_code, substr(machiaza_id, 1, 4) || '000', oaza_name, '', NULL, '', "
-                + "oaza_kana, '', '', 0 FROM towns WHERE chome_number IS NOT NULL "
-                + "GROUP BY lg_code, substr(machiaza_id, 1, 4)"
-            )
-            _ = self._connection.execute(
-                "INSERT OR IGNORE INTO town_postal_codes "
-                + "SELECT p.lg_code, oaza.machiaza_id, p.postal_code "
-                + "FROM town_postal_codes AS p "
+                f"INSERT OR IGNORE INTO {table} "
+                + f"SELECT c.lg_code, oaza.machiaza_id, c.{column} FROM {table} AS c "
                 + "JOIN towns AS chome USING (lg_code, machiaza_id) "
-                + "JOIN towns AS oaza ON oaza.lg_code = p.lg_code "
-                + "AND oaza.machiaza_id = substr(p.machiaza_id, 1, 4) || '000' "
+                + "JOIN towns AS oaza ON oaza.lg_code = c.lg_code "
+                + "AND oaza.machiaza_id = substr(c.machiaza_id, 1, 4) || '000' "
                 + "WHERE chome.chome_number IS NOT NULL AND oaza.is_registered = 0"
             )
         return TownReplacement(
@@ -181,6 +206,9 @@ class TownRepository:
         _ = self._connection.execute(f"CREATE TEMP TABLE incoming_towns ({self._INCOMING_COLUMNS})")
         _ = self._connection.execute(
             "CREATE TEMP TABLE incoming_postal_codes AS SELECT * FROM town_postal_codes LIMIT 0"
+        )
+        _ = self._connection.execute(
+            "CREATE TEMP TABLE incoming_lot_systems AS SELECT * FROM town_lot_systems LIMIT 0"
         )
         placeholders = ", ".join("?" for _ in self._INCOMING_COLUMNS.split(", "))
         for chunk in batched(towns, self._BATCH_SIZE):
@@ -206,7 +234,7 @@ class TownRepository:
                         town.chome_kana,
                         town.koaza_kana,
                         town.is_registered,
-                        self._POSTAL_CODE_SEPARATOR.join(town.postal_codes),
+                        self._VALUE_SEPARATOR.join(town.postal_codes),
                     )
                     for town in chunk
                 ],
@@ -217,6 +245,14 @@ class TownRepository:
                     (town.lg_code, town.machiaza_id, postal_code)
                     for town in chunk
                     for postal_code in town.postal_codes
+                ],
+            )
+            _ = self._connection.executemany(
+                "INSERT INTO incoming_lot_systems VALUES (?, ?, ?)",
+                [
+                    (town.lg_code, town.machiaza_id, lot_system.value)
+                    for town in chunk
+                    for lot_system in town.lot_systems
                 ],
             )
 
@@ -249,6 +285,7 @@ class TownRepository:
     def _drop_incoming(self) -> None:
         _ = self._connection.execute("DROP TABLE IF EXISTS temp.incoming_towns")
         _ = self._connection.execute("DROP TABLE IF EXISTS temp.incoming_postal_codes")
+        _ = self._connection.execute("DROP TABLE IF EXISTS temp.incoming_lot_systems")
 
     def get_town(self, lg_code: str, machiaza_id: str) -> Town:
         """
@@ -384,6 +421,40 @@ class TownRepository:
         ).fetchall()
         return {str(row[0]) for row in rows}
 
+    def list_towns_by_postal_code(self, postal_code: str) -> list[Town]:
+        """
+        List the registered towns that have a postal code.
+
+        Oaza-level towns added on import are left out, because they only repeat the
+        postal codes of their chome.
+
+        Parameters
+        ----------
+        postal_code : str
+            Seven-digit postal code.
+
+        Returns
+        -------
+        list[Town]
+            Towns ordered by local government code and town identifier. Empty when no
+            town has the postal code.
+        """
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            f"{self._TOWN_SELECT} WHERE t.is_registered = 1 AND EXISTS (SELECT 1 "
+            + "FROM town_postal_codes AS q WHERE q.lg_code = t.lg_code "
+            + "AND q.machiaza_id = t.machiaza_id AND q.postal_code = ?) "
+            + "ORDER BY t.lg_code, t.machiaza_id",
+            (postal_code,),
+        ).fetchall()
+        municipalities: dict[str, Municipality] = {}
+        towns: list[Town] = []
+        for row in rows:
+            lg_code = str(row[0])
+            if lg_code not in municipalities:
+                municipalities[lg_code] = self.get_municipality(lg_code)
+            towns.append(self._to_town(row, municipalities[lg_code]))
+        return towns
+
     def list_towns(self, lg_code: str) -> list[Town]:
         """
         List towns of a municipality.
@@ -410,6 +481,7 @@ class TownRepository:
     def _to_town(self, row: tuple[object, ...], municipality: Municipality) -> Town:
         chome_number = row[4]
         postal_codes = row[10]
+        lot_systems = row[11]
         return Town(
             municipality=municipality,
             machiaza_id=str(row[1]),
@@ -420,8 +492,11 @@ class TownRepository:
             oaza_kana=str(row[6]),
             chome_kana=str(row[7]),
             koaza_kana=str(row[8]),
+            lot_systems=frozenset(
+                LotSystem(value) for value in str(lot_systems).split(self._VALUE_SEPARATOR)
+            ),
             is_registered=bool(row[9]),
-            postal_codes=tuple(sorted(postal_codes.split(self._POSTAL_CODE_SEPARATOR)))
+            postal_codes=tuple(sorted(postal_codes.split(self._VALUE_SEPARATOR)))
             if isinstance(postal_codes, str)
             else (),
         )

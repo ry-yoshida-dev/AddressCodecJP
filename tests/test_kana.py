@@ -37,8 +37,8 @@ KANA: AddressFormat = AddressFormat(name_script=NameScript.KATAKANA)
             ),
             "チヨダクマルノウチ一チョウメ二バン三ゴウ",
         ),
-        ("012025-0007001-4", KANA, "ホッカイドウハコダテシベンテンチョウ1チョウ4バン"),
-        ("113247-0001001-5", KANA, "サイタマケンイルマグンミヨシマチチクマザワヒガシ5バン"),
+        ("012025-0007001-4", KANA, "ホッカイドウハコダテシベンテンチョウ1チョウ4バンチ"),
+        ("113247-0001001-5", KANA, "サイタマケンイルマグンミヨシマチチクマザワヒガシ5バンチ"),
         (
             "162019-0000590",
             AddressFormat(name_script=NameScript.KATAKANA, digit_width=DigitWidth.FULL),

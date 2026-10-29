@@ -3,7 +3,7 @@ from pathlib import Path
 from address_codec_jp.domain import Municipality, Town
 from address_codec_jp.matching import AreaMatcher, TownSource
 from address_codec_jp.normalization import LotNumberParser, TextNormalizer
-from address_codec_jp.storage import AbrTownCsvReader
+from address_codec_jp.registry import AbrTownCsvReader
 
 FIXTURE: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
 

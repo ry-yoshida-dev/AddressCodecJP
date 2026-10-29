@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Self
 
 from address_codec_jp.domain.address_code import AddressCode
 from address_codec_jp.domain.lot_number import LotNumber
@@ -57,6 +58,35 @@ class Address:
                 )
         elif self.lot.numbers:
             raise ValueError("Lot numbers require a town.")
+
+    @classmethod
+    def for_town(cls, town: Town, lot: LotNumber | None = None) -> Self:
+        """
+        Build the address of a town and its enclosing areas.
+
+        Parameters
+        ----------
+        town : Town
+            Town of the address.
+        lot : LotNumber | None
+            Lot numbers within the town, or ``None`` for the town itself.
+
+        Returns
+        -------
+        Self
+            Address of the town's prefecture, municipality, town, and lot numbers.
+
+        Raises
+        ------
+        ValueError
+            If lot numbers are given for an oaza that takes them only under a chome.
+        """
+        return cls(
+            prefecture=town.municipality.prefecture,
+            municipality=town.municipality,
+            town=town,
+            lot=lot or LotNumber(),
+        )
 
     @property
     def code(self) -> AddressCode:

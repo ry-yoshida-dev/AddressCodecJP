@@ -7,6 +7,7 @@ license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     "geo-coordinate @ git+https://github.com/ry-yoshida-dev/GeoCoordinate.git@4c33a80c97fe939070e5515092e59b68b21f6b07",
+    "numpy>=2",
 ]
 
 [project.scripts]

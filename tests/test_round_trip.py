@@ -16,7 +16,7 @@ from address_codec_jp import (
     RegistryImporter,
     Town,
 )
-from address_codec_jp.storage import AbrTownCsvReader
+from address_codec_jp.registry import AbrTownCsvReader
 
 FIXTURE: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
 DOCUMENTED_AMBIGUOUS_TOWNS: frozenset[tuple[str, str]] = frozenset(
@@ -48,7 +48,7 @@ FORMATS: list[AddressFormat] = [
 def shared_codec() -> Iterator[AddressCodec]:
     """Codec shared by the generated examples of this module."""
     with RegistryImporter.open(":memory:") as importer:
-        _ = importer.import_town_master(FIXTURE)
+        _ = importer.import_file(FIXTURE)
         yield AddressCodec(importer.database)
 
 

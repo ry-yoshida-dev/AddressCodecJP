@@ -9,23 +9,24 @@ from address_codec_jp import (
     AddressLevel,
     AddressNotFoundError,
     DatasetNotImportedError,
+    LotSystem,
     RegistryFormatError,
     RegistryImporter,
     UnsupportedDatabaseError,
 )
-from address_codec_jp.storage import AbrTownCsvReader
+from address_codec_jp.registry import AbrTownCsvReader
 
 HEADER: str = (
     "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"
     + "pref_kana,county_kana,city_kana,ward_kana,oaza_cho_kana,chome_kana,koaza_kana,"
-    + "post_code,ablt_date\n"
+    + "post_code,ablt_date,rsdt_addr_flg\n"
 )
-EMPTY_TRAILING_COLUMNS: str = ",,,,,,,,,"
+EMPTY_TRAILING_COLUMNS: str = ",,,,,,,,,,0"
 MARUNOUCHI_ROW: str = "131016,0001001,東京都,,千代田区,,丸の内,一丁目,"
 
 
 def write_csv(path: Path, rows: list[str]) -> Path:
-    """Write a minimal town master CSV whose rows leave kana, postal code, and abolition empty."""
+    """Write a minimal town master CSV of land parcel towns without kana or postal codes."""
     _ = path.write_text(
         HEADER + "".join(f"{row}{EMPTY_TRAILING_COLUMNS}\n" for row in rows), encoding="utf-8"
     )
@@ -36,7 +37,7 @@ def build_database(tmp_path: Path) -> Path:
     """Import a one-town master into a database file."""
     database = tmp_path / "towns.sqlite3"
     with RegistryImporter.open(database) as importer:
-        _ = importer.import_town_master(write_csv(tmp_path / "master.csv", [MARUNOUCHI_ROW]))
+        _ = importer.import_file(write_csv(tmp_path / "master.csv", [MARUNOUCHI_ROW]))
     return database
 
 
@@ -55,9 +56,9 @@ def test_reimport_replaces_previous_towns(tmp_path: Path) -> None:
     old_master = write_csv(tmp_path / "old.csv", [MARUNOUCHI_ROW])
     new_master = write_csv(tmp_path / "new.csv", ["131032,0005006,東京都,,港区,,六本木,六丁目,"])
     with RegistryImporter.open(":memory:") as importer:
-        _ = importer.import_town_master(old_master)
-        summary = importer.import_town_master(new_master)
-        assert (summary.registered_count, summary.complemented_count) == (1, 1)
+        _ = importer.import_file(old_master)
+        summary = importer.import_file(new_master)
+        assert (summary.stored_count, summary.complemented_count) == (1, 1)
         codec = AddressCodec(importer.database)
         with pytest.raises(AddressNotFoundError):
             _ = codec.decode("131016-0001001")
@@ -88,9 +89,9 @@ def test_failed_import_keeps_previous_towns(tmp_path: Path) -> None:
         ],
     )
     with RegistryImporter.open(":memory:") as importer:
-        _ = importer.import_town_master(good_master)
+        _ = importer.import_file(good_master)
         with pytest.raises(RegistryFormatError, match="Row 3"):
-            _ = importer.import_town_master(bad_master)
+            _ = importer.import_file(bad_master)
         assert AddressCodec(importer.database).decode("131016-0001001") == (
             "東京都千代田区丸の内1丁目"
         )
@@ -99,8 +100,8 @@ def test_failed_import_keeps_previous_towns(tmp_path: Path) -> None:
 def test_identical_duplicate_rows_are_stored_once(tmp_path: Path) -> None:
     master = write_csv(tmp_path / "duplicate.csv", [MARUNOUCHI_ROW, MARUNOUCHI_ROW])
     with RegistryImporter.open(":memory:") as importer:
-        summary = importer.import_town_master(master)
-        assert summary.registered_count == 1
+        summary = importer.import_file(master)
+        assert summary.stored_count == 1
 
 
 def test_conflicting_duplicate_rows_are_rejected(tmp_path: Path) -> None:
@@ -109,7 +110,7 @@ def test_conflicting_duplicate_rows_are_rejected(tmp_path: Path) -> None:
         [MARUNOUCHI_ROW, "131016,0001001,東京都,,千代田区,,丸の内,二丁目,"],
     )
     with RegistryImporter.open(":memory:") as importer, pytest.raises(RegistryFormatError):
-        _ = importer.import_town_master(master)
+        _ = importer.import_file(master)
 
 
 def test_codec_opens_database_read_only(tmp_path: Path) -> None:
@@ -123,7 +124,7 @@ def test_codec_opens_database_read_only(tmp_path: Path) -> None:
 def test_importer_adds_to_existing_database(tmp_path: Path) -> None:
     database = build_database(tmp_path)
     with RegistryImporter.open(database) as importer:
-        _ = importer.import_town_master(
+        _ = importer.import_file(
             write_csv(tmp_path / "new.csv", ["131032,0005006,東京都,,港区,,六本木,六丁目,"])
         )
     with AddressCodec.open(database) as codec:
@@ -149,6 +150,8 @@ def test_open_rejects_file_that_is_not_sqlite(tmp_path: Path) -> None:
     _ = database.write_text("not a database " * 100, encoding="utf-8")
     with pytest.raises(UnsupportedDatabaseError, match="not an SQLite database"):
         _ = AddressCodec.open(database)
+    with pytest.raises(UnsupportedDatabaseError, match="not an SQLite database"):
+        _ = RegistryImporter.open(database)
 
 
 def test_open_rejects_database_of_another_schema_version(tmp_path: Path) -> None:
@@ -166,8 +169,8 @@ def test_abolished_towns_are_skipped(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
         HEADER
-        + "131016,0001001,東京都,,千代田区,,丸の内,一丁目,,,,,,,,,,\n"
-        + "131016,0001002,東京都,,千代田区,,丸の内,二丁目,,,,,,,,,,2020-04-01\n",
+        + "131016,0001001,東京都,,千代田区,,丸の内,一丁目,,,,,,,,,,,0\n"
+        + "131016,0001002,東京都,,千代田区,,丸の内,二丁目,,,,,,,,,,2020-04-01,0\n",
         encoding="utf-8",
     )
     assert [town.machiaza_id for town in AbrTownCsvReader().read(master)] == ["0001001"]
@@ -178,13 +181,14 @@ def test_town_reader_keeps_readings_and_postal_codes(tmp_path: Path) -> None:
     _ = master.write_text(
         HEADER
         + "131016,0001001,東京都,,千代田区,,丸の内,一丁目,,"
-        + "トウキョウト,,チヨダク,,マルノウチ,１チョウメ,,1000013;1000005,\n",
+        + "トウキョウト,,チヨダク,,マルノウチ,１チョウメ,,1000013;1000005,,1\n",
         encoding="utf-8",
     )
     town = next(AbrTownCsvReader().read(master))
     assert (town.oaza_kana, town.chome_kana) == ("マルノウチ", "１チョウメ")
     assert town.postal_codes == ("1000005", "1000013")
     assert town.municipality.prefecture.kana == "トウキョウト"
+    assert town.lot_systems == {LotSystem.RESIDENCE_INDICATION}
 
 
 def test_reimport_removes_orphaned_positions(
@@ -192,8 +196,8 @@ def test_reimport_removes_orphaned_positions(
 ) -> None:
     assert located_codec.locate("千代田区丸の内1-2-3").is_exact
     master = write_csv(tmp_path / "new.csv", [MARUNOUCHI_ROW])
-    summary = importer.import_town_master(master)
-    assert summary.removed_position_count > 0
+    summary = importer.import_file(master)
+    assert summary.removed_count > 0
     codec = AddressCodec(importer.database)
     assert codec.locate("千代田区丸の内1-2-3").is_exact
     assert codec.locate("東京都").level is AddressLevel.PREFECTURE
@@ -212,4 +216,31 @@ def test_municipality_names_must_agree(tmp_path: Path) -> None:
         RegistryImporter.open(":memory:") as importer,
         pytest.raises(RegistryFormatError, match="131016"),
     ):
-        _ = importer.import_town_master(master)
+        _ = importer.import_file(master)
+
+
+def test_town_reader_rejects_an_unknown_numbering_flag(tmp_path: Path) -> None:
+    master = tmp_path / "master.csv"
+    _ = master.write_text(HEADER + MARUNOUCHI_ROW + ",,,,,,,,,,2\n", encoding="utf-8")
+    with pytest.raises(RegistryFormatError, match="Row 2: rsdt_addr_flg"):
+        _ = list(AbrTownCsvReader().read(master))
+
+
+def test_town_reader_rejects_other_datasets() -> None:
+    positions = Path(__file__).parent / "fixtures" / "positions" / "mt_town_pos_sample.csv"
+    with pytest.raises(RegistryFormatError, match="not the town master"):
+        _ = list(AbrTownCsvReader().read(positions))
+
+
+def test_town_listed_once_per_numbering_system_is_merged(tmp_path: Path) -> None:
+    master = tmp_path / "master.csv"
+    _ = master.write_text(
+        HEADER + MARUNOUCHI_ROW + ",,,,,,,,,,0\n" + MARUNOUCHI_ROW + ",,,,,,,,,,1\n",
+        encoding="utf-8",
+    )
+    both_systems = {LotSystem.RESIDENCE_INDICATION, LotSystem.LAND_PARCEL}
+    with RegistryImporter.open(":memory:") as importer:
+        assert importer.import_file(master).stored_count == 1
+        towns = importer.database.towns
+        assert towns.get_town("131016", "0001001").lot_systems == both_systems
+        assert towns.get_town("131016", "0001000").lot_systems == both_systems

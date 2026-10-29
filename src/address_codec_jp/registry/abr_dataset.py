@@ -3,22 +3,26 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import Enum
 
+from address_codec_jp.domain.address_code import AddressCode
 from address_codec_jp.errors.registry_format_error import RegistryFormatError
+from address_codec_jp.registry.distribution_scope import DistributionScope
 
 
 class AbrDataset(Enum):
     """
-    Address Base Registry datasets that can be imported.
+    Address Base Registry datasets that can be downloaded and imported.
 
-    Each value is the file name prefix the registry publishes the dataset under.
+    Each value is the directory and file name prefix the registry publishes the dataset
+    under.
 
     Attributes
     ----------
     TOWN
         Town master (町字マスター).
-    AREA_POSITION
-        Representative points of prefectures or municipalities
-        (都道府県・市区町村マスター位置参照拡張).
+    PREFECTURE_POSITION
+        Representative points of prefectures (都道府県マスター位置参照拡張).
+    MUNICIPALITY_POSITION
+        Representative points of municipalities (市区町村マスター位置参照拡張).
     TOWN_POSITION
         Representative points of towns (町字マスター位置参照拡張).
     BLOCK
@@ -36,7 +40,8 @@ class AbrDataset(Enum):
     """
 
     TOWN = "mt_town"
-    AREA_POSITION = "mt_pref_pos / mt_city_pos"
+    PREFECTURE_POSITION = "mt_pref_pos"
+    MUNICIPALITY_POSITION = "mt_city_pos"
     TOWN_POSITION = "mt_town_pos"
     BLOCK = "mt_rsdtdsp_blk"
     BLOCK_POSITION = "mt_rsdtdsp_blk_pos"
@@ -46,24 +51,30 @@ class AbrDataset(Enum):
     PARCEL_POSITION = "mt_parcel_pos"
 
     @classmethod
-    def detect(cls, header: Sequence[str]) -> AbrDataset:
+    def detect(cls, header: Sequence[str], first_row: Sequence[str] | None) -> AbrDataset:
         """
         Identify a dataset by its CSV header.
+
+        Prefecture and municipality points share one header, so they are told apart by
+        the local government code of the first row.
 
         Parameters
         ----------
         header : Sequence[str]
             Column names of the file.
+        first_row : Sequence[str] | None
+            First data row, or ``None`` when the file has no data rows.
 
         Returns
         -------
         AbrDataset
-            Dataset the header belongs to.
+            Dataset the file belongs to.
 
         Raises
         ------
         RegistryFormatError
-            If the header belongs to none of the datasets.
+            If the header belongs to none of the datasets, or a file of prefecture or
+            municipality points has no row to tell which it is.
         """
         columns = set(header)
         is_position = "rep_lon" in columns
@@ -73,8 +84,10 @@ class AbrDataset(Enum):
             return cls.RESIDENCE_POSITION if is_position else cls.RESIDENCE
         if "blk_id" in columns:
             return cls.BLOCK_POSITION if is_position else cls.BLOCK
-        if is_position:
-            return cls.TOWN_POSITION if "machiaza_id" in columns else cls.AREA_POSITION
+        if is_position and "machiaza_id" in columns:
+            return cls.TOWN_POSITION
+        if is_position and "lg_code" in columns:
+            return cls._detect_area_position(header, first_row)
         if {"machiaza_id", "oaza_cho"} <= columns:
             return cls.TOWN
         raise RegistryFormatError(
@@ -83,10 +96,24 @@ class AbrDataset(Enum):
             + "."
         )
 
+    @classmethod
+    def _detect_area_position(
+        cls, header: Sequence[str], first_row: Sequence[str] | None
+    ) -> AbrDataset:
+        lg_code_index = list(header).index("lg_code")
+        if first_row is None or len(first_row) <= lg_code_index:
+            raise RegistryFormatError(
+                "A file of prefecture or municipality points needs a data row to tell which "
+                + "it holds."
+            )
+        if AddressCode.is_prefecture_code(first_row[lg_code_index].zfill(6)):
+            return cls.PREFECTURE_POSITION
+        return cls.MUNICIPALITY_POSITION
+
     @property
     def is_position_related(self) -> bool:
         """
-        Tell whether the dataset is imported by ``RegistryImporter.import_positions``.
+        Tell whether the dataset holds points or the lot numbers that points are keyed by.
 
         Returns
         -------
@@ -94,6 +121,32 @@ class AbrDataset(Enum):
             ``False`` only for the town master.
         """
         return self is not AbrDataset.TOWN
+
+    @property
+    def scope(self) -> DistributionScope:
+        """
+        Area unit of the distributed files.
+
+        Returns
+        -------
+        DistributionScope
+            Nationwide, per prefecture, or per municipality.
+        """
+        match self:
+            case (
+                AbrDataset.TOWN | AbrDataset.PREFECTURE_POSITION | AbrDataset.MUNICIPALITY_POSITION
+            ):
+                return DistributionScope.NATIONWIDE
+            case (
+                AbrDataset.TOWN_POSITION
+                | AbrDataset.BLOCK
+                | AbrDataset.BLOCK_POSITION
+                | AbrDataset.RESIDENCE
+                | AbrDataset.RESIDENCE_POSITION
+            ):
+                return DistributionScope.PREFECTURE
+            case AbrDataset.PARCEL | AbrDataset.PARCEL_POSITION:
+                return DistributionScope.MUNICIPALITY
 
     @property
     def required_columns(self) -> tuple[str, ...]:
@@ -125,10 +178,11 @@ class AbrDataset(Enum):
                     "oaza_cho_kana",
                     "chome_kana",
                     "koaza_kana",
+                    "rsdt_addr_flg",
                     "post_code",
                     "ablt_date",
                 )
-            case AbrDataset.AREA_POSITION:
+            case AbrDataset.PREFECTURE_POSITION | AbrDataset.MUNICIPALITY_POSITION:
                 return ("lg_code", *point_columns)
             case AbrDataset.TOWN_POSITION:
                 return ("lg_code", "machiaza_id", "rsdt_addr_flg", *point_columns)

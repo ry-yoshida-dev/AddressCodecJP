@@ -2,7 +2,9 @@ import math
 from collections.abc import Callable
 from typing import ClassVar
 
-from geo_coordinate import GeoCoordinate, GeodeticCrs
+import numpy as np
+import numpy.typing as npt
+from geo_coordinate import GeoCoordinate, GeoCoordinates, GeodeticCrs
 
 from address_codec_jp.domain.address_location import AddressLocation
 from address_codec_jp.domain.address_point import AddressPoint
@@ -98,9 +100,10 @@ class NearestAddressFinder:
         while True:
             candidates = search(self._bounds(searched, radius_meters))
             if candidates:
-                nearest = min(candidates, key=lambda item: self._distance(searched, item))
-                if self._distance(searched, nearest) <= radius_meters:
-                    return nearest
+                distances = self._distances(searched, candidates)
+                nearest_index = int(distances.argmin())
+                if distances.item(nearest_index) <= radius_meters:
+                    return candidates[nearest_index]
             if radius_meters >= max_distance_meters:
                 return None
             radius_meters = min(radius_meters * self._RADIUS_GROWTH, max_distance_meters)
@@ -118,9 +121,14 @@ class NearestAddressFinder:
             east_degrees=longitude + longitude_margin,
         )
 
-    def _distance(self, searched: GeoCoordinate, candidate: AddressPoint) -> float:
-        point = GeoCoordinate.from_degrees(candidate.point.latitude, candidate.point.longitude)
-        return float(searched.distance_to(point).meter.flat[0])
+    def _distances(
+        self, searched: GeoCoordinate, candidates: list[AddressPoint]
+    ) -> npt.NDArray[np.float64]:
+        points = GeoCoordinates.from_degrees(
+            np.array([candidate.point.latitude for candidate in candidates]),
+            np.array([candidate.point.longitude for candidate in candidates]),
+        )
+        return np.asarray(searched.distance_to(points).meter, dtype=np.float64)
 
     def _to_nearest_address(
         self, searched: GeoCoordinate, nearest: AddressPoint, crs: GeodeticCrs

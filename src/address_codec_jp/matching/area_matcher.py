@@ -240,12 +240,7 @@ class AreaMatcher:
             )
         town = next(iter(towns.values()))
         return AddressMatch(
-            address=Address(
-                prefecture=town.municipality.prefecture,
-                municipality=town.municipality,
-                town=town,
-                lot=best[0].lot,
-            ),
+            address=Address.for_town(town, best[0].lot),
             remainder=best[0].remainder,
             normalized_address=normalized_address,
             postal_code=postal_code,

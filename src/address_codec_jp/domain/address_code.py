@@ -245,6 +245,23 @@ class AddressCode:
             codes.append(parent)
         return codes
 
+    def contains(self, other: Self) -> bool:
+        """
+        Tell whether another code lies within the area of this code.
+
+        Parameters
+        ----------
+        other : Self
+            Code to test.
+
+        Returns
+        -------
+        bool
+            ``True`` when ``other`` equals this code or one of its enclosing areas does,
+            e.g. ``131067`` contains ``131067-0004001-2``.
+        """
+        return self in other.lineage()
+
     @override
     def __str__(self) -> str:
         components = [self.lg_code]

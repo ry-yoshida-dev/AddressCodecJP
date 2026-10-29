@@ -14,12 +14,7 @@ from address_codec_jp.domain import (
     RepresentativePoint,
     Town,
 )
-from address_codec_jp.download import (
-    DistributionScope,
-    DownloadTarget,
-    RegistryDownloader,
-    RegistryFile,
-)
+from address_codec_jp.download import DistributedFile, RegistryDownloader
 from address_codec_jp.errors import (
     AddressCodecError,
     AddressNotFoundError,
@@ -38,14 +33,9 @@ from address_codec_jp.formatting import (
     NameScript,
     NumeralStyle,
 )
+from address_codec_jp.registry import AbrDataset, DistributionScope, ImportSummary
 from address_codec_jp.registry_importer import RegistryImporter
-from address_codec_jp.storage import (
-    AbrDataset,
-    AddressDatabase,
-    DatasetImport,
-    ImportSummary,
-    PositionImportSummary,
-)
+from address_codec_jp.storage import AddressDatabase, DatasetImport
 
 __all__ = [
     "AbrDataset",
@@ -63,8 +53,8 @@ __all__ = [
     "DatasetImport",
     "DatasetNotImportedError",
     "DigitWidth",
+    "DistributedFile",
     "DistributionScope",
-    "DownloadTarget",
     "ImportSummary",
     "LotNumber",
     "LotStyle",
@@ -74,13 +64,11 @@ __all__ = [
     "NameScript",
     "NearestAddress",
     "NumeralStyle",
-    "PositionImportSummary",
     "PositionNotFoundError",
     "Prefecture",
     "ReadingNotFoundError",
     "RegistryDownloadError",
     "RegistryDownloader",
-    "RegistryFile",
     "RegistryFormatError",
     "RegistryImporter",
     "RepresentativePoint",

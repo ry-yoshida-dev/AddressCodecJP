@@ -1,6 +1,6 @@
 import pytest
 
-from address_codec_jp import AddressCode, AddressLevel, LotNumber
+from address_codec_jp import AddressCode, AddressLevel, LotNumber, Prefecture
 
 
 def test_round_trip() -> None:
@@ -76,3 +76,26 @@ def test_rejects_residence_without_block() -> None:
 def test_rejects_lot_without_town() -> None:
     with pytest.raises(ValueError, match="require a machiaza_id"):
         _ = AddressCode("131016", None, LotNumber(1))
+
+
+@pytest.mark.parametrize(
+    ("outer", "inner", "is_contained"),
+    [
+        ("130001", "131067-0004001-2-3", True),
+        ("131067", "131067-0004001-2", True),
+        ("131067-0004000", "131067-0004001", True),
+        ("131067-0004001-2", "131067-0004001-2-3", True),
+        ("131067-0004001", "131067-0004001", True),
+        ("131067-0004001-2-3", "131067-0004001-2", False),
+        ("131067-0004002", "131067-0004001-2", False),
+        ("140007", "131067", False),
+    ],
+)
+def test_contains(outer: str, inner: str, is_contained: bool) -> None:
+    assert AddressCode.parse(outer).contains(AddressCode.parse(inner)) is is_contained
+
+
+@pytest.mark.parametrize("code", ["00", "48", "1", "ab"])
+def test_prefecture_rejects_invalid_codes(code: str) -> None:
+    with pytest.raises(ValueError, match="01 to 47"):
+        _ = Prefecture(code=code, name="", kana="")

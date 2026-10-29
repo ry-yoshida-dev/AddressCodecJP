@@ -35,7 +35,8 @@ class Municipality:
     Raises
     ------
     ValueError
-        If ``lg_code`` is malformed or denotes a prefecture.
+        If ``lg_code`` is malformed, denotes a prefecture, or does not start with a
+        prefecture code.
     """
 
     lg_code: str
@@ -52,6 +53,7 @@ class Municipality:
         _ = AddressCode(lg_code=self.lg_code)
         if AddressCode.is_prefecture_code(self.lg_code):
             raise ValueError(f"{self.lg_code} is a prefecture code, not a municipality code.")
+        _ = self.prefecture
 
     @property
     def prefecture(self) -> Prefecture:

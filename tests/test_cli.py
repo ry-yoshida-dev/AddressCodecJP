@@ -74,10 +74,10 @@ def test_import_of_missing_file_is_reported(
     assert "not found" in capsys.readouterr().err
 
 
-def test_import_positions_and_locate(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_import_and_locate(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cli = CommandLineInterface()
     sources = sorted(str(path) for path in (FIXTURE.parent / "positions").glob("*.csv"))
-    assert cli.run(["--database", str(database), "import-positions", *sources]) == 0
+    assert cli.run(["--database", str(database), "import", *sources]) == 0
     assert cli.run(["--database", str(database), "locate", "千代田区丸の内1-2-9"]) == 0
     assert capsys.readouterr().out.splitlines()[-1] == "\t".join(
         [
@@ -156,7 +156,7 @@ def test_decode_writes_kana_and_postal_code(
 def test_encode_verifies_lots(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cli = CommandLineInterface()
     sources = sorted(str(path) for path in (FIXTURE.parent / "positions").glob("*.csv"))
-    assert cli.run(["--database", str(database), "import-positions", *sources]) == 0
+    assert cli.run(["--database", str(database), "import", *sources]) == 0
     arguments = ["--database", str(database), "encode", "--verify-lot"]
     assert cli.run([*arguments, "千代田区丸の内1-2-3"]) == 0
     assert cli.run([*arguments, "千代田区丸の内1-2-9"]) == 1
@@ -166,7 +166,7 @@ def test_encode_verifies_lots(database: Path, capsys: pytest.CaptureFixture[str]
 def test_nearest(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cli = CommandLineInterface()
     sources = sorted(str(path) for path in (FIXTURE.parent / "positions").glob("*.csv"))
-    assert cli.run(["--database", str(database), "import-positions", *sources]) == 0
+    assert cli.run(["--database", str(database), "import", *sources]) == 0
     _ = capsys.readouterr()
     arguments = ["--database", str(database), "nearest", "35.682456,139.765123", "north"]
     assert cli.run(arguments) == 1
@@ -185,3 +185,12 @@ def test_nearest(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
         )
     ]
     assert "latitude,longitude" in captured.err
+
+
+def test_invalid_enum_option_is_rejected(
+    database: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as raised:
+        _ = CommandLineInterface().run(["--database", str(database), "locate", "--crs", "x", "a"])
+    assert raised.value.code == 2
+    assert "{tokyo,jgd2000,jgd2011,wgs84}" in capsys.readouterr().err

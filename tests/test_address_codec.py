@@ -17,7 +17,7 @@ from address_codec_jp import (
 TOWN_MASTER_HEADER: str = (
     "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"
     + "pref_kana,county_kana,city_kana,ward_kana,oaza_cho_kana,chome_kana,koaza_kana,"
-    + "post_code,ablt_date\n"
+    + "post_code,ablt_date,rsdt_addr_flg\n"
 )
 
 
@@ -155,7 +155,7 @@ def test_decode_formats(codec: AddressCodec, address_format: AddressFormat, expe
 
 
 def test_decode_county_and_koaza(codec: AddressCodec) -> None:
-    assert codec.decode("113247-0001001-12") == "埼玉県入間郡三芳町竹間沢東12番"
+    assert codec.decode("113247-0001001-12") == "埼玉県入間郡三芳町竹間沢東12番地"
     assert (
         codec.decode(
             "113247-0001000-123-4",
@@ -163,6 +163,25 @@ def test_decode_county_and_koaza(codec: AddressCodec) -> None:
         )
         == "埼玉県三芳町竹間沢123番地4"
     )
+
+
+@pytest.mark.parametrize(
+    ("code", "lot_style", "expected"),
+    [
+        ("131016-0001001-2-3", LotStyle.AUTOMATIC, "東京都千代田区丸の内1丁目2番3号"),
+        ("113247-0001000-123-4", LotStyle.AUTOMATIC, "埼玉県入間郡三芳町竹間沢123番地4"),
+        ("113247-0001000-123", LotStyle.AUTOMATIC, "埼玉県入間郡三芳町竹間沢123番地"),
+        (
+            "113247-0001000-123-4",
+            LotStyle.RESIDENCE_INDICATION,
+            "埼玉県入間郡三芳町竹間沢123番4号",
+        ),
+    ],
+)
+def test_automatic_lot_style_follows_the_numbering_system_of_the_town(
+    codec: AddressCodec, code: str, lot_style: LotStyle, expected: str
+) -> None:
+    assert codec.decode(code, AddressFormat(lot_style=lot_style)) == expected
 
 
 def test_decode_oaza_level(codec: AddressCodec) -> None:
@@ -177,7 +196,7 @@ def test_decode_prefecture_and_municipality(codec: AddressCodec) -> None:
 
 
 def test_decode_keeps_short_chome_suffix(codec: AddressCodec) -> None:
-    assert codec.decode("012025-0007001-2") == "北海道函館市弁天町1丁2番"
+    assert codec.decode("012025-0007001-2") == "北海道函館市弁天町1丁2番地"
 
 
 def test_levels(codec: AddressCodec) -> None:
@@ -197,16 +216,16 @@ def test_decode_rejects_lot_on_complemented_oaza(codec: AddressCodec) -> None:
 
 
 def test_decode_half_width_normalizes_registry_digits(codec: AddressCodec) -> None:
-    assert codec.decode("162019-0000590-12-3") == "富山県富山市笹津7区12番3号"
+    assert codec.decode("162019-0000590-12-3") == "富山県富山市笹津7区12番地3"
     assert (
         codec.decode("162019-0000590-12-3", AddressFormat(digit_width=DigitWidth.FULL))
-        == "富山県富山市笹津７区１２番３号"
+        == "富山県富山市笹津７区１２番地３"
     )
 
 
 def test_decode_kanji_large_lot(codec: AddressCodec) -> None:
     decoded = codec.decode("113247-0001000-12345", AddressFormat(numeral_style=NumeralStyle.KANJI))
-    assert decoded == "埼玉県入間郡三芳町竹間沢一二三四五番"
+    assert decoded == "埼玉県入間郡三芳町竹間沢一二三四五番地"
 
 
 def test_decode_unknown_town(codec: AddressCodec) -> None:
@@ -223,17 +242,17 @@ def test_round_trip(codec: AddressCodec) -> None:
 def test_codec_created_after_reimport_matches_new_towns(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
-        TOWN_MASTER_HEADER + "131067,0012000,東京都,,台東区,,浅草,,,,,,,,,,,\n",
+        TOWN_MASTER_HEADER + "131067,0012000,東京都,,台東区,,浅草,,,,,,,,,,,,0\n",
         encoding="utf-8",
     )
     with RegistryImporter.open(":memory:") as importer:
-        _ = importer.import_town_master(master)
+        _ = importer.import_file(master)
         assert str(AddressCodec(importer.database).encode("台東区浅草")) == "131067-0012000"
         _ = master.write_text(
-            TOWN_MASTER_HEADER + "131067,0001001,東京都,,台東区,,浅草橋,一丁目,,,,,,,,,,\n",
+            TOWN_MASTER_HEADER + "131067,0001001,東京都,,台東区,,浅草橋,一丁目,,,,,,,,,,,0\n",
             encoding="utf-8",
         )
-        _ = importer.import_town_master(master)
+        _ = importer.import_file(master)
         with pytest.raises(AddressNotFoundError):
             _ = AddressCodec(importer.database).encode("台東区浅草")
 
@@ -242,16 +261,16 @@ def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> N
     master = tmp_path / "master.csv"
     _ = master.write_text(
         TOWN_MASTER_HEADER
-        + "992011,0001000,試験県,,北市,,山田,,,,,,,,,,,\n"
-        + "992020,0001000,試験県,,北市山,,川,,,,,,,,,,,\n",
+        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0\n"
+        + "469025,0001000,試験県,,北市山,,川,,,,,,,,,,,,0\n",
         encoding="utf-8",
     )
     with RegistryImporter.open(":memory:") as importer:
-        _ = importer.import_town_master(master)
+        _ = importer.import_file(master)
         codec = AddressCodec(importer.database)
-        assert str(codec.encode("北市山田1-2")) == "992011-0001000-1-2"
-        assert str(codec.encode("北市山川1-2")) == "992020-0001000-1-2"
-        assert str(codec.encode("北市山")) == "992020"
+        assert str(codec.encode("北市山田1-2")) == "469017-0001000-1-2"
+        assert str(codec.encode("北市山川1-2")) == "469025-0001000-1-2"
+        assert str(codec.encode("北市山")) == "469025"
         with pytest.raises(LookupError, match="北市山"):
             _ = codec.encode("北市山谷1-2")
 
