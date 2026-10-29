@@ -21,6 +21,8 @@ from address_codec_jp.matching.town_source import TownSource
 from address_codec_jp.normalization.lot_number_parser import LotNumberParser
 from address_codec_jp.normalization.text_normalizer import TextNormalizer
 
+type MatchOutcome = AddressMatch | AddressNotFoundError | AmbiguousAddressError
+
 
 class AreaMatcher:
     """
@@ -96,6 +98,37 @@ class AreaMatcher:
         DatasetNotImportedError
             If the repository contains no towns.
         """
+        outcome = self._resolve(normalized_address, postal_code)
+        if isinstance(outcome, AddressMatch):
+            return outcome
+        raise outcome
+
+    def find(self, normalized_address: str, postal_code: str | None) -> AddressMatch | None:
+        """
+        Identify the area of a normalized address when exactly one fits.
+
+        Parameters
+        ----------
+        normalized_address : str
+            Address normalized by ``TextNormalizer.normalize``.
+        postal_code : str | None
+            Seven-digit postal code written with the address, or ``None``.
+
+        Returns
+        -------
+        AddressMatch | None
+            Match as returned by ``match``, or ``None`` when nothing matches or the
+            address is ambiguous.
+
+        Raises
+        ------
+        DatasetNotImportedError
+            If the repository contains no towns.
+        """
+        outcome = self._resolve(normalized_address, postal_code)
+        return outcome if isinstance(outcome, AddressMatch) else None
+
+    def _resolve(self, normalized_address: str, postal_code: str | None) -> MatchOutcome:
         municipality_matches = [
             self._narrow_by_postal_code(municipality_match, postal_code)
             for municipality_match in self._match_municipalities(normalized_address)
@@ -116,21 +149,21 @@ class AreaMatcher:
                 return self._select(
                     normalized_address, postal_code, municipality_match, interpretations
                 )
-        raise AddressNotFoundError(
+        return AddressNotFoundError(
             f"No town in {self._describe_all(longest_match.municipalities)} matches "
             + f"{longest_match.remainder!r}."
         )
 
-    def _match_prefecture_only(self, text: str, postal_code: str | None) -> AddressMatch:
+    def _match_prefecture_only(self, text: str, postal_code: str | None) -> MatchOutcome:
         index = self._get_prefecture_index()
         keys = self._matching_prefixes(self._normalizer.fold(text), index)
         if not keys:
-            raise AddressNotFoundError(f"No prefecture or municipality matches {text!r}.")
+            return AddressNotFoundError(f"No prefecture or municipality matches {text!r}.")
         key = keys[0]
         prefecture = index[key]
         remainder = text[len(key) :]
         if remainder:
-            raise AddressNotFoundError(
+            return AddressNotFoundError(
                 f"No municipality in {prefecture.name} matches {remainder!r}."
             )
         return AddressMatch(
@@ -177,9 +210,9 @@ class AreaMatcher:
         normalized_address: str,
         postal_code: str | None,
         municipality_match: MunicipalityMatch,
-    ) -> AddressMatch:
+    ) -> MatchOutcome:
         if municipality_match.is_town_required:
-            raise AmbiguousAddressError(
+            return AmbiguousAddressError(
                 f"Municipality {municipality_match.name!r} is ambiguous: "
                 + f"{self._describe_all(municipality_match.municipalities)}. "
                 + "Add the prefecture or ward.",
@@ -213,7 +246,7 @@ class AreaMatcher:
         postal_code: str | None,
         municipality_match: MunicipalityMatch,
         interpretations: list[TownInterpretation],
-    ) -> AddressMatch:
+    ) -> MatchOutcome:
         text = municipality_match.remainder
         description = self._describe_all(municipality_match.municipalities)
         best_key = min(interpretation.ranking_key for interpretation in interpretations)
@@ -224,7 +257,7 @@ class AreaMatcher:
         lots = {item.lot for item in best}
         candidates = self._candidate_codes(best)
         if len(towns) == 1 and len(lots) > 1:
-            raise AmbiguousAddressError(
+            return AmbiguousAddressError(
                 f"Lot numbers of {text!r} in {description} are ambiguous: "
                 + f"{sorted(map(str, lots))}.",
                 candidates,
@@ -235,7 +268,7 @@ class AreaMatcher:
                 + f"{town.koaza_name}({town.lg_code}-{town.machiaza_id})"
                 for town in towns.values()
             )
-            raise AmbiguousAddressError(
+            return AmbiguousAddressError(
                 f"{text!r} in {description} is ambiguous: {names}.", candidates
             )
         town = next(iter(towns.values()))

@@ -8,6 +8,9 @@ from typing import assert_never
 from geo_coordinate import GeodeticCrs
 
 from address_codec_jp.address_codec import AddressCodec
+from address_codec_jp.area_importer import AreaImporter
+from address_codec_jp.caching.database_cache import DatabaseCache
+from address_codec_jp.cli.cache_action import CacheAction
 from address_codec_jp.cli.command import Command
 from address_codec_jp.cli.command_arguments import CommandArguments
 from address_codec_jp.cli.coordinate_text import CoordinateText
@@ -15,9 +18,11 @@ from address_codec_jp.cli.enum_argument import EnumArgument
 from address_codec_jp.cli.output_format import OutputFormat
 from address_codec_jp.cli.output_value import OutputValue
 from address_codec_jp.cli.record_writer import RecordWriter
-from address_codec_jp.database_cache import DatabaseCache
+from address_codec_jp.domain.address_area import AddressArea
+from address_codec_jp.domain.area_source import AreaSource
 from address_codec_jp.download.registry_downloader import RegistryDownloader
 from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
+from address_codec_jp.errors.area_not_found_error import AreaNotFoundError
 from address_codec_jp.formatting.address_format import AddressFormat
 from address_codec_jp.formatting.digit_width import DigitWidth
 from address_codec_jp.formatting.lot_style import LotStyle
@@ -64,10 +69,25 @@ class CommandLineInterface:
             return 1
 
     def _execute(self, command: Command, namespace: CommandArguments) -> int:
+        if command is Command.CACHE:
+            if namespace.database is not None:
+                raise ValueError("cache manages the default database; omit --database.")
+            self._manage_cache(DatabaseCache.default(), namespace)
+            return 0
         database_path = self._resolve_database(namespace)
         match command:
             case Command.IMPORT:
                 self._import(database_path, [Path(source) for source in namespace.sources])
+                return 0
+            case Command.IMPORT_AREA:
+                with AreaImporter.open(database_path) as area_importer:
+                    for source in namespace.sources:
+                        area_import = area_importer.import_file(Path(source), namespace.lg_code)
+                        print(
+                            f"Imported {area_import.stored_count} shapes of "
+                            + f"{area_import.source.value} from {source}; "
+                            + f"{area_import.unmatched_count} matched no address."
+                        )
                 return 0
             case Command.DOWNLOAD:
                 self._download(namespace, database_path)
@@ -86,15 +106,68 @@ class CommandLineInterface:
                                 ]
                             )
                         )
+                    for area_import in codec.list_area_imports():
+                        print(
+                            "\t".join(
+                                [
+                                    area_import.imported_at.isoformat(timespec="seconds"),
+                                    area_import.source.value,
+                                    str(area_import.stored_count),
+                                    area_import.source_name,
+                                    area_import.source_sha256,
+                                ]
+                            )
+                        )
                 return 0
             case (
-                Command.ENCODE | Command.DECODE | Command.LOCATE | Command.NEAREST | Command.POSTAL
+                Command.ENCODE
+                | Command.DECODE
+                | Command.LOCATE
+                | Command.NEAREST
+                | Command.POSTAL
+                | Command.AREA
+                | Command.AREA_AT
             ):
                 writer = RecordWriter(namespace.output)
                 with AddressCodec.open(database_path) as codec:
                     return self._query(command, codec, namespace, writer)
             case _:
                 assert_never(command)
+
+    def _manage_cache(self, cache: DatabaseCache, namespace: CommandArguments) -> None:
+        match namespace.cache_action:
+            case CacheAction.INFO:
+                status = cache.describe()
+                built_at = (
+                    "" if status.built_at is None else status.built_at.isoformat(timespec="seconds")
+                )
+                rows = [
+                    ("path", str(status.path)),
+                    ("built_at", built_at),
+                    ("size_mb", f"{status.size_bytes / 1_000_000:.1f}"),
+                    ("registry_files", str(status.registry_file_count)),
+                    ("lot_municipalities", str(len(status.lot_municipality_codes))),
+                    ("boundary_municipalities", str(len(status.boundary_municipality_codes))),
+                    ("parcel_map_municipalities", str(len(status.parcel_map_municipality_codes))),
+                    ("obsolete_files", str(len(status.obsolete_paths))),
+                ]
+                for name, value in rows:
+                    print(f"{name}\t{value}")
+            case CacheAction.CLEAR:
+                for path in cache.clear():
+                    print(f"Removed {path}")
+            case CacheAction.REFRESH:
+                print(f"Downloading everything {cache.path} holds again.", file=sys.stderr)
+                cache.refresh()
+                print(f"Refreshed {cache.path}")
+            case CacheAction.PREPARE:
+                cache.prepare(
+                    namespace.prefectures,
+                    namespace.municipalities,
+                    is_area_included=not namespace.is_area_excluded,
+                    is_parcel_included=namespace.is_parcel_included,
+                )
+                print(f"Prepared {cache.path}")
 
     def _resolve_database(self, namespace: CommandArguments) -> Path:
         if namespace.database is not None:
@@ -257,10 +330,70 @@ class CommandLineInterface:
                     [[code, address] for code, address in towns],
                     {"towns": town_values},
                 )
-            case Command.IMPORT | Command.DOWNLOAD | Command.INFO:
+            case Command.AREA:
+                area = codec.find_area(input_text)
+                sources = ",".join(sorted(source.value for source in area.sources))
+                writer.write(
+                    input_text,
+                    [
+                        [
+                            str(area.code),
+                            str(area.located_code),
+                            area.level.name,
+                            sources,
+                            area.shape.to_geojson(),
+                        ]
+                    ],
+                    {
+                        "code": str(area.code),
+                        "located_code": str(area.located_code),
+                        "level": area.level.name,
+                        "sources": sources,
+                        "geometry": area.shape.to_geojson_geometry(),
+                    },
+                )
+            case Command.AREA_AT:
+                areas = codec.find_areas_at(
+                    self._coordinate_text.parse(input_text),
+                    namespace.crs,
+                    is_parcel_included=namespace.is_parcel_included,
+                )
+                if not areas:
+                    raise AreaNotFoundError(f"No imported area shape contains {input_text!r}.")
+                rows = [
+                    [
+                        str(area.code),
+                        codec.decode(area.code, self._area_format(area)),
+                        area.level.name,
+                        ",".join(sorted(source.value for source in area.sources)),
+                    ]
+                    for area in areas
+                ]
+                area_values: list[OutputValue] = [
+                    {
+                        "code": code,
+                        "address": address,
+                        "level": level,
+                        "sources": sources,
+                        "geometry": area.shape.to_geojson_geometry(),
+                    }
+                    for (code, address, level, sources), area in zip(rows, areas, strict=True)
+                ]
+                writer.write(input_text, rows, {"areas": area_values})
+            case (
+                Command.IMPORT
+                | Command.IMPORT_AREA
+                | Command.DOWNLOAD
+                | Command.INFO
+                | Command.CACHE
+            ):
                 raise RuntimeError(f"{command.value} is not a query command.")
             case _:
                 assert_never(command)
+
+    def _area_format(self, area: AddressArea) -> AddressFormat:
+        is_parcel = AreaSource.REGISTRY_MAP in area.sources
+        return AddressFormat(lot_style=LotStyle.LAND_PARCEL if is_parcel else LotStyle.AUTOMATIC)
 
     def _address_format(self, namespace: CommandArguments) -> AddressFormat:
         return AddressFormat(
@@ -312,6 +445,62 @@ class CommandLineInterface:
         )
         _ = import_parser.add_argument(
             "sources", nargs="+", help="Registry CSV files or their ZIP archives."
+        )
+
+        import_area_parser = subparsers.add_parser(
+            Command.IMPORT_AREA.value,
+            help="Import census boundary or registry map files of one municipality.",
+        )
+        _ = import_area_parser.add_argument(
+            "sources", nargs="+", help="Census boundary ZIP archives or registry map archives."
+        )
+        _ = import_area_parser.add_argument(
+            "--lg-code",
+            dest="lg_code",
+            required=True,
+            help="Six-digit local government code of the municipality the files cover.",
+        )
+
+        cache_parser = subparsers.add_parser(
+            Command.CACHE.value,
+            help="Show, clear, or refresh the default database in the user cache directory.",
+        )
+        cache_action_argument = EnumArgument(CacheAction)
+        _ = cache_parser.add_argument(
+            "cache_action",
+            type=cache_action_argument,
+            metavar=cache_action_argument.metavar,
+            nargs="?",
+            default=CacheAction.INFO,
+            help="info (default), clear, refresh, or prepare.",
+        )
+        _ = cache_parser.add_argument(
+            "--prefecture",
+            dest="prefectures",
+            action="append",
+            default=[],
+            metavar="CODE",
+            help="prepare: two-digit code of a prefecture to prepare; repeatable.",
+        )
+        _ = cache_parser.add_argument(
+            "--municipality",
+            dest="municipalities",
+            action="append",
+            default=[],
+            metavar="LG_CODE",
+            help="prepare: six-digit code of a municipality to prepare; repeatable.",
+        )
+        _ = cache_parser.add_argument(
+            "--no-areas",
+            dest="is_area_excluded",
+            action="store_true",
+            help="prepare: skip the census town boundaries.",
+        )
+        _ = cache_parser.add_argument(
+            "--parcels",
+            dest="is_parcel_included",
+            action="store_true",
+            help="prepare: also add the registry maps of land parcels.",
         )
 
         download_parser = subparsers.add_parser(
@@ -384,6 +573,32 @@ class CommandLineInterface:
             nargs="*",
             metavar="postal_code",
             help="Postal codes such as 100-0005; standard input if none.",
+        )
+        area_parser = subparsers.add_parser(
+            Command.AREA.value,
+            parents=[query_parser],
+            help="Address to the shape of its town or land parcel as GeoJSON on JGD2011.",
+        )
+        _ = area_parser.add_argument(
+            "inputs", nargs="*", metavar="address", help="Addresses; standard input if none."
+        )
+
+        area_at_parser = subparsers.add_parser(
+            Command.AREA_AT.value,
+            parents=[query_parser, crs_parser],
+            help="Coordinate to the towns, and optionally land parcels, whose shapes contain it.",
+        )
+        _ = area_at_parser.add_argument(
+            "inputs",
+            nargs="*",
+            metavar="latitude,longitude",
+            help="Coordinates in decimal degrees; standard input if none.",
+        )
+        _ = area_at_parser.add_argument(
+            "--parcels",
+            dest="is_parcel_included",
+            action="store_true",
+            help="Also list land parcels from the registry maps.",
         )
         return parser
 

@@ -1,15 +1,9 @@
-import http
-import http.client
-import shutil
-import urllib.error
-import urllib.request
-import urllib.response
 from collections.abc import Sequence
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from address_codec_jp.download.distributed_file import DistributedFile
-from address_codec_jp.errors.registry_download_error import RegistryDownloadError
+from address_codec_jp.download.file_fetcher import FileFetcher
 from address_codec_jp.registry.abr_dataset import AbrDataset
 from address_codec_jp.registry.distribution_scope import DistributionScope
 
@@ -42,14 +36,10 @@ class RegistryDownloader:
     """
 
     DEFAULT_BASE_URL: ClassVar[str] = "https://data.address-br.digital.go.jp"
-    _USER_AGENT: ClassVar[str] = "address-codec-jp"
-    _PARTIAL_SUFFIX: ClassVar[str] = ".part"
 
     def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout_seconds: float = 60.0) -> None:
-        if not timeout_seconds > 0:
-            raise ValueError(f"timeout_seconds must be positive, got {timeout_seconds}.")
         self._base_url: str = base_url.rstrip("/")
-        self._timeout_seconds: float = timeout_seconds
+        self._fetcher: FileFetcher = FileFetcher(timeout_seconds)
 
     def plan(
         self, prefecture_codes: Sequence[str] = (), municipality_codes: Sequence[str] = ()
@@ -166,10 +156,7 @@ class RegistryDownloader:
         destination = directory / distributed_file.file_name
         if is_existing_kept and destination.is_file():
             return destination
-        downloaded = self._fetch(distributed_file, destination, is_missing_allowed=False)
-        if downloaded is None:
-            raise RuntimeError(f"{distributed_file.file_name} was neither downloaded nor missing.")
-        return downloaded
+        return self._fetcher.fetch(self.url_of(distributed_file), destination)
 
     def download_if_distributed(
         self, distributed_file: DistributedFile, directory: Path
@@ -199,54 +186,9 @@ class RegistryDownloader:
             If the file exists but cannot be fetched or written, or fewer bytes arrive
             than the server announced. Nothing is left under the final name then.
         """
-        return self._fetch(
-            distributed_file, directory / distributed_file.file_name, is_missing_allowed=True
+        return self._fetcher.fetch_if_present(
+            self.url_of(distributed_file), directory / distributed_file.file_name
         )
-
-    def _fetch(
-        self, distributed_file: DistributedFile, destination: Path, *, is_missing_allowed: bool
-    ) -> Path | None:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        partial = destination.with_name(destination.name + self._PARTIAL_SUFFIX)
-        url = self.url_of(distributed_file)
-        request = urllib.request.Request(url, headers={"User-Agent": self._USER_AGENT})
-        is_complete = False
-        try:
-            self._copy(request, partial)
-            is_complete = True
-        except RegistryDownloadError:
-            raise
-        except (OSError, http.client.HTTPException) as error:
-            if is_missing_allowed and self._is_missing(error):
-                return None
-            raise RegistryDownloadError(f"Could not download {url}: {error}") from error
-        finally:
-            if not is_complete:
-                partial.unlink(missing_ok=True)
-        return partial.replace(destination)
-
-    def _is_missing(self, error: OSError | http.client.HTTPException) -> bool:
-        match error:
-            case urllib.error.HTTPError(code=http.HTTPStatus.NOT_FOUND):
-                return True
-            case urllib.error.URLError(reason=FileNotFoundError()):
-                return True
-            case _:
-                return False
 
     def _datasets(self, scope: DistributionScope) -> list[AbrDataset]:
         return [dataset for dataset in AbrDataset if dataset.scope is scope]
-
-    def _copy(self, request: urllib.request.Request, destination: Path) -> None:
-        opened = cast(object, urllib.request.urlopen(request, timeout=self._timeout_seconds))
-        if not isinstance(opened, http.client.HTTPResponse | urllib.response.addinfourl):
-            raise RuntimeError(f"Unexpected response type {type(opened).__name__}.")
-        with opened as response, destination.open("wb") as stream:
-            shutil.copyfileobj(response, stream)
-            announced_length = response.headers.get("Content-Length")
-        received_length = destination.stat().st_size
-        if announced_length is not None and int(announced_length) != received_length:
-            raise RegistryDownloadError(
-                f"Received {received_length} of {announced_length} bytes from "
-                + f"{request.full_url}."
-            )

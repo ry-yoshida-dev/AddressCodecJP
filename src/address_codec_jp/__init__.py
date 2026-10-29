@@ -1,11 +1,15 @@
 from address_codec_jp.address_codec import AddressCodec
-from address_codec_jp.database_cache import DatabaseCache
+from address_codec_jp.area_importer import AreaImporter
+from address_codec_jp.caching import CacheStatus, DatabaseCache
 from address_codec_jp.domain import (
     Address,
+    AddressArea,
     AddressCode,
     AddressLevel,
     AddressLocation,
     AddressMatch,
+    AreaShape,
+    AreaSource,
     LotNumber,
     LotSystem,
     MatchTier,
@@ -15,11 +19,13 @@ from address_codec_jp.domain import (
     RepresentativePoint,
     Town,
 )
-from address_codec_jp.download import DistributedFile, RegistryDownloader
+from address_codec_jp.download import BoundaryDownloader, DistributedFile, RegistryDownloader
 from address_codec_jp.errors import (
     AddressCodecError,
     AddressNotFoundError,
     AmbiguousAddressError,
+    AreaNotFoundError,
+    BoundaryFormatError,
     DatasetNotImportedError,
     PositionNotFoundError,
     ReadingNotFoundError,
@@ -36,11 +42,12 @@ from address_codec_jp.formatting import (
 )
 from address_codec_jp.registry import AbrDataset, DistributionScope, ImportSummary
 from address_codec_jp.registry_importer import RegistryImporter
-from address_codec_jp.storage import AddressDatabase, DatasetImport
+from address_codec_jp.storage import AddressDatabase, AreaImport, DatasetImport
 
 __all__ = [
     "AbrDataset",
     "Address",
+    "AddressArea",
     "AddressCode",
     "AddressCodec",
     "AddressCodecError",
@@ -51,6 +58,14 @@ __all__ = [
     "AddressMatch",
     "AddressNotFoundError",
     "AmbiguousAddressError",
+    "AreaImport",
+    "AreaImporter",
+    "AreaNotFoundError",
+    "AreaShape",
+    "AreaSource",
+    "BoundaryDownloader",
+    "BoundaryFormatError",
+    "CacheStatus",
     "DatabaseCache",
     "DatasetImport",
     "DatasetNotImportedError",

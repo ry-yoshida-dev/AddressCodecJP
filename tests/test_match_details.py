@@ -9,7 +9,10 @@ from address_codec_jp import (
     AmbiguousAddressError,
     LotNumber,
     MatchTier,
+    RegistryImporter,
 )
+from address_codec_jp.matching import AreaMatcher
+from address_codec_jp.normalization import LotNumberParser, TextNormalizer
 
 
 @pytest.mark.parametrize(
@@ -74,3 +77,13 @@ def test_address_rejects_areas_that_do_not_contain_each_other(codec: AddressCode
         _ = Address(prefecture=taito.prefecture, municipality=taito, town=marunouchi)
     with pytest.raises(ValueError, match="require a town"):
         _ = Address(prefecture=taito.prefecture, municipality=taito, lot=LotNumber(block=1))
+
+
+def test_find_returns_none_instead_of_raising(importer: RegistryImporter) -> None:
+    normalizer = TextNormalizer()
+    matcher = AreaMatcher(importer.database.towns, normalizer, LotNumberParser())
+    found = matcher.find(normalizer.normalize("千代田区丸の内1-2-3"), None)
+    assert found is not None
+    assert str(found.code) == "131016-0011001-2-3"
+    assert matcher.find(normalizer.normalize("存在しない市"), None) is None
+    assert matcher.find(normalizer.normalize("神恵内村赤石村山之上"), None) is None

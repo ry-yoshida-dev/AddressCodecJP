@@ -6,6 +6,7 @@ from types import TracebackType
 from typing import ClassVar, Self
 
 from address_codec_jp.errors.unsupported_database_error import UnsupportedDatabaseError
+from address_codec_jp.storage.area_repository import AreaRepository
 from address_codec_jp.storage.import_log_repository import ImportLogRepository
 from address_codec_jp.storage.position_repository import PositionRepository
 from address_codec_jp.storage.town_repository import TownRepository
@@ -18,7 +19,8 @@ class AddressDatabase:
     The file is marked with an application ID and a schema version, so that a file of
     another application or of another version of this library is rejected instead of
     being misread or modified. A database holds one SQLite connection and must be used
-    only in the thread that opened it.
+    only in the thread that opened it. A connection waits up to ``BUSY_TIMEOUT_SECONDS``
+    while another process writes, such as a cache adding the data of a municipality.
 
     Parameters
     ----------
@@ -29,8 +31,9 @@ class AddressDatabase:
     """
 
     APPLICATION_ID: ClassVar[int] = 0x41434A50
-    SCHEMA_VERSION: ClassVar[int] = 3
+    SCHEMA_VERSION: ClassVar[int] = 4
     MEMORY_PATH: ClassVar[str] = ":memory:"
+    BUSY_TIMEOUT_SECONDS: ClassVar[float] = 120.0
 
     def __init__(self, connection: sqlite3.Connection, *, is_writable: bool) -> None:
         self._connection: sqlite3.Connection = connection
@@ -38,6 +41,7 @@ class AddressDatabase:
         self._towns: TownRepository = TownRepository(connection)
         self._positions: PositionRepository = PositionRepository(connection)
         self._imports: ImportLogRepository = ImportLogRepository(connection)
+        self._areas: AreaRepository = AreaRepository(connection)
 
     @classmethod
     def open_read_only(cls, database_path: Path | str) -> Self:
@@ -64,7 +68,9 @@ class AddressDatabase:
         path = Path(database_path)
         if not path.is_file():
             raise FileNotFoundError(f"Address database not found: {database_path}.")
-        connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        connection = sqlite3.connect(
+            path.resolve().as_uri() + "?mode=ro", uri=True, timeout=cls.BUSY_TIMEOUT_SECONDS
+        )
         database = cls(connection, is_writable=False)
         database._check_version(str(database_path))
         return database
@@ -91,7 +97,7 @@ class AddressDatabase:
             of this version. Delete it and import again in that case.
         """
         target = database_path if database_path == cls.MEMORY_PATH else Path(database_path)
-        database = cls(sqlite3.connect(target), is_writable=True)
+        database = cls(sqlite3.connect(target, timeout=cls.BUSY_TIMEOUT_SECONDS), is_writable=True)
         try:
             is_empty = database._is_empty()
         except sqlite3.DatabaseError as error:
@@ -138,6 +144,18 @@ class AddressDatabase:
             Repository on this database.
         """
         return self._positions
+
+    @property
+    def areas(self) -> AreaRepository:
+        """
+        Store of area shapes and the log of the area files imported.
+
+        Returns
+        -------
+        AreaRepository
+            Repository on this database.
+        """
+        return self._areas
 
     @property
     def imports(self) -> ImportLogRepository:
@@ -201,6 +219,7 @@ class AddressDatabase:
             self._towns.create_schema()
             self._positions.create_schema()
             self._imports.create_schema()
+            self._areas.create_schema()
             _ = self._connection.execute(f"PRAGMA application_id = {self.APPLICATION_ID}")
             _ = self._connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
 

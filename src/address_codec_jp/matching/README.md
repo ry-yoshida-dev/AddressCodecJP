@@ -12,7 +12,7 @@ unless a written postal code tells them apart.
 
 | Component | Responsibility |
 | --- | --- |
-| [area_matcher.py](area_matcher.py) | `AreaMatcher`: builds, ranks, and checks readings of an address and returns an `AddressMatch`, or raises `AmbiguousAddressError` with the candidate codes |
+| [area_matcher.py](area_matcher.py) | `AreaMatcher`: builds, ranks, and checks readings of an address and returns an `AddressMatch`, or raises `AmbiguousAddressError` with the candidate codes; `find` returns `None` instead of raising for an unmatched or ambiguous address |
 | [name_index.py](name_index.py) | `NameIndex`: tiered prefix index of oaza or koaza names |
 | [candidate_set.py](candidate_set.py) | `CandidateSet`: towns compatible with a partial reading and the loosest `MatchTier` used |
 | [town_interpretation.py](town_interpretation.py) | `TownInterpretation`: a complete reading and its ranking key |

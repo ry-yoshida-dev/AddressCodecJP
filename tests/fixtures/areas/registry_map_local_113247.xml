@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<地図 xmlns="http://www.moj.go.jp/MINJI/tizuxml" xmlns:zmn="http://www.moj.go.jp/MINJI/tizuzumen">
+	<version>ver1.0</version>
+	<地図名>竹間沢</地図名>
+	<市区町村コード>11324</市区町村コード>
+	<市区町村名>三芳町</市区町村名>
+	<座標系>任意座標系</座標系>
+	<空間属性>
+		<zmn:GM_Point id="P1">
+			<zmn:GM_Point.position>
+				<zmn:DirectPosition>
+					<zmn:X>-18141.000</zmn:X>
+					<zmn:Y>-27223.000</zmn:Y>
+				</zmn:DirectPosition>
+			</zmn:GM_Point.position>
+		</zmn:GM_Point>
+		<zmn:GM_Point id="P2">
+			<zmn:GM_Point.position>
+				<zmn:DirectPosition>
+					<zmn:X>-18141.000</zmn:X>
+					<zmn:Y>-27203.000</zmn:Y>
+				</zmn:DirectPosition>
+			</zmn:GM_Point.position>
+		</zmn:GM_Point>
+		<zmn:GM_Point id="P3">
+			<zmn:GM_Point.position>
+				<zmn:DirectPosition>
+					<zmn:X>-18121.000</zmn:X>
+					<zmn:Y>-27203.000</zmn:Y>
+				</zmn:DirectPosition>
+			</zmn:GM_Point.position>
+		</zmn:GM_Point>
+		<zmn:GM_Point id="P4">
+			<zmn:GM_Point.position>
+				<zmn:DirectPosition>
+					<zmn:X>-18121.000</zmn:X>
+					<zmn:Y>-27223.000</zmn:Y>
+				</zmn:DirectPosition>
+			</zmn:GM_Point.position>
+		</zmn:GM_Point>
+		<zmn:GM_Curve id="C1">
+			<zmn:GM_OrientablePrimitive.orientation>+</zmn:GM_OrientablePrimitive.orientation>
+			<zmn:GM_OrientablePrimitive.primitive idref="C1"/>
+			<zmn:GM_Curve.segment>
+				<zmn:GM_LineString>
+					<zmn:GM_LineString.controlPoint>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.indirect>
+								<zmn:GM_PointRef.point idref="P1"/>
+							</zmn:GM_Position.indirect>
+						</zmn:GM_PointArray.column>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.indirect>
+								<zmn:GM_PointRef.point idref="P2"/>
+							</zmn:GM_Position.indirect>
+						</zmn:GM_PointArray.column>
+					</zmn:GM_LineString.controlPoint>
+				</zmn:GM_LineString>
+			</zmn:GM_Curve.segment>
+		</zmn:GM_Curve>
+		<zmn:GM_Curve id="C2">
+			<zmn:GM_OrientablePrimitive.orientation>+</zmn:GM_OrientablePrimitive.orientation>
+			<zmn:GM_OrientablePrimitive.primitive idref="C2"/>
+			<zmn:GM_Curve.segment>
+				<zmn:GM_LineString>
+					<zmn:GM_LineString.controlPoint>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.direct>
+								<zmn:X>-18141.000</zmn:X>
+								<zmn:Y>-27203.000</zmn:Y>
+							</zmn:GM_Position.direct>
+						</zmn:GM_PointArray.column>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.direct>
+								<zmn:X>-18121.000</zmn:X>
+								<zmn:Y>-27203.000</zmn:Y>
+							</zmn:GM_Position.direct>
+						</zmn:GM_PointArray.column>
+					</zmn:GM_LineString.controlPoint>
+				</zmn:GM_LineString>
+			</zmn:GM_Curve.segment>
+		</zmn:GM_Curve>
+		<zmn:GM_Curve id="C3">
+			<zmn:GM_OrientablePrimitive.orientation>+</zmn:GM_OrientablePrimitive.orientation>
+			<zmn:GM_OrientablePrimitive.primitive idref="C3"/>
+			<zmn:GM_Curve.segment>
+				<zmn:GM_LineString>
+					<zmn:GM_LineString.controlPoint>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.indirect>
+								<zmn:GM_PointRef.point idref="P4"/>
+							</zmn:GM_Position.indirect>
+						</zmn:GM_PointArray.column>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.indirect>
+								<zmn:GM_PointRef.point idref="P3"/>
+							</zmn:GM_Position.indirect>
+						</zmn:GM_PointArray.column>
+					</zmn:GM_LineString.controlPoint>
+				</zmn:GM_LineString>
+			</zmn:GM_Curve.segment>
+		</zmn:GM_Curve>
+		<zmn:GM_Curve id="C4">
+			<zmn:GM_OrientablePrimitive.orientation>+</zmn:GM_OrientablePrimitive.orientation>
+			<zmn:GM_OrientablePrimitive.primitive idref="C4"/>
+			<zmn:GM_Curve.segment>
+				<zmn:GM_LineString>
+					<zmn:GM_LineString.controlPoint>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.indirect>
+								<zmn:GM_PointRef.point idref="P4"/>
+							</zmn:GM_Position.indirect>
+						</zmn:GM_PointArray.column>
+						<zmn:GM_PointArray.column>
+							<zmn:GM_Position.indirect>
+								<zmn:GM_PointRef.point idref="P1"/>
+							</zmn:GM_Position.indirect>
+						</zmn:GM_PointArray.column>
+					</zmn:GM_LineString.controlPoint>
+				</zmn:GM_LineString>
+			</zmn:GM_Curve.segment>
+		</zmn:GM_Curve>
+		<zmn:GM_Surface id="F1">
+			<zmn:GM_Surface.patch>
+				<zmn:GM_Polygon>
+					<zmn:GM_Polygon.boundary>
+						<zmn:GM_SurfaceBoundary>
+							<zmn:GM_SurfaceBoundary.exterior>
+								<zmn:GM_Ring>
+									<zmn:GM_CompositeCurve.generator idref="C1"/>
+									<zmn:GM_CompositeCurve.generator idref="C2"/>
+									<zmn:GM_CompositeCurve.generator idref="C3"/>
+									<zmn:GM_CompositeCurve.generator idref="C4"/>
+								</zmn:GM_Ring>
+							</zmn:GM_SurfaceBoundary.exterior>
+						</zmn:GM_SurfaceBoundary>
+					</zmn:GM_Polygon.boundary>
+				</zmn:GM_Polygon>
+			</zmn:GM_Surface.patch>
+		</zmn:GM_Surface>
+		<zmn:GM_Surface id="F2">
+			<zmn:GM_Surface.patch>
+				<zmn:GM_Polygon>
+					<zmn:GM_Polygon.boundary>
+						<zmn:GM_SurfaceBoundary>
+							<zmn:GM_SurfaceBoundary.exterior>
+								<zmn:GM_Ring>
+									<zmn:GM_CompositeCurve.generator idref="C1"/>
+									<zmn:GM_CompositeCurve.generator idref="C2"/>
+									<zmn:GM_CompositeCurve.generator idref="C3"/>
+									<zmn:GM_CompositeCurve.generator idref="C4"/>
+								</zmn:GM_Ring>
+							</zmn:GM_SurfaceBoundary.exterior>
+						</zmn:GM_SurfaceBoundary>
+					</zmn:GM_Polygon.boundary>
+				</zmn:GM_Polygon>
+			</zmn:GM_Surface.patch>
+		</zmn:GM_Surface>
+	</空間属性>
+	<主題属性>
+		<筆 id="H1">
+			<大字コード>001</大字コード>
+			<丁目コード>000</丁目コード>
+			<小字コード>0000</小字コード>
+			<予備コード>00</予備コード>
+			<大字名>竹間沢</大字名>
+			<丁目名></丁目名>
+			<地番>１２３－４</地番>
+			<形状 idref="F1"/>
+		</筆>
+		<筆 id="H2">
+			<大字コード>001</大字コード>
+			<丁目コード>000</丁目コード>
+			<小字コード>0000</小字コード>
+			<予備コード>00</予備コード>
+			<大字名>竹間沢</大字名>
+			<丁目名></丁目名>
+			<地番>地区外-1</地番>
+			<形状 idref="F2"/>
+		</筆>
+	</主題属性>
+</地図>

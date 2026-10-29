@@ -2,6 +2,7 @@ import argparse
 
 from geo_coordinate import GeodeticCrs
 
+from address_codec_jp.cli.cache_action import CacheAction
 from address_codec_jp.cli.output_format import OutputFormat
 from address_codec_jp.formatting.digit_width import DigitWidth
 from address_codec_jp.formatting.lot_style import LotStyle
@@ -22,7 +23,9 @@ class CommandArguments(argparse.Namespace):
         super().__init__()
         self.database: str | None = None
         self.command: str = ""
+        self.cache_action: CacheAction = CacheAction.INFO
         self.sources: list[str] = []
+        self.lg_code: str = ""
         self.inputs: list[str] = []
         self.output: OutputFormat = OutputFormat.TSV
         self.numeral: NumeralStyle = NumeralStyle.ARABIC
@@ -33,6 +36,7 @@ class CommandArguments(argparse.Namespace):
         self.is_kana: bool = False
         self.is_postal_code_included: bool = False
         self.is_lot_verified: bool = False
+        self.is_parcel_included: bool = False
         self.crs: GeodeticCrs = GeodeticCrs.JGD2011
         self.max_distance: float = 0.0
         self.directory: str = ""
@@ -40,4 +44,5 @@ class CommandArguments(argparse.Namespace):
         self.municipalities: list[str] = []
         self.is_imported: bool = False
         self.is_existing_kept: bool = False
+        self.is_area_excluded: bool = False
         self.base_url: str = ""

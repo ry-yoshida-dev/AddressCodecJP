@@ -8,7 +8,9 @@ prefecture and municipality points, the town, block, and residence files of chos
 prefectures, and the parcel files of chosen municipalities, in import order, using the
 distribution scope of each `AbrDataset`. A lot plan lists the block, residence, and
 parcel files of municipalities, and files the site does not distribute can be skipped.
-Files are written atomically under their distributed names.
+Files are written atomically under their distributed names. Census boundaries
+(e-Stat) and registry maps (G-Spatial Information Center) are downloaded per
+municipality for area shapes.
 
 ## Components
 
@@ -16,6 +18,8 @@ Files are written atomically under their distributed names.
 | --- | --- |
 | [registry_downloader.py](registry_downloader.py) | `RegistryDownloader`: plans and downloads files, raising `RegistryDownloadError` on failure or truncation |
 | [distributed_file.py](distributed_file.py) | `DistributedFile`: one distributed file of an `AbrDataset`, with its file name and URL path |
+| [boundary_downloader.py](boundary_downloader.py) | `BoundaryDownloader`: census boundaries of a municipality from e-Stat and its latest registry maps found through every page of the G-Spatial CKAN catalog |
+| [file_fetcher.py](file_fetcher.py) | `FileFetcher`: atomic download of one URL, optionally treating a missing file as absent |
 
 ## Examples
 

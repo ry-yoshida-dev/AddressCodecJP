@@ -6,19 +6,21 @@ Public package of AddressCodecJP. `RegistryImporter` imports registry datasets i
 database, and `AddressCodec` is the read-only facade that combines normalization, town
 matching, lot number parsing, formatting, and positioning on that database.
 `DatabaseCache` builds a nationwide town-level database in the user cache directory on
-first use and adds the blocks, residences, and land parcels of each municipality when
-needed; `AddressCodec.open()` uses it when no path is given.
+first use and adds the blocks, residences, and land parcels of each municipality and its
+area shapes when needed; `AddressCodec.open()` uses it when no path is given.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| [address_codec.py](address_codec.py) | `AddressCodec` facade: match, encode, resolve, decode, list_by_postal_code, locate, find_nearest |
-| [database_cache.py](database_cache.py) | `DatabaseCache`: builds the default database once per schema version and adds lots per municipality on demand |
+| [address_codec.py](address_codec.py) | `AddressCodec` facade: match, encode, resolve, decode, list_by_postal_code, locate, find_nearest, find_area, find_areas_at |
+| [area_importer.py](area_importer.py) | `AreaImporter`: matches census boundaries and registry map parcels to address codes and stores their shapes |
 | [registry_importer.py](registry_importer.py) | `RegistryImporter`: identifies registry files by header and imports each atomically, the town master first |
 | [\_\_main\_\_.py](__main__.py) | `python -m address_codec_jp` entry point |
+| [caching/](caching/) | `DatabaseCache`: the default database in the user cache directory, built on first use and extended per municipality, with its directory layout, lock, and import ledger |
 | [domain/](domain/) | Immutable domain models such as `AddressCode`, `Address`, and `Town` |
-| [download/](download/) | Downloader of registry files from the ABR download site |
+| [download/](download/) | Downloaders of registry files, census boundaries, and registry maps |
+| [boundary/](boundary/) | Readers of census boundary shapefiles and registry map XML |
 | [errors/](errors/) | Exception hierarchy rooted at `AddressCodecError` |
 | [normalization/](normalization/) | Text normalization, kanji numerals, lot number parsing |
 | [matching/](matching/) | Longest-prefix matching from text to a registered town |

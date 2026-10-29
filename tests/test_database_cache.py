@@ -1,4 +1,9 @@
+import logging
+import os
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -9,12 +14,15 @@ from address_codec_jp import (
     AddressCodec,
     AddressDatabase,
     AddressLevel,
+    BoundaryDownloader,
     DatabaseCache,
+    DatasetNotImportedError,
     DistributedFile,
     DistributionScope,
     RegistryDownloader,
     RegistryDownloadError,
 )
+from address_codec_jp.caching import CacheDirectory
 from address_codec_jp.cli import CommandLineInterface
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
@@ -68,7 +76,9 @@ def mirror(tmp_path: Path) -> Path:
 @pytest.fixture
 def cache(mirror: Path, tmp_path: Path) -> DatabaseCache:
     """Provide a cache in a temporary directory that downloads from ``mirror``."""
-    return DatabaseCache(tmp_path / "cache", RegistryDownloader(mirror.as_uri()))
+    return DatabaseCache(
+        tmp_path / "cache", RegistryDownloader(mirror.as_uri()), BoundaryDownloader()
+    )
 
 
 def test_ensure_builds_the_town_level_database(cache: DatabaseCache) -> None:
@@ -76,7 +86,7 @@ def test_ensure_builds_the_town_level_database(cache: DatabaseCache) -> None:
     path = cache.ensure()
     assert path == cache.path
     assert path.name == f"towns-v{AddressDatabase.SCHEMA_VERSION}.sqlite3"
-    assert list(path.parent.iterdir()) == [path]
+    assert cache_files(cache) == [path.name]
     with AddressCodec.open(path) as codec:
         assert str(codec.encode("千代田区丸の内1-2-3")) == "131016-0011001-2-3"
         assert codec.locate("千代田区丸の内1-2-3").level is AddressLevel.TOWN
@@ -97,7 +107,7 @@ def test_failed_build_leaves_nothing(cache: DatabaseCache, mirror: Path) -> None
     with pytest.raises(RegistryDownloadError, match="mt_town_pos_pref47"):
         _ = cache.ensure()
     assert not cache.is_built
-    assert list(cache.path.parent.iterdir()) == []
+    assert cache_files(cache) == []
 
 
 def test_default_uses_the_configured_directory_and_site(
@@ -125,6 +135,10 @@ def test_open_and_cli_default_to_the_cached_database(
     captured = capsys.readouterr()
     assert captured.out.splitlines() == ["131016-0011001-2-3"]
     assert captured.err == ""
+
+
+def cache_files(cache: DatabaseCache) -> list[str]:
+    return sorted(path.name for path in cache.path.parent.iterdir() if path.name != "cache.lock")
 
 
 def imported_names(cache: DatabaseCache) -> list[str]:
@@ -165,7 +179,9 @@ def test_added_lots_are_not_downloaded_again(cache: DatabaseCache, mirror: Path)
     for archive in mirror.rglob("*.zip"):
         archive.unlink()
     cache.ensure_lots(["131016"])
-    DatabaseCache(cache.path.parent, RegistryDownloader(mirror.as_uri())).ensure_lots(["131016"])
+    DatabaseCache(
+        cache.path.parent, RegistryDownloader(mirror.as_uri()), BoundaryDownloader()
+    ).ensure_lots(["131016"])
     assert len(imported_names(cache)) == count
 
 
@@ -187,3 +203,202 @@ def test_plan_lots_lists_residence_and_parcel_files_per_municipality() -> None:
         "mt_parcel_city131016.csv.zip",
         "mt_parcel_pos_city131016.csv.zip",
     ]
+
+
+def test_describe_lists_what_the_cache_holds(cache: DatabaseCache) -> None:
+    assert not cache.describe().is_built
+    cache.ensure_lots(["113247"])
+    status = cache.describe()
+    assert status.is_built
+    assert status.path == cache.path
+    assert status.size_bytes == cache.path.stat().st_size
+    assert status.built_at is not None
+    assert status.lot_municipality_codes == ("113247",)
+    assert status.boundary_municipality_codes == ()
+    assert status.obsolete_paths == ()
+
+
+def test_build_removes_obsolete_files(cache: DatabaseCache) -> None:
+    directory = cache.path.parent
+    directory.mkdir(parents=True)
+    old_database = directory / "towns-v1.sqlite3"
+    _ = old_database.write_bytes(b"old")
+    stale = directory / "build-stale"
+    stale.mkdir()
+    old_time = time.time() - 2 * CacheDirectory.STALE_WORKING_SECONDS
+    os.utime(stale, (old_time, old_time))
+    running = directory / "build-running"
+    running.mkdir()
+    newer_database = directory / f"towns-v{AddressDatabase.SCHEMA_VERSION + 1}.sqlite3"
+    _ = newer_database.write_bytes(b"newer")
+    assert cache.describe().obsolete_paths == (stale, old_database)
+    _ = cache.ensure()
+    assert cache_files(cache) == ["build-running", cache.path.name, newer_database.name]
+
+
+def test_clear_deletes_the_database(cache: DatabaseCache) -> None:
+    path = cache.ensure()
+    assert cache.clear() == [path]
+    assert not cache.is_built
+    assert cache.clear() == []
+
+
+def test_refresh_downloads_the_same_files_again(cache: DatabaseCache) -> None:
+    cache.ensure_lots(["113247"])
+    before = imported_names(cache)
+    cache.refresh()
+    assert sorted(imported_names(cache)) == sorted(before)
+    assert cache_files(cache) == [cache.path.name]
+    with AddressCodec(AddressDatabase.open_read_only(cache.path), cache) as codec:
+        assert codec.locate("三芳町竹間沢123-4").is_exact
+
+
+def test_failed_refresh_keeps_the_database(cache: DatabaseCache, mirror: Path) -> None:
+    cache.ensure_lots(["113247"])
+    content = cache.path.read_bytes()
+    (mirror / "mt_town" / "mt_town_all.csv.zip").unlink()
+    with pytest.raises(RegistryDownloadError):
+        cache.refresh()
+    assert cache.path.read_bytes() == content
+    assert cache_files(cache) == [cache.path.name]
+
+
+def test_cache_command(
+    cache: DatabaseCache,
+    mirror: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv(DatabaseCache.DIRECTORY_VARIABLE, str(cache.path.parent))
+    monkeypatch.setenv(DatabaseCache.BASE_URL_VARIABLE, mirror.as_uri())
+    cli = CommandLineInterface()
+    assert cli.run(["cache"]) == 0
+    assert "\nsize_mb\t0.0\n" in capsys.readouterr().out
+    assert cli.run(["cache", "refresh"]) == 0
+    assert cache.is_built
+    _ = capsys.readouterr()
+    assert cli.run(["cache", "clear"]) == 0
+    assert capsys.readouterr().out == f"Removed {cache.path}\n"
+    assert cli.run(["--database", str(cache.path), "cache"]) == 1
+    _ = capsys.readouterr()
+    arguments = ["cache", "prepare", "--municipality", "113247", "--no-areas"]
+    assert cli.run(arguments) == 0
+    assert cache.describe().lot_municipality_codes == ("113247",)
+
+
+def offline(cache: DatabaseCache, mirror: Path) -> DatabaseCache:
+    return DatabaseCache(
+        cache.path.parent,
+        RegistryDownloader(mirror.as_uri()),
+        BoundaryDownloader(),
+        is_download_allowed=False,
+    )
+
+
+def test_offline_cache_requires_a_prepared_database(cache: DatabaseCache, mirror: Path) -> None:
+    with pytest.raises(DatasetNotImportedError, match="prepare"):
+        _ = AddressCodec.open(cache=offline(cache, mirror))
+    assert not cache.is_built
+
+
+def test_offline_cache_answers_from_prepared_data(cache: DatabaseCache, mirror: Path) -> None:
+    cache.prepare(municipality_codes=["131016"], is_area_included=False)
+    for archive in mirror.rglob("*.zip"):
+        archive.unlink()
+    with AddressCodec.open(cache=offline(cache, mirror)) as codec:
+        assert codec.locate("千代田区丸の内1-2-3").level is AddressLevel.RESIDENCE
+        assert codec.locate("三芳町竹間沢123-4").level is AddressLevel.TOWN
+    assert cache.describe().lot_municipality_codes == ("131016",)
+
+
+def test_prepare_adds_every_municipality_of_a_prefecture(cache: DatabaseCache) -> None:
+    cache.prepare(prefecture_codes=["11"], is_area_included=False)
+    assert cache.describe().lot_municipality_codes == ("113247",)
+    with pytest.raises(ValueError, match="01 to 47"):
+        cache.prepare(prefecture_codes=["48"])
+
+
+def test_expired_cache_is_refreshed_on_first_use(cache: DatabaseCache, mirror: Path) -> None:
+    _ = cache.ensure()
+    built_at = cache.describe().built_at
+    time.sleep(0.01)
+    aging = DatabaseCache(
+        cache.path.parent,
+        RegistryDownloader(mirror.as_uri()),
+        BoundaryDownloader(),
+        max_age=timedelta(milliseconds=1),
+    )
+    with AddressCodec.open(cache=aging):
+        pass
+    refreshed_at = cache.describe().built_at
+    assert built_at is not None
+    assert refreshed_at is not None
+    assert refreshed_at > built_at
+    with pytest.raises(ValueError, match="max_age"):
+        _ = DatabaseCache.default(max_age=timedelta(0))
+
+
+def test_open_rejects_a_path_and_a_cache(cache: DatabaseCache) -> None:
+    with pytest.raises(ValueError, match="not both"):
+        _ = AddressCodec.open(cache.path, cache=cache)
+
+
+def test_caches_of_one_directory_add_files_once(cache: DatabaseCache, mirror: Path) -> None:
+    _ = cache.ensure()
+    caches = [
+        DatabaseCache(cache.path.parent, RegistryDownloader(mirror.as_uri()), BoundaryDownloader())
+        for _ in range(4)
+    ]
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for future in [executor.submit(item.ensure_lots, ["113247"]) for item in caches]:
+            future.result()
+    names = imported_names(cache)
+    assert len(names) == len(set(names))
+
+
+def test_cache_logs_its_downloads(cache: DatabaseCache, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO, logger="address_codec_jp.caching.database_cache"):
+        cache.ensure_lots(["113247"])
+    assert "Building the address database" in caplog.text
+    assert "Adding 6 registry files" in caplog.text
+
+
+def serve(mirror: Path, target: DistributedFile) -> None:
+    archive_path = mirror / target.url_path
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.write(FIXTURE_DIRECTORY / FIXTURE_NAMES[target.dataset], "data.csv")
+
+
+def test_unpublished_files_are_not_requested_again(cache: DatabaseCache, mirror: Path) -> None:
+    cache.ensure_lots(["131016"])
+    cache.ensure_lots(["113247"])
+    parcel = DistributedFile(AbrDataset.PARCEL, "131016")
+    serve(mirror, parcel)
+    cache.ensure_lots(["131016"])
+    assert parcel.file_name not in imported_names(cache)
+    cache.refresh()
+    cache.ensure_lots(["131016"])
+    assert parcel.file_name in imported_names(cache)
+
+
+def test_failed_refresh_of_an_expired_cache_keeps_it_in_use(
+    cache: DatabaseCache, mirror: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _ = cache.ensure()
+    content = cache.path.read_bytes()
+    time.sleep(0.01)
+    (mirror / "mt_town" / "mt_town_all.csv.zip").unlink()
+    aging = DatabaseCache(
+        cache.path.parent,
+        RegistryDownloader(mirror.as_uri()),
+        BoundaryDownloader(),
+        max_age=timedelta(milliseconds=1),
+    )
+    with (
+        caplog.at_level(logging.WARNING, logger="address_codec_jp.caching.database_cache"),
+        AddressCodec.open(cache=aging) as codec,
+    ):
+        assert str(codec.encode("千代田区丸の内1")) == "131016-0011001"
+    assert "Could not refresh" in caplog.text
+    assert cache.path.read_bytes() == content
