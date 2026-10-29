@@ -38,6 +38,20 @@ def test_unregistered_lots_are_rejected(
         _ = located_codec.encode(address, is_lot_verified=True)
 
 
+@pytest.mark.parametrize(
+    ("address", "expected"),
+    [
+        ("千代田区丸の内1丁目", "131016-0011001"),
+        ("千代田区", "131016"),
+        ("東京都", "130001"),
+    ],
+)
+def test_addresses_without_lots_need_no_lot_master(
+    codec: AddressCodec, address: str, expected: str
+) -> None:
+    assert str(codec.encode(address, is_lot_verified=True)) == expected
+
+
 def test_verification_requires_a_lot_master(codec: AddressCodec) -> None:
     with pytest.raises(RuntimeError, match="No block, residence, or parcel master"):
         _ = codec.encode("千代田区丸の内1-2-3", is_lot_verified=True)

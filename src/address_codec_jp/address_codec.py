@@ -169,8 +169,8 @@ class AddressCodec:
         AmbiguousAddressError
             If the address fits several areas or lot numbers equally well.
         DatasetNotImportedError
-            If the database contains no towns, or verification is requested before any
-            block, residence, or parcel master has been imported.
+            If the database contains no towns, or lot numbers are to be verified before
+            any block, residence, or parcel master has been imported.
         RegistryDownloadError
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
@@ -186,14 +186,14 @@ class AddressCodec:
         return address_match
 
     def _verify_lot(self, code: AddressCode) -> None:
+        if code.machiaza_id is None or not code.lot.numbers:
+            return
         self._ensure_lots(code)
         positions = self._database.positions
         if not positions.is_lot_imported:
             raise DatasetNotImportedError(
                 "No block, residence, or parcel master has been imported to verify lot numbers."
             )
-        if code.machiaza_id is None or not code.lot.numbers:
-            return
         if not positions.has_lots(code.lg_code, code.machiaza_id):
             raise AddressNotFoundError(
                 f"No block, residence, or parcel of {code} has been imported."
@@ -229,8 +229,8 @@ class AddressCodec:
         AmbiguousAddressError
             If the address fits several areas or lot numbers equally well.
         DatasetNotImportedError
-            If the database contains no towns, or verification is requested before any
-            block, residence, or parcel master has been imported.
+            If the database contains no towns, or lot numbers are to be verified before
+            any block, residence, or parcel master has been imported.
         RegistryDownloadError
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
