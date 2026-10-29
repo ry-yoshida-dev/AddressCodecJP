@@ -36,4 +36,4 @@ def test_matcher_runs_on_any_town_source() -> None:
     normalizer = TextNormalizer()
     matcher = AreaMatcher(source, normalizer, LotNumberParser())
     address_match = matcher.match(normalizer.normalize("千代田区丸の内1-2-3"), None)
-    assert str(address_match.code) == "131016-0001001-2-3"
+    assert str(address_match.code) == "131016-0011001-2-3"

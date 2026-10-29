@@ -44,24 +44,24 @@ def test_unknown_postal_code_keeps_the_ambiguity(codec: AddressCodec, address: s
 
 
 def test_postal_code_does_not_override_the_written_town(codec: AddressCodec) -> None:
-    assert str(codec.encode("〒100-0013 千代田区丸の内1-2-3")) == "131016-0001001-2-3"
+    assert str(codec.encode("〒100-0013 千代田区丸の内1-2-3")) == "131016-0011001-2-3"
 
 
 @pytest.mark.parametrize(
     ("code", "address_format", "expected"),
     [
         (
-            "131016-0001001-2-3",
+            "131016-0011001-2-3",
             AddressFormat(is_postal_code_included=True),
             "〒100-0005 東京都千代田区丸の内1丁目2番3号",
         ),
         (
-            "131016-0001001",
+            "131016-0011001",
             AddressFormat(is_postal_code_included=True, digit_width=DigitWidth.FULL),
             "〒１００－０００５ 東京都千代田区丸の内１丁目",
         ),
         (
-            "131067-0001000",
+            "131067-0004000",
             AddressFormat(is_postal_code_included=True),
             "〒111-0053 東京都台東区浅草橋",
         ),

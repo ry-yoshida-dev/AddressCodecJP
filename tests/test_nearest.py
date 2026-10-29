@@ -12,12 +12,12 @@ from address_codec_jp import (
 @pytest.mark.parametrize(
     ("latitude", "longitude", "code", "level"),
     [
-        (35.682456, 139.765123, "131016-0001001-2-3", AddressLevel.RESIDENCE),
-        (35.68201, 139.76501, "131016-0001001-2", AddressLevel.BLOCK),
-        (35.6795, 139.7641, "131016-0001001-2", AddressLevel.BLOCK),
+        (35.682456, 139.765123, "131016-0011001-2-3", AddressLevel.RESIDENCE),
+        (35.68201, 139.76501, "131016-0011001-2", AddressLevel.BLOCK),
+        (35.6795, 139.7641, "131016-0011001-2", AddressLevel.BLOCK),
         (35.8362, 139.5321, "113247-0001000-123-4", AddressLevel.RESIDENCE),
         (35.836, 139.532, "113247-0001000-123", AddressLevel.BLOCK),
-        (35.6971, 139.7851, "131067-0001001", AddressLevel.TOWN),
+        (35.6971, 139.7851, "131067-0004001", AddressLevel.TOWN),
     ],
 )
 def test_nearest_point_is_found(
@@ -38,20 +38,20 @@ def test_exact_point_has_zero_distance(located_codec: AddressCodec) -> None:
 
 def test_abolished_block_is_not_returned(located_codec: AddressCodec) -> None:
     nearest = located_codec.find_nearest(GeoCoordinate.from_degrees(35.683, 139.766))
-    assert str(nearest.code) != "131016-0001001-5"
+    assert str(nearest.code) != "131016-0011001-5"
 
 
 def test_point_is_returned_on_the_requested_datum(located_codec: AddressCodec) -> None:
     coordinate = GeoCoordinate.from_degrees(35.682456, 139.765123)
     nearest = located_codec.find_nearest(coordinate, GeodeticCrs.WGS84)
     assert nearest.location.crs is GeodeticCrs.WGS84
-    assert str(nearest.code) == "131016-0001001-2-3"
+    assert str(nearest.code) == "131016-0011001-2-3"
 
 
 def test_town_is_returned_when_no_lot_is_within_the_limit(located_codec: AddressCodec) -> None:
     coordinate = GeoCoordinate.from_degrees(35.6795, 139.7641)
     nearest = located_codec.find_nearest(coordinate, max_distance_meters=100.0)
-    assert str(nearest.code) == "131016-0001002"
+    assert str(nearest.code) == "131016-0011002"
     assert nearest.distance_meters == pytest.approx(56.0, abs=1.0)
 
 

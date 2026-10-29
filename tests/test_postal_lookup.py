@@ -24,9 +24,9 @@ def test_malformed_postal_code_is_rejected(text: str) -> None:
 def test_towns_are_listed_by_postal_code(codec: AddressCodec) -> None:
     addresses = codec.list_by_postal_code("〒100-0005")
     assert [str(address.code) for address in addresses] == [
-        "131016-0001001",
-        "131016-0001002",
-        "131016-0001003",
+        "131016-0011001",
+        "131016-0011002",
+        "131016-0011003",
     ]
     assert all(address.town is not None and address.town.is_registered for address in addresses)
 
@@ -41,9 +41,9 @@ def test_postal_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     assert cli.run(["--database", database, "import", str(TOWN_MASTER)]) == 0
     assert cli.run(["--database", database, "postal", "100-0005", "--numeral", "kanji"]) == 0
     assert capsys.readouterr().out.splitlines()[-3:] == [
-        "131016-0001001\t東京都千代田区丸の内一丁目",
-        "131016-0001002\t東京都千代田区丸の内二丁目",
-        "131016-0001003\t東京都千代田区丸の内三丁目",
+        "131016-0011001\t東京都千代田区丸の内一丁目",
+        "131016-0011002\t東京都千代田区丸の内二丁目",
+        "131016-0011003\t東京都千代田区丸の内三丁目",
     ]
     assert cli.run(["--database", database, "postal", "--output", "jsonl", "999-9999"]) == 1
     records: list[dict[str, object]] = [
@@ -53,7 +53,7 @@ def test_postal_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     assert cli.run(["--database", database, "postal", "--output", "jsonl", "100-0005"]) == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert records[0]["towns"] == [
-        {"code": "131016-0001001", "address": "東京都千代田区丸の内1丁目"},
-        {"code": "131016-0001002", "address": "東京都千代田区丸の内2丁目"},
-        {"code": "131016-0001003", "address": "東京都千代田区丸の内3丁目"},
+        {"code": "131016-0011001", "address": "東京都千代田区丸の内1丁目"},
+        {"code": "131016-0011002", "address": "東京都千代田区丸の内2丁目"},
+        {"code": "131016-0011003", "address": "東京都千代田区丸の内3丁目"},
     ]

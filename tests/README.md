@@ -3,8 +3,8 @@
 ## Overview
 
 Pytest suite. End-to-end tests run against an in-memory database loaded with a small
-sample town master that uses the ABR column layout. Local government codes in the sample
-are real; town IDs, postal codes, and some readings are illustrative.
+sample town master that uses the ABR column layout. Local government codes and the town
+IDs of Tokyo are real; other town IDs, postal codes, and some readings are illustrative.
 
 ## Components
 

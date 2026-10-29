@@ -35,22 +35,22 @@ def degrees(location: AddressLocation) -> tuple[float, float]:
     [
         (
             "千代田区丸の内1-2-3",
-            "131016-0001001-2-3",
+            "131016-0011001-2-3",
             AddressLevel.RESIDENCE,
             (35.682456, 139.765123),
         ),
-        ("千代田区丸の内1-2-9", "131016-0001001-2", AddressLevel.BLOCK, (35.682, 139.765)),
-        ("千代田区丸の内1-2", "131016-0001001-2", AddressLevel.BLOCK, (35.682, 139.765)),
-        ("千代田区丸の内1-7", "131016-0001001", AddressLevel.TOWN, (35.68156, 139.767201)),
-        ("千代田区丸の内1-5", "131016-0001001", AddressLevel.TOWN, (35.68156, 139.767201)),
-        ("千代田区丸の内1-2-4", "131016-0001001-2", AddressLevel.BLOCK, (35.682, 139.765)),
+        ("千代田区丸の内1-2-9", "131016-0011001-2", AddressLevel.BLOCK, (35.682, 139.765)),
+        ("千代田区丸の内1-2", "131016-0011001-2", AddressLevel.BLOCK, (35.682, 139.765)),
+        ("千代田区丸の内1-7", "131016-0011001", AddressLevel.TOWN, (35.68156, 139.767201)),
+        ("千代田区丸の内1-5", "131016-0011001", AddressLevel.TOWN, (35.68156, 139.767201)),
+        ("千代田区丸の内1-2-4", "131016-0011001-2", AddressLevel.BLOCK, (35.682, 139.765)),
         ("千代田区丸の内3丁目", "131016", AddressLevel.MUNICIPALITY, (35.694003, 139.753634)),
         ("三芳町竹間沢123-4", "113247-0001000-123-4", AddressLevel.RESIDENCE, (35.8362, 139.5321)),
         ("三芳町竹間沢123-5", "113247-0001000-123", AddressLevel.BLOCK, (35.836, 139.532)),
         ("三芳町竹間沢124-1", "113247-0001000", AddressLevel.TOWN, (35.835, 139.531)),
         ("三芳町竹間沢字東12", "113247-0001000", AddressLevel.TOWN, (35.835, 139.531)),
         ("台東区浅草橋", "131067", AddressLevel.MUNICIPALITY, (35.712607, 139.779984)),
-        ("台東区浅草橋1丁目", "131067-0001001", AddressLevel.TOWN, (35.697, 139.785)),
+        ("台東区浅草橋1丁目", "131067-0004001", AddressLevel.TOWN, (35.697, 139.785)),
         ("東京都", "130001", AddressLevel.PREFECTURE, (35.689568, 139.691717)),
         ("港区六本木6丁目", "130001", AddressLevel.PREFECTURE, (35.689568, 139.691717)),
     ],
@@ -76,7 +76,7 @@ def test_residence_indication_town_ignores_parcels(located_codec: AddressCodec) 
 
 
 def test_locate_code_accepts_string_and_code(located_codec: AddressCodec) -> None:
-    by_text = located_codec.locate_code("131016-0001001-2-3")
+    by_text = located_codec.locate_code("131016-0011001-2-3")
     by_code = located_codec.locate_code(by_text.code)
     assert by_text.located_code == by_code.located_code
     assert by_text.coordinate == by_code.coordinate
@@ -180,7 +180,7 @@ def test_newer_master_removes_abolished_lots(
     newer_master = tmp_path / "mt_rsdtdsp_blk_newer.csv"
     _ = newer_master.write_text(
         "lg_code,machiaza_id,blk_id,city,oaza_cho,chome,blk_num,ablt_date\n"
-        + "131016,0001001,001,千代田区,丸の内,一丁目,2,2026-04-01\n",
+        + "131016,0011001,001,千代田区,丸の内,一丁目,2,2026-04-01\n",
         encoding="utf-8",
     )
     summary = importer.import_file(newer_master)
@@ -195,5 +195,5 @@ def test_location_coordinate_is_a_geo_coordinate(located_codec: AddressCodec) ->
 
 def test_fallback_location_is_not_exact(located_codec: AddressCodec) -> None:
     location = located_codec.locate("千代田区丸の内1-2-9")
-    assert str(location.code) == "131016-0001001-2-9"
+    assert str(location.code) == "131016-0011001-2-9"
     assert not location.is_exact

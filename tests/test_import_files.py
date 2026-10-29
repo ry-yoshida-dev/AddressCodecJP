@@ -83,7 +83,7 @@ def test_database_option_defaults_to_towns_file(
     assert cli.run(["import", str(TOWN_MASTER)]) == 0
     assert (tmp_path / "towns.sqlite3").is_file()
     assert cli.run(["encode", "千代田区丸の内1-2-3"]) == 0
-    assert capsys.readouterr().out.splitlines()[-1] == "131016-0001001-2-3"
+    assert capsys.readouterr().out.splitlines()[-1] == "131016-0011001-2-3"
 
 
 def test_a_path_given_twice_is_imported_once(tmp_path: Path) -> None:

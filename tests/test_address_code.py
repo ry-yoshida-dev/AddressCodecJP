@@ -4,13 +4,13 @@ from address_codec_jp import AddressCode, AddressLevel, LotNumber, Prefecture
 
 
 def test_round_trip() -> None:
-    code = AddressCode("131016", "0001001", LotNumber(2, 3))
-    assert str(code) == "131016-0001001-2-3"
+    code = AddressCode("131016", "0011001", LotNumber(2, 3))
+    assert str(code) == "131016-0011001-2-3"
     assert AddressCode.parse(str(code)) == code
 
 
 def test_without_lot() -> None:
-    assert str(AddressCode.parse("131016-0001001")) == "131016-0001001"
+    assert str(AddressCode.parse("131016-0011001")) == "131016-0011001"
 
 
 def test_levels() -> None:

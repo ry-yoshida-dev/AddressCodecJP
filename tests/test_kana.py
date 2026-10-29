@@ -17,19 +17,19 @@ KANA: AddressFormat = AddressFormat(name_script=NameScript.KATAKANA)
     [
         ("130001", KANA, "トウキョウト"),
         ("131067", KANA, "トウキョウトタイトウク"),
-        ("131016-0001001-2-3", KANA, "トウキョウトチヨダクマルノウチ1チョウメ2バン3ゴウ"),
+        ("131016-0011001-2-3", KANA, "トウキョウトチヨダクマルノウチ1チョウメ2バン3ゴウ"),
         (
-            "131016-0001001-2-3",
+            "131016-0011001-2-3",
             AddressFormat(name_script=NameScript.KATAKANA, lot_style=LotStyle.LAND_PARCEL),
             "トウキョウトチヨダクマルノウチ1チョウメ2バンチ3",
         ),
         (
-            "131016-0001001-2-3",
+            "131016-0011001-2-3",
             AddressFormat(name_script=NameScript.KATAKANA, lot_style=LotStyle.HYPHEN),
             "トウキョウトチヨダクマルノウチ1-2-3",
         ),
         (
-            "131016-0001001-2-3",
+            "131016-0011001-2-3",
             AddressFormat(
                 name_script=NameScript.KATAKANA,
                 numeral_style=NumeralStyle.KANJI,
@@ -45,7 +45,7 @@ KANA: AddressFormat = AddressFormat(name_script=NameScript.KATAKANA)
             "トヤマケントヤマシササヅ７ク",
         ),
         ("141046-0001000", KANA, "カナガワケンヨコハマシナカクヤマシタチョウ"),
-        ("131067-0001000", KANA, "トウキョウトタイトウクアサクサバシ"),
+        ("131067-0004000", KANA, "トウキョウトタイトウクアサクサバシ"),
     ],
 )
 def test_decode_writes_katakana_readings(

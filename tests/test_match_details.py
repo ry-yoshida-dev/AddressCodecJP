@@ -52,14 +52,14 @@ def test_errors_keep_their_builtin_bases(codec: AddressCodec) -> None:
 
 
 def test_resolve_returns_registered_areas(codec: AddressCodec) -> None:
-    address = codec.resolve("131067-0001001-2")
+    address = codec.resolve("131067-0004001-2")
     assert address.town is not None
     assert (address.prefecture.name, address.town.oaza_name, address.lot) == (
         "東京都",
         "浅草橋",
         LotNumber(block=2),
     )
-    assert str(address.code) == "131067-0001001-2"
+    assert str(address.code) == "131067-0004001-2"
     assert codec.resolve("130001").municipality is None
     with pytest.raises(AddressNotFoundError):
         _ = codec.resolve("131067-0009999")
@@ -67,7 +67,7 @@ def test_resolve_returns_registered_areas(codec: AddressCodec) -> None:
 
 def test_address_rejects_areas_that_do_not_contain_each_other(codec: AddressCodec) -> None:
     taito = codec.resolve("131067").municipality
-    marunouchi = codec.resolve("131016-0001001").town
+    marunouchi = codec.resolve("131016-0011001").town
     assert taito is not None
     assert marunouchi is not None
     with pytest.raises(ValueError, match="not in municipality"):

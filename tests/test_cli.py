@@ -23,11 +23,11 @@ def test_encode_and_decode(database: Path, capsys: pytest.CaptureFixture[str]) -
     cli = CommandLineInterface()
     assert cli.run(["--database", str(database), "encode", "千代田区丸の内1-2-3"]) == 0
     assert (
-        cli.run(["--database", str(database), "decode", "131016-0001001-2-3", "--numeral", "kanji"])
+        cli.run(["--database", str(database), "decode", "131016-0011001-2-3", "--numeral", "kanji"])
         == 0
     )
     assert capsys.readouterr().out.splitlines()[-2:] == [
-        "131016-0001001-2-3",
+        "131016-0011001-2-3",
         "東京都千代田区丸の内一丁目二番三号",
     ]
 
@@ -37,7 +37,7 @@ def test_encode_and_decode(database: Path, capsys: pytest.CaptureFixture[str]) -
     [
         ["decode", "131016-9999999"],
         ["decode", "abc"],
-        ["decode", "131016-0001000-1-2"],
+        ["decode", "131016-0011000-1-2"],
         ["encode", "府中市"],
     ],
 )
@@ -81,8 +81,8 @@ def test_import_and_locate(database: Path, capsys: pytest.CaptureFixture[str]) -
     assert cli.run(["--database", str(database), "locate", "千代田区丸の内1-2-9"]) == 0
     assert capsys.readouterr().out.splitlines()[-1] == "\t".join(
         [
-            "131016-0001001-2-9",
-            "131016-0001001-2",
+            "131016-0011001-2-9",
+            "131016-0011001-2",
             "BLOCK",
             "35.682000000",
             "139.765000000",
@@ -103,7 +103,7 @@ def test_inputs_are_read_from_standard_input(
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("千代田区丸の内1-2-3\n台東区浅草橋\n"))
     assert CommandLineInterface().run(["--database", str(database), "encode"]) == 0
-    assert capsys.readouterr().out.splitlines() == ["131016-0001001-2-3", "131067-0001000"]
+    assert capsys.readouterr().out.splitlines() == ["131016-0011001-2-3", "131067-0004000"]
 
 
 def test_blank_input_lines_keep_jsonl_output_aligned(
@@ -116,9 +116,9 @@ def test_blank_input_lines_keep_jsonl_output_aligned(
         json.loads(line) for line in capsys.readouterr().out.splitlines()
     ]
     assert [record.get("code") for record in records] == [
-        "131016-0001001-2-3",
+        "131016-0011001-2-3",
         None,
-        "131067-0001000",
+        "131067-0004000",
     ]
     assert records[1]["error_type"] == "ValueError"
 
@@ -131,7 +131,7 @@ def test_jsonl_output_keeps_errors_in_line(
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert records[0] == {
         "input": "千代田区丸の内1-2-3 ビル",
-        "code": "131016-0001001-2-3",
+        "code": "131016-0011001-2-3",
         "level": "RESIDENCE",
         "remainder": "ビル",
         "town_name_tier": "EXACT",
@@ -145,7 +145,7 @@ def test_jsonl_output_keeps_errors_in_line(
 def test_decode_writes_kana_and_postal_code(
     database: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    arguments = ["--database", str(database), "decode", "131016-0001001-2-3"]
+    arguments = ["--database", str(database), "decode", "131016-0011001-2-3"]
     assert CommandLineInterface().run([*arguments, "--kana", "--postal-code"]) == 0
     assert (
         capsys.readouterr().out.strip()
@@ -174,7 +174,7 @@ def test_nearest(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert captured.out.splitlines() == [
         "\t".join(
             [
-                "131016-0001001-2-3",
+                "131016-0011001-2-3",
                 "東京都千代田区丸の内1丁目2番3号",
                 "RESIDENCE",
                 "35.682456000",
