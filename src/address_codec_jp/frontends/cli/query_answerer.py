@@ -136,6 +136,23 @@ class QueryAnswerer:
                     ],
                     serializer.children(children, address_format),
                 )
+            case Command.NAME:
+                address_format = self._address_format(namespace)
+                named_areas = codec.list_by_name(input_text)
+                if not named_areas:
+                    raise AddressNotFoundError(f"No area is named {input_text!r}.")
+                writer.write(
+                    input_text,
+                    [
+                        [
+                            str(area.code),
+                            codec.decode(area.code, address_format),
+                            area.code.level.name,
+                        ]
+                        for area in named_areas
+                    ],
+                    serializer.named(named_areas, address_format),
+                )
             case Command.AREA:
                 area = codec.find_area(input_text)
                 writer.write(

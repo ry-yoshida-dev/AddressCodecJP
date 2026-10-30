@@ -11,8 +11,8 @@ class BatchRequest(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", populate_by_name=True)
 
     operation: str = Field(
-        description="encode, decode, locate, locate_code, nearest, postal, children, area, "
-        + "area_code, or areas_at."
+        description="encode, decode, locate, locate_code, nearest, postal, children, name, "
+        + "area, area_code, or areas_at."
     )
     inputs: list[str] = Field(description="Addresses, codes, postal codes, or coordinates.")
     is_lot_verified: bool = Field(default=False, alias="verify_lot")

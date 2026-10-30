@@ -19,6 +19,17 @@ the API. The library is installed from git, so a version is a tagged commit
   municipality, or oaza, also as the `children` command, `GET /v1/codes/{code}/children`,
   and the `children` batch operation. `AddressCode.is_oaza` tells
   whether a code is an oaza-level town.
+- `AddressCodec.match` and `encode` take `within`, a prefecture, municipality, or town
+  code the address must lie in.
+- `AddressCodec.match_group` matches addresses that lie in one common area and returns a
+  `GroupMatch`: the narrowest area enclosing a candidate of every address decides the
+  addresses ambiguous on their own, and the group fails as a whole otherwise.
+  `AreaMatcher.interpret` returns the failure of a match instead of raising it.
+- `AddressCodec.list_by_name` lists every prefecture, municipality, oaza, and koaza that
+  bears a name (`府中市`, `自由が丘`), where `match` rejects a shared name as ambiguous;
+  also as the `name` command, `GET /v1/names/{name}`, and the `name` batch operation.
+  `TownSource.list_town_names` and `list_towns_named`, which custom town sources must now
+  implement.
 
 ### Changed
 
@@ -26,6 +37,8 @@ the API. The library is installed from git, so a version is a tagged commit
   without row IDs and the numbering system as an integer, which makes the database
   considerably smaller; a cache of version 4 is rebuilt on first use.
 - Messages of `AmbiguousAddressError` for several towns list only the candidate towns.
+- A designated city written without its ward and town (`〒231-0023 横浜市`) raises
+  `AmbiguousAddressError` instead of being read as the ward of the postal code.
 - **Breaking:** the progress of `DatabaseCache` is logged by the loggers under
   `address_codec_jp.database.cache` instead of only
   `address_codec_jp.database.cache.database_cache`; listen on the package logger.

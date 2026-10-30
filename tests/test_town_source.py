@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from pathlib import Path
 
 from address_codec_jp.address import Municipality, Town
@@ -37,6 +38,17 @@ class InMemoryTownSource:
             if town.oaza_name:
                 lg_codes_by_name.setdefault(town.oaza_name, set()).add(town.lg_code)
         return lg_codes_by_name
+
+    def list_town_names(self) -> set[str]:
+        """List the oaza and koaza names of the towns."""
+        return {name for town in self._towns for name in (town.oaza_name, town.koaza_name) if name}
+
+    def list_towns_named(self, names: Collection[str]) -> list[Town]:
+        """List the towns whose oaza or koaza name is one of the names."""
+        return sorted(
+            (town for town in self._towns if town.oaza_name in names or town.koaza_name in names),
+            key=lambda town: (town.lg_code, town.machiaza_id),
+        )
 
 
 def test_matcher_runs_on_any_town_source() -> None:

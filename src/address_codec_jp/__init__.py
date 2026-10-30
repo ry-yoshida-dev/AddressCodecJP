@@ -42,6 +42,7 @@ from address_codec_jp.results import (
     AddressLocation,
     AddressMatch,
     AreaSource,
+    GroupMatch,
     MatchTier,
     NearestAddress,
 )
@@ -81,6 +82,7 @@ __all__ = [
     "DigitWidth",
     "DistributedFile",
     "DistributionScope",
+    "GroupMatch",
     "ImportSummary",
     "LotNumber",
     "LotStyle",

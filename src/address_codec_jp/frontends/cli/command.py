@@ -15,5 +15,6 @@ class Command(Enum):
     NEAREST = "nearest"
     POSTAL = "postal"
     CHILDREN = "children"
+    NAME = "name"
     AREA = "area"
     AREA_AT = "area-at"

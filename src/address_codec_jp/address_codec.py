@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
@@ -9,9 +10,15 @@ from address_codec_jp.database.cache import DatabaseCache
 from address_codec_jp.database.storage import AddressDatabase, AreaImport, DatasetImport
 from address_codec_jp.errors import AddressNotFoundError, DatasetNotImportedError
 from address_codec_jp.geocoding import AddressLocator, AreaFinder, NearestAddressFinder
-from address_codec_jp.results import AddressArea, AddressLocation, AddressMatch, NearestAddress
+from address_codec_jp.results import (
+    AddressArea,
+    AddressLocation,
+    AddressMatch,
+    GroupMatch,
+    NearestAddress,
+)
 from address_codec_jp.text.formatting import AddressFormat, AddressFormatter
-from address_codec_jp.text.matching import AreaMatcher
+from address_codec_jp.text.matching import AreaMatcher, GroupMatcher, NameSearcher
 from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
 
 
@@ -51,6 +58,8 @@ class AddressCodec:
         self._matcher: AreaMatcher = AreaMatcher(
             database.towns, self._normalizer, LotNumberParser()
         )
+        self._group_matcher: GroupMatcher = GroupMatcher(self._matcher, self._normalizer)
+        self._name_searcher: NameSearcher = NameSearcher(database.towns, self._normalizer)
         self._formatter: AddressFormatter = AddressFormatter()
         self._locator: AddressLocator = AddressLocator(database.positions)
         self._nearest_finder: NearestAddressFinder = NearestAddressFinder(database.positions)
@@ -140,7 +149,13 @@ class AddressCodec:
         """
         return self._database.areas.list_imports()
 
-    def match(self, address: str, *, is_lot_verified: bool = False) -> AddressMatch:
+    def match(
+        self,
+        address: str,
+        *,
+        is_lot_verified: bool = False,
+        within: AddressCode | str | None = None,
+    ) -> AddressMatch:
         """
         Interpret a free-form address.
 
@@ -151,6 +166,9 @@ class AddressCodec:
         is_lot_verified : bool
             Whether lot numbers must be registered in the imported block, residence, or
             parcel masters. Without verification, any lot numbers are accepted.
+        within : AddressCode | str | None
+            Prefecture, municipality, or town code the address must lie in, such as
+            ``340006`` to read ``府中市`` as 広島県府中市, or ``None`` to search everywhere.
 
         Returns
         -------
@@ -162,10 +180,11 @@ class AddressCodec:
         Raises
         ------
         ValueError
-            If the address is blank.
+            If the address is blank, or ``within`` is malformed or has lot numbers.
         AddressNotFoundError
-            If the address does not match a registered area. With verification, also if
-            no lot of the town is imported or its lot numbers are not registered.
+            If the address does not match a registered area within ``within``. With
+            verification, also if no lot of the town is imported or its lot numbers are
+            not registered.
         AmbiguousAddressError
             If the address fits several areas or lot numbers equally well.
         DatasetNotImportedError
@@ -179,11 +198,74 @@ class AddressCodec:
         if not normalized_address:
             raise ValueError("Address must not be blank.")
         address_match = self._matcher.match(
-            normalized_address, self._normalizer.extract_postal_code(address)
+            normalized_address,
+            self._normalizer.extract_postal_code(address),
+            within=self._parse_area(within),
         )
         if is_lot_verified:
             self._verify_lot(address_match.code)
         return address_match
+
+    def _parse_area(self, within: AddressCode | str | None) -> AddressCode | None:
+        area = (
+            within
+            if within is None or isinstance(within, AddressCode)
+            else AddressCode.parse(within)
+        )
+        if area is not None and area.lot.numbers:
+            raise ValueError(f"The area to search must not have lot numbers, got {area}.")
+        return area
+
+    def match_group(self, addresses: Sequence[str], *, is_lot_verified: bool = False) -> GroupMatch:
+        """
+        Interpret addresses that all lie in one common area.
+
+        Addresses ambiguous on their own are decided by the narrowest prefecture,
+        municipality, or town that every address can lie in. The group fails as a whole
+        when any address cannot be decided.
+
+        Parameters
+        ----------
+        addresses : Sequence[str]
+            Addresses in any common notation.
+        is_lot_verified : bool
+            Whether lot numbers must be registered in the imported block, residence, or
+            parcel masters.
+
+        Returns
+        -------
+        GroupMatch
+            Common area and the match of each address within it, in input order.
+
+        Raises
+        ------
+        ValueError
+            If no address is given or an address is blank.
+        AddressNotFoundError
+            If an address does not match a registered area, no area encloses every
+            address, or verified lot numbers are not registered.
+        AmbiguousAddressError
+            If the narrowest common area is not unique, or an address fits several areas
+            or lot numbers equally well within it.
+        DatasetNotImportedError
+            If the database contains no towns, or lot numbers are to be verified before
+            any block, residence, or parcel master has been imported.
+        RegistryDownloadError
+            If the lots of an area have to be added to ``cache`` and a registry file
+            cannot be downloaded.
+
+        Examples
+        --------
+        >>> with AddressCodec.open() as codec:  # doctest: +SKIP
+        ...     group = codec.match_group(["千代田区丸の内1-1", "府中市"])
+        ...     str(group.area), [str(item.code) for item in group.matches]
+        ('130001', ['131016-0011001-1', '132063'])
+        """
+        group_match = self._group_matcher.match(addresses)
+        if is_lot_verified:
+            for address_match in group_match.matches:
+                self._verify_lot(address_match.code)
+        return group_match
 
     def _verify_lot(self, code: AddressCode) -> None:
         if code.machiaza_id is None or not code.lot.numbers:
@@ -201,7 +283,13 @@ class AddressCodec:
         if not positions.contains_lot(code.lg_code, code.machiaza_id, code.lot):
             raise AddressNotFoundError(f"Lot numbers of {code} are not registered.")
 
-    def encode(self, address: str, *, is_lot_verified: bool = False) -> AddressCode:
+    def encode(
+        self,
+        address: str,
+        *,
+        is_lot_verified: bool = False,
+        within: AddressCode | str | None = None,
+    ) -> AddressCode:
         """
         Convert an address to its address code.
 
@@ -212,6 +300,9 @@ class AddressCodec:
         is_lot_verified : bool
             Whether lot numbers must be registered in the imported block, residence, or
             parcel masters.
+        within : AddressCode | str | None
+            Prefecture, municipality, or town code the address must lie in, or ``None``
+            to search everywhere.
 
         Returns
         -------
@@ -235,7 +326,7 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        return self.match(address, is_lot_verified=is_lot_verified).code
+        return self.match(address, is_lot_verified=is_lot_verified, within=within).code
 
     def resolve(self, code: AddressCode | str) -> Address:
         """
@@ -371,6 +462,51 @@ class AddressCodec:
             self._normalizer.parse_postal_code(postal_code)
         )
         return [Address.for_town(town) for town in towns]
+
+    def list_by_name(self, name: str, *, within: AddressCode | str | None = None) -> list[Address]:
+        """
+        List every registered area that bears a name.
+
+        Unlike ``match``, which settles on one area and rejects a name shared by several,
+        this lists all of them: the prefecture, municipalities, oaza, and koaza whose
+        whole name is ``name``. Notation variants such as ``ヶ``/``ケ``/``が`` and a leading
+        ``大字``/``字`` are ignored, but parts of names are not searched. The city of a
+        designated city stands for all its wards, and a ward written alone for every ward
+        of that name. A prefecture or municipality written before an oaza or koaza
+        (``府中市宮町``) narrows it down, as does ``within``. An oaza is listed as its
+        oaza-level town, or as its chome and koaza when the oaza itself is not
+        registered.
+
+        Parameters
+        ----------
+        name : str
+            Name of an area, optionally after the prefecture or municipality.
+        within : AddressCode | str | None
+            Prefecture, municipality, or town code the areas must lie in, or ``None`` to
+            search everywhere.
+
+        Returns
+        -------
+        list[Address]
+            Areas ordered by code. Empty when no area bears the name.
+
+        Raises
+        ------
+        ValueError
+            If the name is blank, or ``within`` is malformed or has lot numbers.
+        DatasetNotImportedError
+            If the database contains no towns.
+
+        Examples
+        --------
+        >>> with AddressCodec.open() as codec:  # doctest: +SKIP
+        ...     [codec.decode(area.code) for area in codec.list_by_name("府中市")]
+        ['東京都府中市', '広島県府中市']
+        """
+        normalized_name = self._normalizer.normalize(name)
+        if not normalized_name:
+            raise ValueError("Name must not be blank.")
+        return self._name_searcher.search(normalized_name, within=self._parse_area(within))
 
     def locate(self, address: str, crs: GeodeticCrs = GeodeticCrs.JGD2011) -> AddressLocation:
         """

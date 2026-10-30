@@ -1,6 +1,6 @@
 import sqlite3
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from itertools import batched
 from typing import ClassVar
 
@@ -455,6 +455,45 @@ class TownRepository:
             lg_codes_by_name[str(row[0])].add(str(row[1]))
         return dict(lg_codes_by_name)
 
+    def list_town_names(self) -> set[str]:
+        """
+        List every oaza and koaza name.
+
+        Returns
+        -------
+        set[str]
+            Registry names as written. Empty names are left out.
+        """
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            "SELECT oaza_name FROM towns WHERE oaza_name <> '' "
+            + "UNION SELECT koaza_name FROM towns WHERE koaza_name <> ''"
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    def list_towns_named(self, names: Collection[str]) -> list[Town]:
+        """
+        List the towns whose oaza or koaza name is one of the names.
+
+        Parameters
+        ----------
+        names : Collection[str]
+            Oaza or koaza names as written in the registry.
+
+        Returns
+        -------
+        list[Town]
+            Towns ordered by local government code and town identifier.
+        """
+        if not names:
+            return []
+        placeholders = ", ".join("?" for _ in names)
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            f"{self._TOWN_SELECT} WHERE t.oaza_name IN ({placeholders}) "
+            + f"OR t.koaza_name IN ({placeholders}) ORDER BY t.lg_code, t.machiaza_id",
+            (*names, *names),
+        ).fetchall()
+        return self._to_towns(rows)
+
     def list_towns_by_postal_code(self, postal_code: str) -> list[Town]:
         """
         List the registered towns that have a postal code.
@@ -480,14 +519,7 @@ class TownRepository:
             + "ORDER BY t.lg_code, t.machiaza_id",
             (postal_code,),
         ).fetchall()
-        municipalities: dict[str, Municipality] = {}
-        towns: list[Town] = []
-        for row in rows:
-            lg_code = str(row[0])
-            if lg_code not in municipalities:
-                municipalities[lg_code] = self.get_municipality(lg_code)
-            towns.append(self._to_town(row, municipalities[lg_code]))
-        return towns
+        return self._to_towns(rows)
 
     def list_towns(self, lg_code: str) -> list[Town]:
         """
@@ -559,6 +591,16 @@ class TownRepository:
             (oaza.lg_code, oaza.machiaza_id, oaza.machiaza_id[:4] + "999"),
         ).fetchall()
         return [self._to_town(row, oaza.municipality) for row in rows]
+
+    def _to_towns(self, rows: list[tuple[object, ...]]) -> list[Town]:
+        municipalities: dict[str, Municipality] = {}
+        towns: list[Town] = []
+        for row in rows:
+            lg_code = str(row[0])
+            if lg_code not in municipalities:
+                municipalities[lg_code] = self.get_municipality(lg_code)
+            towns.append(self._to_town(row, municipalities[lg_code]))
+        return towns
 
     def _to_town(self, row: tuple[object, ...], municipality: Municipality) -> Town:
         chome_number = row[4]

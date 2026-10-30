@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from typing import Protocol
 
 from address_codec_jp.address import Municipality, Town
@@ -57,5 +58,32 @@ class TownSource(Protocol):
         -------
         dict[str, set[str]]
             Local government codes by oaza name. Towns without an oaza name are left out.
+        """
+        ...
+
+    def list_town_names(self) -> set[str]:
+        """
+        List every oaza and koaza name.
+
+        Returns
+        -------
+        set[str]
+            Registry names as written. Empty names are left out.
+        """
+        ...
+
+    def list_towns_named(self, names: Collection[str]) -> list[Town]:
+        """
+        List the towns whose oaza or koaza name is one of the names.
+
+        Parameters
+        ----------
+        names : Collection[str]
+            Oaza or koaza names as written in the registry.
+
+        Returns
+        -------
+        list[Town]
+            Towns ordered by local government code and town identifier.
         """
         ...

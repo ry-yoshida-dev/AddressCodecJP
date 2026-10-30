@@ -200,6 +200,17 @@ class ParserFactory:
             metavar="code",
             help="Prefecture, municipality, or town codes; standard input if none.",
         )
+        name_parser = subparsers.add_parser(
+            Command.NAME.value,
+            parents=[query_parser, format_parser],
+            help="Name to every registered area that bears it.",
+        )
+        _ = name_parser.add_argument(
+            "inputs",
+            nargs="*",
+            metavar="name",
+            help="Names such as 府中市 or 自由が丘; standard input if none.",
+        )
 
         area_parser = subparsers.add_parser(
             Command.AREA.value,

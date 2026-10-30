@@ -153,6 +153,8 @@ with AddressCodec.open() as codec:
     print([str(town.code) for town in towns])
 
     print([codec.decode(child.code) for child in codec.list_children("131016-0011000")])
+
+    print([codec.decode(area.code) for area in codec.list_by_name("府中市")])
 ```
 
 ```
@@ -167,6 +169,7 @@ with AddressCodec.open() as codec:
 113247-0003000-585-1 True ['REGISTRY_MAP']
 ['131016-0011001']
 ['東京都千代田区丸の内1丁目', '東京都千代田区丸の内2丁目', '東京都千代田区丸の内3丁目']
+['東京都府中市', '広島県府中市']
 ```
 
 `locate` and `find_area` fall back to the nearest enclosing area that has a point or
@@ -179,13 +182,39 @@ Names before the town may be shortened: the prefecture (`千代田区丸の内`)
 designated city (`横浜市山下町`), its city (`中京区上本能寺前町`), or the whole
 municipality (`霞が関1-1-1`). When the rest fits several areas, `AmbiguousAddressError`
 lists them in `candidates`; a prefecture or postal code written with the address narrows
-them down (`大阪府梅田3-1-1`).
+them down (`大阪府梅田3-1-1`), and so does an area code given as `within`
+(`codec.encode("府中市", within="340006")` is 広島県府中市).
+
+`match_group` reads addresses that all lie in one common area: the narrowest
+prefecture, municipality, or town that encloses a candidate of every address decides
+those ambiguous on their own. Next to `千代田区丸の内1-1`, `府中市` is 東京都府中市. The
+group fails as a whole when that area is missing or not unique, or an address stays
+ambiguous within it.
+
+```python
+with AddressCodec.open() as codec:
+    group = codec.match_group(["千代田区丸の内1-1", "府中市"])
+    print(group.area, [str(item.code) for item in group.matches])
+```
+
+```
+130001 ['131016-0011001-1', '132063']
+```
 
 `list_children` lists the registered areas directly under a code, those whose `parent`
 it is: the municipalities of a prefecture, with the wards of a designated city in place
 of the city; the oaza of a municipality; and the chome and koaza of an oaza. Chome and
 koaza whose oaza is not registered are listed under the municipality. Lot numbers are
 not listed.
+
+`list_by_name` lists every area that bears a name, where `match` would reject a shared
+name as ambiguous: the prefecture, municipalities, oaza, and koaza whose whole name it
+is, ignoring `ヶ`/`ケ`/`が` and a leading `大字`/`字` (`list_by_name("藤ヶ丘")` finds
+every 藤が丘). Parts of names are not searched. A designated city stands for all its
+wards, and a ward written alone for every ward of that name. A prefecture or
+municipality before the name (`府中市宮町`), or `within`, narrows the result down. An
+oaza is listed as its oaza-level code, or as its chome and koaza when the oaza itself is
+not registered.
 
 ### Command line
 
@@ -195,6 +224,7 @@ uv run address-codec-jp decode 131016-0011001-2-3 --numeral kanji
 uv run address-codec-jp locate "千代田区内幸町1-6-1" --crs wgs84
 uv run address-codec-jp nearest 35.6812,139.7671
 uv run address-codec-jp children 130001
+uv run address-codec-jp name 府中市 自由が丘
 uv run address-codec-jp area "千代田区丸の内1-9-1"
 uv run address-codec-jp area-at 35.6812,139.7671 --parcels --output jsonl
 ```
@@ -228,6 +258,7 @@ CMD ["uvicorn", "--factory", "address_codec_jp.frontends.api:ApplicationFactory.
 | `GET /v1/nearest?coordinate=lat,lon` | Nearest address; `crs`, `max_distance` |
 | `GET /v1/postal-codes/{postal_code}` | Towns of a postal code; format options as for decoding |
 | `GET /v1/codes/{code}/children` | Areas directly under a prefecture, municipality, or oaza; format options as for decoding |
+| `GET /v1/names/{name}` | Every area that bears a name; format options as for decoding |
 | `GET /v1/areas?address=`, `GET /v1/codes/{code}/area` | Shape; `geometry=false` omits the GeoJSON |
 | `GET /v1/areas-at?coordinate=lat,lon` | Containing towns; `parcels=true` adds parcels, `geometry=true` adds GeoJSON |
 | `POST /v1/batch` | `{"operation": "locate", "inputs": [...]}` with the same options; per-input `status` on failure |

@@ -21,6 +21,8 @@ class QueryOperation(Enum):
         Postal code to its towns.
     CHILDREN
         Code to the registered areas directly under it.
+    NAME
+        Name to every registered area that bears it.
     AREA
         Address to its shape.
     AREA_CODE
@@ -36,6 +38,7 @@ class QueryOperation(Enum):
     NEAREST = auto()
     POSTAL = auto()
     CHILDREN = auto()
+    NAME = auto()
     AREA = auto()
     AREA_CODE = auto()
     AREAS_AT = auto()

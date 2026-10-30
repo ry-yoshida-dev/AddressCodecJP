@@ -37,7 +37,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "filelock", specifier = ">=4.2.4" },
-    { name = "geo-coordinate", git = "https://github.com/ry-yoshida-dev/GeoCoordinate.git?rev=4c33a80c97fe939070e5515092e59b68b21f6b07" },
+    { name = "geo-coordinate", git = "https://github.com/ry-yoshida-dev/GeoCoordinate.git?rev=main" },
     { name = "numpy", specifier = ">=2" },
     { name = "platformdirs", specifier = ">=4.14.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.30" },
@@ -217,7 +217,7 @@ wheels = [
 [[package]]
 name = "geo-coordinate"
 version = "0.0.1"
-source = { git = "https://github.com/ry-yoshida-dev/GeoCoordinate.git?rev=4c33a80c97fe939070e5515092e59b68b21f6b07#4c33a80c97fe939070e5515092e59b68b21f6b07" }
+source = { git = "https://github.com/ry-yoshida-dev/GeoCoordinate.git?rev=main#35799986271bfeff93152c65de481b68db95ccad" }
 dependencies = [
     { name = "numpy" },
     { name = "pyproj" },

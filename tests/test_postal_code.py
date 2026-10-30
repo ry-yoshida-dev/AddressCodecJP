@@ -43,6 +43,11 @@ def test_unknown_postal_code_keeps_the_ambiguity(codec: AddressCodec, address: s
         _ = codec.match(address)
 
 
+def test_postal_code_does_not_read_designated_city_as_ward(codec: AddressCodec) -> None:
+    with pytest.raises(LookupError, match="ambiguous"):
+        _ = codec.match("〒231-0023 横浜市")
+
+
 def test_postal_code_does_not_override_the_written_town(codec: AddressCodec) -> None:
     assert str(codec.encode("〒100-0013 千代田区丸の内1-2-3")) == "131016-0011001-2-3"
 

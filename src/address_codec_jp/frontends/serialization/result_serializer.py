@@ -183,7 +183,37 @@ class ResultSerializer:
         ReadingNotFoundError
             If katakana is requested and the registry has no reading of a name.
         """
-        children: list[JsonValue] = [
+        return {"children": self._describe_levels(addresses, address_format)}
+
+    def named(
+        self, addresses: list[Address], address_format: AddressFormat
+    ) -> dict[str, JsonValue]:
+        """
+        Describe the areas that bear a name.
+
+        Parameters
+        ----------
+        addresses : list[Address]
+            Result of ``AddressCodec.list_by_name``.
+        address_format : AddressFormat
+            Output format of the addresses.
+
+        Returns
+        -------
+        dict[str, JsonValue]
+            ``areas``, each with its ``code``, ``address``, and ``level``.
+
+        Raises
+        ------
+        ReadingNotFoundError
+            If katakana is requested and the registry has no reading of a name.
+        """
+        return {"areas": self._describe_levels(addresses, address_format)}
+
+    def _describe_levels(
+        self, addresses: list[Address], address_format: AddressFormat
+    ) -> list[JsonValue]:
+        return [
             {
                 "code": str(address.code),
                 "address": self._codec.decode(address.code, address_format),
@@ -191,7 +221,6 @@ class ResultSerializer:
             }
             for address in addresses
         ]
-        return {"children": children}
 
     def area(self, area: AddressArea, *, is_geometry_included: bool) -> dict[str, JsonValue]:
         """

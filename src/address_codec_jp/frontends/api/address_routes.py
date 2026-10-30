@@ -68,6 +68,7 @@ class AddressRoutes:
         _ = router.get("/v1/locations")(self.locate)
         _ = router.get("/v1/nearest")(self.find_nearest)
         _ = router.get("/v1/postal-codes/{postal_code}")(self.list_by_postal_code)
+        _ = router.get("/v1/names/{name}")(self.list_by_name)
         _ = router.get("/v1/areas")(self.find_area)
         _ = router.get("/v1/areas-at")(self.find_areas_at)
         _ = router.post("/v1/batch")(self.run_batch)
@@ -250,6 +251,31 @@ class AddressRoutes:
         """
         options = QueryOptions(address_format=address_format.to_address_format())
         return await self._respond(QueryOperation.CHILDREN, code, options)
+
+    async def list_by_name(
+        self,
+        *,
+        name: Annotated[str, Path(description="Name of an area such as 府中市 or 自由が丘.")],
+        address_format: Annotated[FormatParameters, Query()],
+    ) -> JSONResponse:
+        """
+        List every registered area that bears a name.
+
+        Parameters
+        ----------
+        name : str
+            Whole name of a prefecture, municipality, oaza, or koaza, optionally after
+            the prefecture or municipality.
+        address_format : FormatParameters
+            Format of the addresses.
+
+        Returns
+        -------
+        JSONResponse
+            ``name`` and ``areas``, each with its ``code``, ``address``, and ``level``.
+        """
+        options = QueryOptions(address_format=address_format.to_address_format())
+        return await self._respond(QueryOperation.NAME, name, options)
 
     async def find_area(
         self,

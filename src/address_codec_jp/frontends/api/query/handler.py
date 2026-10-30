@@ -214,6 +214,15 @@ class QueryHandler:
                     **self._serializer.children(children, options.address_format),
                 }
                 return QueryResult(fields, self._REGISTRY)
+            case QueryOperation.NAME:
+                named_areas = self._interpreter.interpret(self._codec.list_by_name, input_text)
+                if not named_areas:
+                    raise AddressNotFoundError(f"No area is named {input_text!r}.")
+                fields = {
+                    "name": input_text,
+                    **self._serializer.named(named_areas, options.address_format),
+                }
+                return QueryResult(fields, self._REGISTRY)
             case QueryOperation.AREA:
                 return self._area(self._encode(input_text), options)
             case QueryOperation.AREA_CODE:

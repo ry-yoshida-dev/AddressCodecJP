@@ -191,6 +191,22 @@ def test_children_are_listed(client: TestClient) -> None:
     assert read_list(body_of(client.get("/v1/codes/131016-0011001/children"))["children"]) == []
 
 
+def test_names_are_listed(client: TestClient) -> None:
+    body = body_of(client.get("/v1/names/府中市"))
+    assert body["name"] == "府中市"
+    assert read_list(body["areas"]) == [
+        {"code": "132063", "address": "東京都府中市", "level": "MUNICIPALITY"},
+        {"code": "342084", "address": "広島県府中市", "level": "MUNICIPALITY"},
+    ]
+    assert body["attribution"] == [REGISTRY_CREDIT]
+    batch = body_of(client.post("/v1/batch", json={"operation": "name", "inputs": ["大曲"]}))
+    result = read_object(read_list(batch["results"])[0])
+    assert [read_object(area)["code"] for area in read_list(result["areas"])] == [
+        "012114-0005000",
+        "012114-0006000",
+    ]
+
+
 def test_area_writes_its_geometry_unless_disabled(client: TestClient) -> None:
     area = body_of(client.get("/v1/areas", params={"address": "千代田区丸の内1-2-3"}))
     geometry = read_object(area["geometry"])
@@ -237,6 +253,7 @@ def test_unprepared_municipality_falls_back_without_coverage(tmp_path: Path) -> 
         ("/v1/postal-codes/abc", {}, 400, "InvalidRequestError"),
         ("/v1/codes/131016-0011001-2/children", {}, 400, "InvalidRequestError"),
         ("/v1/codes/139998/children", {}, 404, "AddressNotFoundError"),
+        ("/v1/names/府中", {}, 404, "AddressNotFoundError"),
     ],
 )
 def test_errors_map_to_statuses(

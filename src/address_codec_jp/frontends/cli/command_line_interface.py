@@ -82,6 +82,7 @@ class CommandLineInterface:
                 | Command.NEAREST
                 | Command.POSTAL
                 | Command.CHILDREN
+                | Command.NAME
                 | Command.AREA
                 | Command.AREA_AT
             ):
