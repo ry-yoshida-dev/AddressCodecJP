@@ -33,6 +33,11 @@ def test_within_rejects_address_outside(codec: AddressCodec) -> None:
         _ = codec.encode("東京都", within="131016")
 
 
+def test_within_names_the_area_when_municipality_lies_outside(codec: AddressCodec) -> None:
+    with pytest.raises(AddressNotFoundError, match="does not lie within 130001"):
+        _ = codec.encode("広島県府中市", within="130001")
+
+
 def test_within_restricts_towns(codec: AddressCodec) -> None:
     assert str(codec.encode("千代田区丸の内1-1", within="131016-0011000")) == "131016-0011001-1"
     with pytest.raises(AddressNotFoundError):

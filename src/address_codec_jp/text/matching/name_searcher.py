@@ -25,12 +25,20 @@ class NameSearcher:
         Source of municipalities and towns, such as ``TownRepository``.
     normalizer : TextNormalizer
         Normalizer applied to registry names.
+    municipality_names : MunicipalityNameIndex
+        Prefecture and municipality names of ``repository``, such as
+        ``AreaMatcher.municipality_names`` to share one index with matching.
     """
 
-    def __init__(self, repository: TownSource, normalizer: TextNormalizer) -> None:
+    def __init__(
+        self,
+        repository: TownSource,
+        normalizer: TextNormalizer,
+        municipality_names: MunicipalityNameIndex,
+    ) -> None:
         self._repository: TownSource = repository
         self._normalizer: TextNormalizer = normalizer
-        self._name_index: MunicipalityNameIndex | None = None
+        self._name_index: MunicipalityNameIndex = municipality_names
         self._town_name_index: dict[str, set[str]] | None = None
 
     def search(self, normalized_name: str, *, within: AddressCode | None = None) -> list[Address]:
@@ -60,7 +68,7 @@ class NameSearcher:
             Address(prefecture=municipality.prefecture, municipality=municipality)
             for municipality in self._find_municipalities(folded)
         ]
-        prefecture = self._get_name_index().prefectures.get(folded)
+        prefecture = self._name_index.prefectures.get(folded)
         if prefecture is not None:
             addresses.append(Address(prefecture=prefecture))
         towns = self._find_towns(folded, None)
@@ -77,7 +85,7 @@ class NameSearcher:
         return [unique[code] for code in sorted(unique)]
 
     def _find_municipalities(self, folded_text: str) -> frozenset[Municipality]:
-        name_index = self._get_name_index()
+        name_index = self._name_index
         return name_index.municipalities.get(folded_text, frozenset()) | name_index.wards.get(
             folded_text, frozenset()
         )
@@ -87,7 +95,7 @@ class NameSearcher:
             AddressCode(lg_code=municipality.lg_code)
             for municipality in self._find_municipalities(folded_text)
         ]
-        prefecture = self._get_name_index().prefectures.get(folded_text)
+        prefecture = self._name_index.prefectures.get(folded_text)
         if prefecture is not None:
             areas.append(AddressCode.for_prefecture(prefecture.code))
         return areas
@@ -121,11 +129,6 @@ class NameSearcher:
             )
         ]
         return koaza + oaza
-
-    def _get_name_index(self) -> MunicipalityNameIndex:
-        if self._name_index is None:
-            self._name_index = MunicipalityNameIndex.build(self._repository, self._normalizer)
-        return self._name_index
 
     def _get_town_name_index(self) -> dict[str, set[str]]:
         if self._town_name_index is None:

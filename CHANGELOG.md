@@ -33,9 +33,10 @@ the API. The library is installed from git, so a version is a tagged commit
 
 ### Changed
 
-- **Breaking:** the database schema version is 5. Tables keyed by town are stored
+- **Breaking:** the database schema version is 6. Tables keyed by town are stored
   without row IDs and the numbering system as an integer, which makes the database
-  considerably smaller; a cache of version 4 is rebuilt on first use.
+  considerably smaller, and towns are indexed by oaza and koaza name for
+  `list_by_name`; a cache of an older version is rebuilt on first use.
 - Messages of `AmbiguousAddressError` for several towns list only the candidate towns.
 - A designated city written without its ward and town (`〒231-0023 横浜市`) raises
   `AmbiguousAddressError` instead of being read as the ward of the postal code.

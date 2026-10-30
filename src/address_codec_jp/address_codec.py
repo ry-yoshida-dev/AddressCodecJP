@@ -59,7 +59,9 @@ class AddressCodec:
             database.towns, self._normalizer, LotNumberParser()
         )
         self._group_matcher: GroupMatcher = GroupMatcher(self._matcher, self._normalizer)
-        self._name_searcher: NameSearcher = NameSearcher(database.towns, self._normalizer)
+        self._name_searcher: NameSearcher = NameSearcher(
+            database.towns, self._normalizer, self._matcher.municipality_names
+        )
         self._formatter: AddressFormatter = AddressFormatter()
         self._locator: AddressLocator = AddressLocator(database.positions)
         self._nearest_finder: NearestAddressFinder = NearestAddressFinder(database.positions)

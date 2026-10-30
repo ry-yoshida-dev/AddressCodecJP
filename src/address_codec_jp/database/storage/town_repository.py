@@ -95,6 +95,14 @@ class TownRepository:
         ) WITHOUT ROWID
         """,
         """
+        CREATE INDEX towns_by_oaza_name
+        ON towns (oaza_name)
+        """,
+        """
+        CREATE INDEX towns_by_koaza_name
+        ON towns (koaza_name)
+        """,
+        """
         CREATE TABLE town_postal_codes (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,

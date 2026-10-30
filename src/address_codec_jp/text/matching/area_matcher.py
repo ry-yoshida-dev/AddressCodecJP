@@ -74,11 +74,16 @@ class AreaMatcher:
         self._repository: TownSource = repository
         self._normalizer: TextNormalizer = normalizer
         self._lot_parser: LotNumberParser = lot_parser
-        self._name_index: MunicipalityNameIndex | None = None
+        self._name_index: MunicipalityNameIndex = MunicipalityNameIndex(repository, normalizer)
         self._oaza_municipality_index: dict[str, set[str]] | None = None
         self._municipalities_by_code: dict[str, Municipality] | None = None
         self._oaza_indexes: dict[str, NameIndex] = {}
         self._koaza_indexes: dict[tuple[tuple[str, str], ...], NameIndex] = {}
+
+    @property
+    def municipality_names(self) -> MunicipalityNameIndex:
+        """Prefecture and municipality names of the repository, built on first use."""
+        return self._name_index
 
     def match(
         self,
@@ -156,7 +161,7 @@ class AreaMatcher:
             and isinstance(outcome, AddressMatch)
             and not within.contains(outcome.code)
         ):
-            return AddressNotFoundError(f"{normalized_address!r} does not lie within {within}.")
+            return self._outside(normalized_address, within)
         return outcome
 
     def find(self, normalized_address: str, postal_code: str | None) -> AddressMatch | None:
@@ -187,9 +192,10 @@ class AreaMatcher:
     def _resolve(
         self, normalized_address: str, postal_code: str | None, within: AddressCode | None
     ) -> MatchOutcome:
+        written_matches = self._match_municipalities(normalized_address)
         municipality_matches = [
             narrowed
-            for municipality_match in self._match_municipalities(normalized_address)
+            for municipality_match in written_matches
             if (
                 narrowed := self._narrow_by_postal_code(
                     self._narrow_by_area(municipality_match, within), postal_code
@@ -197,7 +203,10 @@ class AreaMatcher:
             ).municipalities
         ]
         if not municipality_matches:
-            return self._match_without_municipality(normalized_address, postal_code, within)
+            outcome = self._match_without_municipality(normalized_address, postal_code, within)
+            if within is not None and written_matches and isinstance(outcome, AddressNotFoundError):
+                return self._outside(normalized_address, within)
+            return outcome
         longest_match = municipality_matches[0]
         if not NameIndex.strip_prefix(longest_match.remainder):
             return self._match_municipality_only(normalized_address, postal_code, longest_match)
@@ -217,10 +226,13 @@ class AreaMatcher:
             + f"{longest_match.remainder!r}."
         )
 
+    def _outside(self, normalized_address: str, within: AddressCode) -> AddressNotFoundError:
+        return AddressNotFoundError(f"{normalized_address!r} does not lie within {within}.")
+
     def _match_without_municipality(
         self, text: str, postal_code: str | None, within: AddressCode | None
     ) -> MatchOutcome:
-        index = self._get_name_index().prefectures
+        index = self._name_index.prefectures
         keys = self._matching_prefixes(self._normalizer.fold(text), index)
         prefecture = index[keys[0]] if keys else None
         remainder = text[len(keys[0]) :] if keys else text
@@ -298,7 +310,7 @@ class AreaMatcher:
         return self._select(normalized_address, postal_code, municipality_match, interpretations)
 
     def _match_municipalities(self, text: str) -> list[MunicipalityMatch]:
-        name_index = self._get_name_index()
+        name_index = self._name_index
         index = name_index.municipalities
         ward_index = name_index.wards
         folded = self._normalizer.fold(text)
@@ -574,11 +586,6 @@ class AreaMatcher:
             penalty=candidates.penalty,
             loosest_tier=candidates.loosest_tier,
         )
-
-    def _get_name_index(self) -> MunicipalityNameIndex:
-        if self._name_index is None:
-            self._name_index = MunicipalityNameIndex.build(self._repository, self._normalizer)
-        return self._name_index
 
     def _get_oaza_municipality_index(self) -> dict[str, set[str]]:
         if self._oaza_municipality_index is None:

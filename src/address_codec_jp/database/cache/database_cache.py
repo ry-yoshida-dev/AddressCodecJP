@@ -174,7 +174,7 @@ class DatabaseCache:
         Returns
         -------
         Path
-            File such as ``towns-v5.sqlite3`` in the cache directory.
+            File such as ``towns-v6.sqlite3`` in the cache directory.
         """
         return self._directory.database_path
 

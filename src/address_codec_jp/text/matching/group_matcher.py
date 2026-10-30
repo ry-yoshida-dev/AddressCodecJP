@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import ClassVar
+from typing import ClassVar, assert_never
 
 from address_codec_jp.address import AddressCode, AddressLevel
 from address_codec_jp.errors import AddressNotFoundError, AmbiguousAddressError
@@ -85,6 +85,8 @@ class GroupMatcher:
                     candidate_groups.append(outcome.candidates)
                 case AddressNotFoundError():
                     raise outcome
+                case _:
+                    assert_never(outcome)
         area = self._find_common_area(candidate_groups)
         return GroupMatch(
             area=area,
