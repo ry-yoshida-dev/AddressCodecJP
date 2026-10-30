@@ -21,6 +21,9 @@ class AddressDatabase:
     being misread or modified. A database holds one SQLite connection and must be used
     only in the thread that opened it. A connection waits up to ``BUSY_TIMEOUT_SECONDS``
     while another process writes, such as a cache adding the data of a municipality.
+    A write interrupted by a killed process leaves a hot journal, which a read-only
+    connection cannot roll back; ``open_read_only`` then rolls it back with a brief
+    writable connection, as SQLite would on the next write.
 
     Parameters
     ----------
@@ -38,6 +41,7 @@ class AddressDatabase:
     def __init__(self, connection: sqlite3.Connection, *, is_writable: bool) -> None:
         self._connection: sqlite3.Connection = connection
         self._is_writable: bool = is_writable
+        self._is_closed: bool = False
         self._towns: TownRepository = TownRepository(connection)
         self._positions: PositionRepository = PositionRepository(connection)
         self._imports: ImportLogRepository = ImportLogRepository(connection)
@@ -64,15 +68,23 @@ class AddressDatabase:
             If the file does not exist.
         UnsupportedDatabaseError
             If the file is not a database of this version of the library.
+        sqlite3.OperationalError
+            If the database stays locked for ``BUSY_TIMEOUT_SECONDS``, or holds an
+            interrupted write that cannot be rolled back because the file or its
+            directory is not writable.
         """
         path = Path(database_path)
         if not path.is_file():
             raise FileNotFoundError(f"Address database not found: {database_path}.")
-        connection = sqlite3.connect(
-            path.resolve().as_uri() + "?mode=ro", uri=True, timeout=cls.BUSY_TIMEOUT_SECONDS
-        )
-        database = cls(connection, is_writable=False)
-        database._check_version(str(database_path))
+        database = cls._connect_read_only(path)
+        try:
+            database._check_version(str(database_path))
+        except sqlite3.OperationalError as error:
+            if error.sqlite_errorcode != sqlite3.SQLITE_READONLY_ROLLBACK:
+                raise
+            cls._roll_back_journal(path)
+            database = cls._connect_read_only(path)
+            database._check_version(str(database_path))
         return database
 
     @classmethod
@@ -95,11 +107,16 @@ class AddressDatabase:
         UnsupportedDatabaseError
             If the file is not an SQLite database or holds other tables than a database
             of this version. Delete it and import again in that case.
+        sqlite3.OperationalError
+            If the database stays locked for ``BUSY_TIMEOUT_SECONDS``.
         """
         target = database_path if database_path == cls.MEMORY_PATH else Path(database_path)
         database = cls(sqlite3.connect(target, timeout=cls.BUSY_TIMEOUT_SECONDS), is_writable=True)
         try:
             is_empty = database._is_empty()
+        except sqlite3.OperationalError:
+            database.close()
+            raise
         except sqlite3.DatabaseError as error:
             database.close()
             raise UnsupportedDatabaseError(f"{database_path} is not an SQLite database.") from error
@@ -120,6 +137,18 @@ class AddressDatabase:
             ``True`` when opened by ``open_writable``.
         """
         return self._is_writable
+
+    @property
+    def is_closed(self) -> bool:
+        """
+        Tell whether the connection has been closed.
+
+        Returns
+        -------
+        bool
+            ``True`` after ``close``.
+        """
+        return self._is_closed
 
     @property
     def towns(self) -> TownRepository:
@@ -207,6 +236,30 @@ class AddressDatabase:
     def close(self) -> None:
         """Close the connection."""
         self._connection.close()
+        self._is_closed = True
+
+    @classmethod
+    def _connect_read_only(cls, path: Path) -> Self:
+        connection = sqlite3.connect(
+            path.resolve().as_uri() + "?mode=ro", uri=True, timeout=cls.BUSY_TIMEOUT_SECONDS
+        )
+        return cls(connection, is_writable=False)
+
+    @classmethod
+    def _roll_back_journal(cls, path: Path) -> None:
+        connection = sqlite3.connect(
+            path.resolve().as_uri() + "?mode=rw", uri=True, timeout=cls.BUSY_TIMEOUT_SECONDS
+        )
+        try:
+            _ = connection.execute("PRAGMA user_version").fetchall()
+        except sqlite3.OperationalError as error:
+            raise sqlite3.OperationalError(
+                f"{path} holds a write interrupted by a stopped process, which must be "
+                + f"rolled back before it can be read, but rolling it back failed: {error}. "
+                + "Open it once with write access to its file and directory."
+            ) from error
+        finally:
+            connection.close()
 
     def _is_empty(self) -> bool:
         rows: list[tuple[object, ...]] = self._connection.execute(
@@ -227,6 +280,9 @@ class AddressDatabase:
         try:
             application_id = self._read_pragma("application_id")
             schema_version = self._read_pragma("user_version")
+        except sqlite3.OperationalError:
+            self.close()
+            raise
         except sqlite3.DatabaseError as error:
             self.close()
             raise UnsupportedDatabaseError(f"{description} is not an SQLite database.") from error

@@ -1,20 +1,23 @@
 import logging
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from importlib.metadata import version
 from typing import ClassVar
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from address_codec_jp.errors import AddressCodecError
 from address_codec_jp.frontends.api.address_routes import AddressRoutes
 from address_codec_jp.frontends.api.codec_pool import CodecPool
+from address_codec_jp.frontends.api.database_busy_error import DatabaseBusyError
 from address_codec_jp.frontends.api.error_status import ErrorStatus
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
 from address_codec_jp.frontends.api.service_settings import ServiceSettings
+from address_codec_jp.frontends.api.validation_issue import ValidationIssue
 from address_codec_jp.frontends.serialization import ErrorSerializer, JsonValue
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -30,8 +33,11 @@ class ApplicationFactory:
     address_codec_jp.frontends.api:ApplicationFactory.from_environment``, with as many worker
     processes as the cores to use.
 
-    Errors of the request are answered with their message; any other failure is logged
-    and answered with a generic 500 body, so that no internal detail leaks.
+    Errors of the request are answered with their message, including a parameter or
+    body that fails validation, which is answered with 400 and ``InvalidRequestError``;
+    a database locked by another process is answered with 503 and ``Retry-After``. Any
+    other failure is logged and answered with a generic 500 body, so that no internal
+    detail leaks.
 
     Parameters
     ----------
@@ -115,6 +121,8 @@ class ApplicationFactory:
         application.include_router(AddressRoutes(pool, self._settings).build_router())
         application.add_exception_handler(AddressCodecError, self._respond_error)
         application.add_exception_handler(InvalidRequestError, self._respond_error)
+        application.add_exception_handler(DatabaseBusyError, self._respond_error)
+        application.add_exception_handler(RequestValidationError, self._respond_invalid_request)
         application.add_exception_handler(Exception, self._respond_internal_error)
         return application
 
@@ -123,7 +131,19 @@ class ApplicationFactory:
         if status is HTTPStatus.INTERNAL_SERVER_ERROR:
             _LOGGER.error("Request to %s failed.", request.url.path, exc_info=error)
             return self._respond_internal_error(request, error)
-        return JSONResponse(self._error_serializer.serialize(error), status_code=int(status))
+        headers: dict[str, str] = {}
+        if isinstance(error, DatabaseBusyError):
+            headers["Retry-After"] = str(DatabaseBusyError.RETRY_AFTER_SECONDS)
+        return JSONResponse(
+            self._error_serializer.serialize(error), status_code=int(status), headers=headers
+        )
+
+    def _respond_invalid_request(self, request: Request, error: Exception) -> JSONResponse:
+        issues: Sequence[object] = (
+            error.errors() if isinstance(error, RequestValidationError) else ()
+        )
+        message = "; ".join(ValidationIssue.model_validate(issue).describe() for issue in issues)
+        return self._respond_error(request, InvalidRequestError(message or "Malformed request."))
 
     def _respond_internal_error(self, _request: Request, _error: Exception) -> JSONResponse:
         return JSONResponse(

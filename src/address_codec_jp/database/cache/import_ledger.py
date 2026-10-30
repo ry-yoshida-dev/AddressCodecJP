@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from address_codec_jp.database.cache.area_target import AreaTarget
+from address_codec_jp.database.cache.file_signature import DatabaseFileSignature
 from address_codec_jp.database.storage import AddressDatabase
 
 
@@ -9,9 +10,11 @@ class ImportLedger:
     Memory of the registry files and area datasets that need no download.
 
     Files and datasets in the import log of the database are read once, and read again
-    after ``forget`` when another process may have added some. Those the sites do not
-    publish leave no trace in the log, so they are remembered apart and survive
-    ``forget`` until ``reset``, instead of being requested again after every addition.
+    after ``forget`` or when the file has changed since, such as when another process
+    added some. Those the sites do not publish leave no trace in the log, so they are
+    remembered apart and survive ``forget`` until ``reset``, instead of being requested
+    again after every addition. A database file replaced or rebuilt, such as by
+    ``DatabaseCache.refresh`` or ``clear`` in another process, resets the ledger.
     """
 
     def __init__(self) -> None:
@@ -20,23 +23,39 @@ class ImportLedger:
         self._missing_names: set[str] = set()
         self._missing_areas: set[AreaTarget] = set()
         self._is_read: bool = False
+        self._signature: DatabaseFileSignature | None = None
 
     def read(self, database_path: Path) -> None:
         """
-        Load the import log of a database unless it has been loaded.
+        Load the import log of a database unless it has been loaded from the same state.
 
         Parameters
         ----------
         database_path : Path
             Database of the cache.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the database does not exist.
         """
-        if self._is_read:
+        signature = DatabaseFileSignature.of(database_path)
+        if self._is_read and signature == self._signature:
             return
+        if (
+            self._signature is not None
+            and signature is not None
+            and not self._signature.is_same_file(signature)
+        ):
+            self.reset()
+        else:
+            self.forget()
         with AddressDatabase.open_read_only(database_path) as database:
             self._imported_names.update(item.source_name for item in database.imports.list_all())
             self._imported_areas.update(
                 AreaTarget(item.source, item.lg_code) for item in database.areas.list_imports()
             )
+        self._signature = signature
         self._is_read = True
 
     def is_registry_file_settled(self, file_name: str) -> bool:
@@ -114,3 +133,4 @@ class ImportLedger:
         self.forget()
         self._missing_names = set()
         self._missing_areas = set()
+        self._signature = None

@@ -125,3 +125,18 @@ def test_group_fails_when_address_is_not_found(codec: AddressCodec) -> None:
 def test_group_rejects_empty_input(codec: AddressCodec, addresses: list[str]) -> None:
     with pytest.raises(ValueError, match=r"(?i)address"):
         _ = codec.match_group(addresses)
+
+
+def test_group_match_keeps_remainder_as_written(codec: AddressCodec) -> None:
+    group = codec.match_group(["千代田区丸の内1-1 ABC Bldg", "府中市"])
+    assert [item.remainder for item in group.matches] == ["ABC Bldg", ""]
+
+
+def test_group_rejects_a_single_string(codec: AddressCodec) -> None:
+    with pytest.raises(TypeError, match="single string"):
+        _ = codec.match_group("千代田区")
+
+
+def test_group_names_the_address_with_only_a_postal_code(codec: AddressCodec) -> None:
+    with pytest.raises(ValueError, match=r"Address 1: .*only a postal code"):
+        _ = codec.match_group(["千代田区丸の内1-1", "100-0005"])

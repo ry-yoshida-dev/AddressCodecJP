@@ -1,6 +1,9 @@
 import logging
 import os
 import shutil
+import sqlite3
+import threading
+import weakref
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,7 +14,9 @@ import platformdirs
 from address_codec_jp.address import AddressCode, Prefecture
 from address_codec_jp.database.cache.area_target import AreaTarget
 from address_codec_jp.database.cache.directory import CacheDirectory
+from address_codec_jp.database.cache.file_signature import DatabaseFileSignature
 from address_codec_jp.database.cache.loader import CacheLoader
+from address_codec_jp.database.cache.opened_database import OpenedDatabase
 from address_codec_jp.database.cache.status import CacheStatus
 from address_codec_jp.database.storage import AddressDatabase, AreaImport
 from address_codec_jp.datasets.address_base_registry import DistributionScope
@@ -23,7 +28,8 @@ from address_codec_jp.datasets.download import (
 from address_codec_jp.errors import (
     BoundaryFormatError,
     DatasetNotImportedError,
-    RegistryDownloadError,
+    RegistryFormatError,
+    UnsupportedDatabaseError,
 )
 from address_codec_jp.results import AreaSource
 
@@ -51,6 +57,12 @@ class DatabaseCache:
     workers of a server can share one cache. Progress is logged to the
     ``address_codec_jp.database.cache`` loggers at INFO level.
 
+    A codec opens its database with ``open_database``, which remembers the file for the
+    thread. When that file has been replaced or removed since, ``ensure_lots`` and
+    ``ensure_areas`` in that thread raise ``DatabaseReplacedError`` instead of adding
+    data to a file the codec does not read; without downloads they leave the codec on
+    the file it opened.
+
     Parameters
     ----------
     directory : Path
@@ -66,12 +78,13 @@ class DatabaseCache:
     max_age : timedelta | None
         Age after which ``ensure`` refreshes the database before its first use by this
         cache, or ``None`` to keep it until ``refresh`` is called. A refresh that fails
-        is logged as a warning and the current database stays in use.
+        to download, read, or write the data is logged as a warning and the current
+        database stays in use.
 
     Raises
     ------
     ValueError
-        If ``max_age`` is not positive.
+        If ``max_age`` is not positive, or is given while downloads are not allowed.
 
     Examples
     --------
@@ -100,11 +113,18 @@ class DatabaseCache:
     ) -> None:
         if max_age is not None and max_age <= timedelta(0):
             raise ValueError(f"max_age must be positive, got {max_age}.")
+        if max_age is not None and not is_download_allowed:
+            raise ValueError(
+                "max_age requires downloads, but is_download_allowed is False; refresh the "
+                + "cache where downloads are allowed instead."
+            )
         self._directory: CacheDirectory = CacheDirectory(directory)
         self._loader: CacheLoader = CacheLoader(self._directory, downloader, boundary_downloader)
         self._is_download_allowed: bool = is_download_allowed
         self._max_age: timedelta | None = max_age
         self._is_age_checked: bool = False
+        self._opened_databases: dict[int, OpenedDatabase] = {}
+        self._opened_lock: threading.Lock = threading.Lock()
 
     @classmethod
     def default(
@@ -140,7 +160,7 @@ class DatabaseCache:
         Raises
         ------
         ValueError
-            If ``max_age`` is not positive.
+            If ``max_age`` is not positive, or is given while downloads are not allowed.
         """
         configured_directory = os.environ.get(cls.DIRECTORY_VARIABLE, "")
         if directory is not None:
@@ -231,11 +251,46 @@ class DatabaseCache:
                 self._refresh_expired()
         return self.path
 
+    def open_database(self) -> AddressDatabase:
+        """
+        Build the database if needed and open it read-only for a codec in this thread.
+
+        The file is remembered for the thread until the database is closed, so that
+        ``ensure_lots`` and ``ensure_areas`` notice when it has been replaced or removed.
+
+        Returns
+        -------
+        AddressDatabase
+            Read-only database.
+
+        Raises
+        ------
+        DatasetNotImportedError
+            If the database has not been built and downloads are not allowed.
+        RegistryDownloadError
+            If a registry file cannot be downloaded while building.
+        FileNotFoundError
+            If the database was removed by another process while being opened.
+        UnsupportedDatabaseError
+            If the file is not a database of this version of the library.
+        """
+        path = self.ensure()
+        signature = DatabaseFileSignature.of(path)
+        if signature is None:
+            raise FileNotFoundError(f"Address database not found: {path}.")
+        database = AddressDatabase.open_read_only(path)
+        with self._opened_lock:
+            self._opened_databases[threading.get_ident()] = OpenedDatabase(
+                weakref.ref(database), signature
+            )
+        return database
+
     def ensure_lots(self, lg_codes: Iterable[str]) -> None:
         """
         Add the blocks, residences, and land parcels of some areas unless already added.
 
-        Nothing is downloaded when downloads are not allowed.
+        Nothing is downloaded when downloads are not allowed. In a thread whose codec
+        was opened by ``open_database``, the database is neither built nor refreshed.
 
         Parameters
         ----------
@@ -249,18 +304,22 @@ class DatabaseCache:
             If a code is malformed.
         DatasetNotImportedError
             If the database has not been built and downloads are not allowed.
+        DatabaseReplacedError
+            If downloads are allowed and the database opened in this thread by
+            ``open_database`` has been replaced or removed.
         RegistryDownloadError
             If a registry file cannot be downloaded.
         """
-        _ = self.ensure()
+        opened_file = self._prepare_use()
         if self._is_download_allowed:
-            self._loader.add_registry_files(self._loader.plan_lots(lg_codes))
+            self._loader.add_registry_files(self._loader.plan_lots(lg_codes), opened_file)
 
     def ensure_areas(self, lg_codes: Iterable[str], *, is_parcel_included: bool) -> None:
         """
         Add the town boundaries, and optionally the land parcel maps, of municipalities.
 
-        Nothing is downloaded when downloads are not allowed.
+        Nothing is downloaded when downloads are not allowed. In a thread whose codec
+        was opened by ``open_database``, the database is neither built nor refreshed.
 
         Parameters
         ----------
@@ -275,15 +334,19 @@ class DatabaseCache:
             If a code is malformed.
         DatasetNotImportedError
             If the database has not been built and downloads are not allowed.
+        DatabaseReplacedError
+            If downloads are allowed and the database opened in this thread by
+            ``open_database`` has been replaced or removed.
         RegistryDownloadError
             If a file cannot be downloaded.
         BoundaryFormatError
             If a downloaded file is malformed.
         """
-        _ = self.ensure()
+        opened_file = self._prepare_use()
         if self._is_download_allowed:
             self._loader.add_areas(
-                self._loader.plan_areas(lg_codes, is_parcel_included=is_parcel_included)
+                self._loader.plan_areas(lg_codes, is_parcel_included=is_parcel_included),
+                opened_file,
             )
 
     def prepare(
@@ -408,6 +471,8 @@ class DatabaseCache:
         ------
         RegistryDownloadError
             If a file cannot be downloaded; the current database is kept then.
+        RegistryFormatError
+            If a downloaded registry file is malformed; the current database is kept then.
         BoundaryFormatError
             If a downloaded area file is malformed; the current database is kept then.
         """
@@ -488,8 +553,25 @@ class DatabaseCache:
     def _refresh_expired(self) -> None:
         try:
             self.refresh()
-        except (RegistryDownloadError, BoundaryFormatError) as error:
+        except (
+            OSError,
+            sqlite3.OperationalError,
+            BoundaryFormatError,
+            RegistryFormatError,
+            UnsupportedDatabaseError,
+        ) as error:
             _LOGGER.warning("Could not refresh %s; using it as it is: %s", self.path, error)
+
+    def _prepare_use(self) -> DatabaseFileSignature | None:
+        with self._opened_lock:
+            opened = self._opened_databases.get(threading.get_ident())
+            if opened is not None and not opened.is_open:
+                del self._opened_databases[threading.get_ident()]
+                opened = None
+        if opened is None:
+            _ = self.ensure()
+            return None
+        return opened.signature
 
     def _area_codes(self, area_imports: list[AreaImport], source: AreaSource) -> tuple[str, ...]:
         return tuple(sorted({item.lg_code for item in area_imports if item.source is source}))

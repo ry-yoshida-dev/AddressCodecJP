@@ -4,6 +4,7 @@ from address_codec_jp.frontends.cli.command_arguments import CommandArguments
 from address_codec_jp.frontends.cli.command_line_interface import CommandLineInterface
 from address_codec_jp.frontends.cli.database_maintainer import DatabaseMaintainer
 from address_codec_jp.frontends.cli.enum_argument import EnumArgument
+from address_codec_jp.frontends.cli.exit_status import ExitStatus
 from address_codec_jp.frontends.cli.output_format import OutputFormat
 from address_codec_jp.frontends.cli.parser_factory import ParserFactory
 from address_codec_jp.frontends.cli.query_answerer import QueryAnswerer
@@ -22,6 +23,7 @@ __all__ = [
     "CommandLineInterface",
     "DatabaseMaintainer",
     "EnumArgument",
+    "ExitStatus",
     "OutputFormat",
     "ParserFactory",
     "QueryAnswerer",

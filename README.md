@@ -30,8 +30,8 @@ filelock; the optional [web API](#web-api) adds FastAPI and uvicorn (`api` extra
 | `131016-0011001-2-3` | Residence | 東京都千代田区丸の内1丁目2番3号 |
 
 `lg_code` is the local government code (check digit validated), `machiaza_id` the ABR
-town ID. Building names and room numbers are not encoded; they are returned as
-`remainder`.
+town ID. Building names, floors, and room numbers are not encoded; they are returned as
+`remainder`, as written in the input.
 
 Oaza listed only by chome (丸の内 has 1丁目 to 3丁目) get an oaza-level code (`000`
 chome part) on import. It never carries lot numbers.
@@ -88,8 +88,8 @@ with AddressCodec.open(cache=DatabaseCache.default(max_age=timedelta(days=30))) 
 | --- | --- |
 | Choose the directory | `DatabaseCache.default(directory=...)`, or `ADDRESS_CODEC_JP_CACHE_DIR` |
 | Download ahead of use | `prepare(prefecture_codes, municipality_codes, is_area_included=True, is_parcel_included=False)` |
-| No downloads on use | `is_download_allowed=False`: a missing database raises `DatasetNotImportedError`; missing points and shapes fall back to the enclosing areas |
-| Follow new releases | `max_age=timedelta(...)` refreshes on first use when older, keeping the current data with a warning if that fails; `refresh()` on demand |
+| No downloads on use | `is_download_allowed=False`: a missing database raises `DatasetNotImportedError`; missing points and shapes fall back to the enclosing areas; `max_age` cannot be combined with it |
+| Follow new releases | `max_age=timedelta(...)` refreshes on first use when older, keeping the current data with a warning if downloading, reading, or writing fails; `refresh()` on demand |
 | Inspect or delete | `describe()` returns a `CacheStatus`; `clear()` |
 | See what it downloads | INFO records of the `address_codec_jp.database.cache` loggers |
 | Mirror the download site | `ADDRESS_CODEC_JP_BASE_URL` |
@@ -98,7 +98,9 @@ Writes are serialized across processes by a lock file in the cache directory, so
 workers of a server can share one cache; readers wait up to two minutes while a
 municipality is added. A codec must be used in the thread that opened it. `refresh`
 replaces the file atomically; codecs opened before keep reading the old data until they
-are closed. Building a database removes those of older schema versions but keeps newer
+are closed, and once they would need data added they raise `DatabaseReplacedError` and
+have to be opened again. A write interrupted by a killed process is rolled back the next
+time the database is opened. Building a database removes those of older schema versions but keeps newer
 ones, so different versions of the library can share a directory.
 
 The command line offers the same: `address-codec-jp cache [info|prepare|refresh|clear]`,
@@ -175,7 +177,8 @@ with AddressCodec.open() as codec:
 `locate` and `find_area` fall back to the nearest enclosing area that has a point or
 shape; `is_exact` tells whether it is the address itself. An oaza or municipality
 without a polygon of its own is made of the polygons of its towns. Shapes are on
-JGD2011 and written as GeoJSON MultiPolygons. Output is from the datasets released in
+JGD2011 and written as GeoJSON MultiPolygons, with exterior rings counterclockwise and
+holes clockwise (RFC 7946). Output is from the datasets released in
 October 2026.
 
 Names before the town may be shortened: the prefecture (`千代田区丸の内`), the ward of a
@@ -183,7 +186,9 @@ designated city (`横浜市山下町`), its city (`中京区上本能寺前町`)
 municipality (`霞が関1-1-1`). When the rest fits several areas, `AmbiguousAddressError`
 lists them in `candidates`; a prefecture or postal code written with the address narrows
 them down (`大阪府梅田3-1-1`), and so does an area code given as `within`
-(`codec.encode("府中市", within="340006")` is 広島県府中市).
+(`codec.encode("府中市", within="340006")` is 広島県府中市). `locate` and `find_area` take
+`within` and `is_lot_verified` as `match` does. Lot numbers above
+`LotNumber.MAX_NUMBER` and an address that is only a postal code raise `ValueError`.
 
 `match_group` reads addresses that all lie in one common area: the narrowest
 prefecture, municipality, or town that encloses a candidate of every address decides
@@ -225,13 +230,19 @@ uv run address-codec-jp locate "千代田区内幸町1-6-1" --crs wgs84
 uv run address-codec-jp nearest 35.6812,139.7671
 uv run address-codec-jp children 130001
 uv run address-codec-jp name 府中市 自由が丘
+uv run address-codec-jp locate-code 131016-0011001-2-3
 uv run address-codec-jp area "千代田区丸の内1-9-1"
-uv run address-codec-jp area-at 35.6812,139.7671 --parcels --output jsonl
+uv run address-codec-jp area-code 131016-0011001 --no-geometry
+uv run address-codec-jp areas-at 35.6812,139.7671 --parcels --output jsonl
 ```
 
-Commands read one input per line from standard input when no argument is given, and
-`--output jsonl` writes one JSON object per input. Run `address-codec-jp <command> -h`
-for the options.
+Commands read one input per line from standard input when no argument is given. Every
+input is represented on standard output: tab-separated lines start with the input, with
+one line per result row, the input alone for an empty result, and `ERROR`, the error
+type, and the message for a failure; `--output jsonl` writes one JSON object per input.
+The exit status is 0 when every input was answered, 1 when some input failed, 2 for
+invalid arguments, and 3 when the command could not run. Run
+`address-codec-jp <command> -h` for the options.
 
 ## Web API
 
@@ -261,13 +272,14 @@ CMD ["uvicorn", "--factory", "address_codec_jp.frontends.api:ApplicationFactory.
 | `GET /v1/names/{name}` | Every area that bears a name; format options as for decoding |
 | `GET /v1/areas?address=`, `GET /v1/codes/{code}/area` | Shape; `geometry=false` omits the GeoJSON |
 | `GET /v1/areas-at?coordinate=lat,lon` | Containing towns; `parcels=true` adds parcels, `geometry=true` adds GeoJSON |
-| `POST /v1/batch` | `{"operation": "locate", "inputs": [...]}` with the same options; per-input `status` on failure |
+| `POST /v1/batch` | `{"operation": "locate", "inputs": [...]}` with the same options and defaults as the GET endpoint; operations are named like the commands (`locate-code`, `area-code`, `areas-at`, ...); per-input `status` on failure |
 | `GET /health` | Readiness and the number of prepared municipalities |
 
 Responses are the fields of the JSON Lines output plus `attribution`, the credits of
 the datasets used. Errors are `{"error", "error_type"}` with status 404 (not found),
-409 (ambiguous, with `candidates`), 400 (`InvalidRequestError`), or 503 (data not
-prepared); any other failure is logged and answered with a generic 500 body.
+409 (ambiguous, with `candidates`), 400 (`InvalidRequestError`, also for parameters
+or bodies that fail validation and inputs longer than the limit), or 503 (data not
+prepared, or the database is being updated, with `Retry-After`); any other failure is logged and answered with a generic 500 body.
 OpenAPI documentation is served at `/docs`.
 
 | Variable | Default | Meaning |
@@ -276,15 +288,17 @@ OpenAPI documentation is served at `/docs`.
 | `ADDRESS_CODEC_JP_CACHE_DIR` | user cache directory | Prepared cache |
 | `ADDRESS_CODEC_JP_API_THREADS` | `4` | Worker threads per process, each with its own codec |
 | `ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE` | `1000` | Inputs per batch request |
-| `ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED` | `true` | Reject with 503 a query whose municipality lacks prepared lots or boundaries, instead of falling back to an enclosing area |
+| `ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH` | `1000` | Characters per input; longer inputs are rejected with 400 |
+| `ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED` | `true` | Reject with 503 a query whose municipality lacks prepared lots, boundaries, or registry maps, instead of falling back to an enclosing area |
 
 Scale with uvicorn worker processes; each thread holds its own codec and matching
 indexes, so memory grows with the threads per worker. Run
 `address-codec-jp cache prepare` or `cache refresh` on the same directory to extend or
 update a running service: a replaced database is reopened by each worker thread before
-its next query, so no restart is needed. With coverage required, a nearest address is
-checked against the municipality of the result, and a coordinate outside every
-prepared boundary gives 404.
+its next query, so no restart is needed. With coverage required, a nearest address
+requires the lots of every municipality that might hold a nearer lot, so a coordinate
+near an unprepared municipality gives 503; parcel shapes require the registry maps of
+their municipality; and a coordinate outside every prepared boundary gives 404.
 
 Serving the data to third parties redistributes it in processed form, which the terms
 of all three sources allow, commercially too: the Address Base Registry under the
@@ -311,6 +325,7 @@ Every error derives from `AddressCodecError` and from a built-in exception.
 | `AreaNotFoundError` | `LookupError` | No imported area shape fits |
 | `ReadingNotFoundError` | `LookupError` | A katakana reading is not registered |
 | `DatasetNotImportedError` | `RuntimeError` | A required dataset has not been imported |
+| `DatabaseReplacedError` | `RuntimeError` | Data would be added for a codec whose database was replaced or removed; open it again |
 | `RegistryFormatError` | `ValueError` | A registry file is malformed |
 | `BoundaryFormatError` | `ValueError` | A census boundary or registry map file is malformed |
 | `RegistryDownloadError` | `OSError` | A file cannot be downloaded |

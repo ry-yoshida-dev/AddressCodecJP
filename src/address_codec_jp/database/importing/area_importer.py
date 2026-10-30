@@ -1,6 +1,7 @@
 import hashlib
 import re
 import zipfile
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -115,27 +116,41 @@ class AreaImporter:
         DatasetNotImportedError
             If the database contains no towns.
         """
+        return self.import_files([path], lg_code)[0]
+
+    def import_files(self, paths: Sequence[Path], lg_code: str) -> list[AreaImport]:
+        """
+        Import the area files of one municipality in one transaction.
+
+        A municipality can have several registry map archives, one per registry office.
+        They are stored together or not at all, so that a failure never leaves the
+        municipality logged as imported with only some of its maps.
+
+        Parameters
+        ----------
+        paths : Sequence[Path]
+            Files accepted by ``import_file``.
+        lg_code : str
+            Six-digit local government code of the municipality or prefecture the files
+            cover, recorded in the import log.
+
+        Returns
+        -------
+        list[AreaImport]
+            Logged imports in the order of ``paths``.
+
+        Raises
+        ------
+        ValueError
+            If ``lg_code`` is malformed.
+        BoundaryFormatError
+            If a file is neither kind of archive or is malformed; nothing is stored then.
+        DatasetNotImportedError
+            If the database contains no towns.
+        """
         area_code = AddressCode(lg_code=lg_code)
-        source = self.detect(path)
-        match source:
-            case AreaSource.CENSUS_BOUNDARY:
-                batch = self._read_census_boundary(path)
-            case AreaSource.REGISTRY_MAP:
-                batch = self._read_registry_map(path, area_code)
-        digest = self._digest(path)
         with self._database.transaction():
-            stored_count = self._database.areas.save_all(batch.records)
-            area_import = AreaImport(
-                source=source,
-                lg_code=area_code.lg_code,
-                source_name=path.name,
-                source_sha256=digest,
-                imported_at=datetime.now(UTC),
-                stored_count=stored_count,
-                unmatched_count=batch.unmatched_count,
-            )
-            self._database.areas.add_import(area_import)
-        return area_import
+            return [self._import(path, area_code) for path in paths]
 
     @staticmethod
     def detect(path: Path) -> AreaSource:
@@ -162,13 +177,35 @@ class AreaImporter:
             return AreaSource.REGISTRY_MAP
         if not zipfile.is_zipfile(path):
             raise BoundaryFormatError(f"{path} is neither a ZIP archive nor a map XML file.")
-        with zipfile.ZipFile(path) as archive:
-            suffixes = {Path(name).suffix.lower() for name in archive.namelist()}
+        try:
+            with zipfile.ZipFile(path) as archive:
+                suffixes = {Path(name).suffix.lower() for name in archive.namelist()}
+        except zipfile.BadZipFile as error:
+            raise BoundaryFormatError(f"{path} is not a valid ZIP archive: {error}") from error
         if ".shp" in suffixes:
             return AreaSource.CENSUS_BOUNDARY
         if suffixes & {".xml", ".zip"}:
             return AreaSource.REGISTRY_MAP
         raise BoundaryFormatError(f"{path} holds neither a shapefile nor map XML files.")
+
+    def _import(self, path: Path, area_code: AddressCode) -> AreaImport:
+        source = self.detect(path)
+        match source:
+            case AreaSource.CENSUS_BOUNDARY:
+                batch = self._read_census_boundary(path)
+            case AreaSource.REGISTRY_MAP:
+                batch = self._read_registry_map(path, area_code)
+        area_import = AreaImport(
+            source=source,
+            lg_code=area_code.lg_code,
+            source_name=path.name,
+            source_sha256=self._digest(path),
+            imported_at=datetime.now(UTC),
+            stored_count=self._database.areas.save_all(batch.records),
+            unmatched_count=batch.unmatched_count,
+        )
+        self._database.areas.add_import(area_import)
+        return area_import
 
     def _read_census_boundary(self, path: Path) -> AreaBatch:
         shapes: dict[AddressCode, AreaShape] = {}

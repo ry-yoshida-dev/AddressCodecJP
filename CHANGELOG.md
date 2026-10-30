@@ -30,6 +30,18 @@ the API. The library is installed from git, so a version is a tagged commit
   also as the `name` command, `GET /v1/names/{name}`, and the `name` batch operation.
   `TownSource.list_town_names` and `list_towns_named`, which custom town sources must now
   implement.
+- `AddressCodec.locate` and `find_area` take `within` and `is_lot_verified` as `match`
+  does.
+- `AddressCodec.list_nearby_municipalities` lists the municipalities whose lots
+  `find_nearest` may return, and `AddressCodec.has_parcel_shape` tells whether the shape
+  of a code comes from the registry maps.
+- `DatabaseCache.open_database()` opens the cache for a codec, and
+  `DatabaseReplacedError` (a `DatasetNotImportedError`) is raised when data would be
+  added for a codec whose database was replaced or removed by `refresh` or `clear`; open
+  the codec again.
+- `locate-code` and `area-code` commands; `--no-geometry` for `area` and `area-code`,
+  `--geometry` for `areas-at`; `decode` JSON Lines output includes `code`.
+- `ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH` (default 1000) rejects longer inputs with 400.
 
 ### Changed
 
@@ -49,9 +61,57 @@ the API. The library is installed from git, so a version is a tagged commit
   directory were dropped: `database.cache.{directory,loader,status}` and
   `datasets.address_base_registry.{csv_file,csv_row,dataset,position_csv_reader,town_csv_reader}`.
   Class names are unchanged, and imports from the package `__init__` keep working.
+- A number followed by a floor, building, or room marker (`5番地 3階`, `5 2F`,
+  `7番地 2号館`, `101号室`) is no longer read as a lot number but left in `remainder`,
+  and a town followed only by such a number (`一番町 3階`) is matched.
+- **Breaking:** `AddressMatch.remainder` from `AddressCodec.match` and `match_group` is
+  the text as written in the input instead of its normalized form, so spaces, widths,
+  and kanji numerals of building names are kept (`ABC Building 5F`, `ハイツ一番館`).
 - `DatabaseCache` delegates downloading and importing to the new `CacheLoader`.
 - The command line interface is split into `ParserFactory`, `QueryAnswerer`, and
-  `DatabaseMaintainer`; the commands and their options are unchanged.
+  `DatabaseMaintainer`.
+- **Breaking:** lot numbers above `LotNumber.MAX_NUMBER` raise `ValueError` in
+  addresses and codes, and the API answers them with 400 instead of 500.
+- **Breaking:** `match_group` raises `TypeError` for a single string, and an address
+  that is only a postal code raises `ValueError` saying so instead of calling it blank.
+- **Breaking:** batch operations are named like the CLI commands: `locate-code`,
+  `area-code`, `areas-at` (were `locate_code`, `area_code`, `areas_at`), and the CLI
+  command `area-at` is renamed `areas-at`. `areas-at` on the command line omits
+  geometries unless `--geometry` is given, as the API does.
+- **Breaking:** CLI tab-separated output starts every line with the input, writes
+  errors to standard output as `input<TAB>ERROR<TAB>type<TAB>message`, and writes the
+  input alone for an empty result. Exit statuses are 0 when every input was answered, 1
+  when some input failed, 2 for invalid arguments, and 3 when the command could not run.
+  A CLI input failing with any library or database error is reported in place and the
+  next input is processed.
+- **Breaking:** `max_age` together with `is_download_allowed=False` raises `ValueError`.
+- With coverage required, a nearest address requires the lots of every municipality
+  that might hold a nearer lot; parcel shapes and `areas-at?parcels=true` require the
+  registry maps of their municipality.
+- GeoJSON output follows the RFC 7946 ring orientation: exteriors counterclockwise,
+  holes clockwise.
+
+### Fixed
+
+- Whitespace between a number and a following kanji numeral no longer joins them
+  (`一番町5 一番館` was read without its lot number, `丸の内1-2 三号` as `1-23`).
+- Opening a database after a writer was killed rolls back its interrupted write instead
+  of failing with "not an SQLite database"; a database that stays locked raises
+  `sqlite3.OperationalError`.
+- A census boundary response that is not a ZIP archive, such as a maintenance page,
+  raises `RegistryDownloadError` instead of being recorded as unpublished.
+- The registry maps of a municipality are imported in one transaction, so a failed
+  archive no longer leaves the municipality marked as imported; broken archives raise
+  `BoundaryFormatError`.
+- A refresh on first use after `max_age` keeps the current data with a warning on any
+  download, format, or storage failure. The import ledger is reread when the database
+  file changes.
+- API request validation errors are answered with 400 `InvalidRequestError` in the
+  `{"error", "error_type"}` format instead of 422; batch options default as for the GET
+  endpoint of the operation.
+- A deleted cache database is answered with 503, `/health` included, and a database
+  locked by another process with 503 and `Retry-After`. Shutting down the API stops its
+  worker threads even when one is busy.
 
 ## [0.1.0]
 

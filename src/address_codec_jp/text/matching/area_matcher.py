@@ -39,7 +39,8 @@ class AreaMatcher:
     municipalities (``本町1-1``) rejects the address as ambiguous. For
     the text after the municipality, every combination of oaza, chome, koaza, and lot
     numbers is tried, and the best ``TownInterpretation`` wins. A reading is discarded when it reads
-    no lot numbers but leaves digits unread (``浅草`` + ``橋6-1-1``), or puts lot numbers
+    no lot numbers but leaves digits unread (``浅草`` + ``橋6-1-1``) other than a floor or
+    building number (``一番町`` + ``3階`` is kept), or puts lot numbers
     on an oaza-level town that the registry divides into chome. When the best readings
     point to different towns or lot numbers, the address is rejected as ambiguous instead
     of picking one. A postal code given with the address decides only between such
@@ -571,7 +572,11 @@ class AreaMatcher:
         lot_result = self._lot_parser.parse(candidates.remainder)
         if self._UNREAD_CHOME.match(lot_result.remainder):
             return None
-        if not lot_result.lot.numbers and not self._ASCII_DIGITS.isdisjoint(lot_result.remainder):
+        if (
+            not lot_result.lot.numbers
+            and not self._ASCII_DIGITS.isdisjoint(lot_result.remainder)
+            and not self._lot_parser.is_building_number(lot_result.remainder)
+        ):
             return None
         towns = [
             town for town in candidates.towns if town.is_registered or not lot_result.lot.numbers

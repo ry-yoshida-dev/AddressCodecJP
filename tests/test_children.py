@@ -61,9 +61,9 @@ def test_children_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
         cli.run(["--database", database, "children", "131016-0011000", "--numeral", "kanji"]) == 0
     )
     assert capsys.readouterr().out.splitlines()[-3:] == [
-        "131016-0011001\t東京都千代田区丸の内一丁目\tTOWN",
-        "131016-0011002\t東京都千代田区丸の内二丁目\tTOWN",
-        "131016-0011003\t東京都千代田区丸の内三丁目\tTOWN",
+        "131016-0011000\t131016-0011001\t東京都千代田区丸の内一丁目\tTOWN",
+        "131016-0011000\t131016-0011002\t東京都千代田区丸の内二丁目\tTOWN",
+        "131016-0011000\t131016-0011003\t東京都千代田区丸の内三丁目\tTOWN",
     ]
     assert cli.run(["--database", database, "children", "--output", "jsonl", "130001"]) == 0
     records: list[dict[str, object]] = [

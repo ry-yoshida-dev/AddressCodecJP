@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
@@ -110,7 +111,7 @@ class AddressCodec:
                 raise ValueError("Give either database_path or cache, not both.")
             return cls(AddressDatabase.open_read_only(database_path))
         selected_cache = DatabaseCache.default() if cache is None else cache
-        return cls(AddressDatabase.open_read_only(selected_cache.ensure()), selected_cache)
+        return cls(selected_cache.open_database(), selected_cache)
 
     def __enter__(self) -> Self:
         return self
@@ -182,7 +183,8 @@ class AddressCodec:
         Raises
         ------
         ValueError
-            If the address is blank, or ``within`` is malformed or has lot numbers.
+            If the address is blank or only a postal code, a lot number exceeds
+            ``LotNumber.MAX_NUMBER``, or ``within`` is malformed or has lot numbers.
         AddressNotFoundError
             If the address does not match a registered area within ``within``. With
             verification, also if no lot of the town is imported or its lot numbers are
@@ -198,11 +200,15 @@ class AddressCodec:
         """
         normalized_address = self._normalizer.normalize(address)
         if not normalized_address:
-            raise ValueError("Address must not be blank.")
+            raise ValueError(self._normalizer.describe_empty(address))
         address_match = self._matcher.match(
             normalized_address,
             self._normalizer.extract_postal_code(address),
             within=self._parse_area(within),
+        )
+        address_match = replace(
+            address_match,
+            remainder=self._normalizer.find_original_suffix(address, address_match.remainder),
         )
         if is_lot_verified:
             self._verify_lot(address_match.code)
@@ -241,8 +247,11 @@ class AddressCodec:
 
         Raises
         ------
+        TypeError
+            If ``addresses`` is a single string instead of a sequence of addresses.
         ValueError
-            If no address is given or an address is blank.
+            If no address is given, an address is blank or only a postal code, or a lot
+            number exceeds ``LotNumber.MAX_NUMBER``.
         AddressNotFoundError
             If an address does not match a registered area, no area encloses every
             address, or verified lot numbers are not registered.
@@ -315,7 +324,8 @@ class AddressCodec:
         Raises
         ------
         ValueError
-            If the address is blank.
+            If the address is blank or only a postal code, a lot number exceeds
+            ``LotNumber.MAX_NUMBER``, or ``within`` is malformed or has lot numbers.
         AddressNotFoundError
             If the address does not match a registered area, or verified lot numbers are
             not registered.
@@ -510,7 +520,14 @@ class AddressCodec:
             raise ValueError("Name must not be blank.")
         return self._name_searcher.search(normalized_name, within=self._parse_area(within))
 
-    def locate(self, address: str, crs: GeodeticCrs = GeodeticCrs.JGD2011) -> AddressLocation:
+    def locate(
+        self,
+        address: str,
+        crs: GeodeticCrs = GeodeticCrs.JGD2011,
+        *,
+        is_lot_verified: bool = False,
+        within: AddressCode | str | None = None,
+    ) -> AddressLocation:
         """
         Find the representative point of a free-form address.
 
@@ -520,6 +537,12 @@ class AddressCodec:
             Address in any common notation.
         crs : GeodeticCrs
             Datum of the returned coordinate.
+        is_lot_verified : bool
+            Whether lot numbers must be registered, as in ``match``. Without
+            verification, unregistered lot numbers fall back to the point of their town.
+        within : AddressCode | str | None
+            Prefecture, municipality, or town code the address must lie in, or ``None``
+            to search everywhere.
 
         Returns
         -------
@@ -530,9 +553,11 @@ class AddressCodec:
         Raises
         ------
         ValueError
-            If the address is blank.
+            If the address is blank or only a postal code, a lot number exceeds
+            ``LotNumber.MAX_NUMBER``, or ``within`` is malformed or has lot numbers.
         AddressNotFoundError
-            If the address does not match a registered area.
+            If the address does not match a registered area, or verified lot numbers are
+            not registered.
         AmbiguousAddressError
             If the address fits several areas or lot numbers equally well.
         PositionNotFoundError
@@ -545,7 +570,9 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        return self.locate_code(self.encode(address), crs)
+        return self.locate_code(
+            self.encode(address, is_lot_verified=is_lot_verified, within=within), crs
+        )
 
     def locate_code(
         self, code: AddressCode | str, crs: GeodeticCrs = GeodeticCrs.JGD2011
@@ -632,13 +659,80 @@ class AddressCodec:
         """
         if self._cache is not None and max_distance_meters > 0:
             self._cache.ensure_lots(
-                self._nearest_finder.list_nearby_municipalities(
-                    coordinate, crs, max_distance_meters + self.NEARBY_LOT_MARGIN_METERS
-                )
+                self.list_nearby_municipalities(coordinate, crs, max_distance_meters)
             )
         return self._nearest_finder.find(coordinate, crs, max_distance_meters)
 
-    def find_area(self, address: str) -> AddressArea:
+    def list_nearby_municipalities(
+        self,
+        coordinate: GeoCoordinate,
+        crs: GeodeticCrs = GeodeticCrs.JGD2011,
+        max_distance_meters: float = 1000.0,
+    ) -> set[str]:
+        """
+        List the municipalities whose lots ``find_nearest`` may return.
+
+        These are the municipalities whose town points lie within
+        ``max_distance_meters`` plus ``NEARBY_LOT_MARGIN_METERS``; ``find_nearest`` adds
+        their lots first when it has a ``cache``.
+
+        Parameters
+        ----------
+        coordinate : GeoCoordinate
+            Searched coordinate on ``crs``.
+        crs : GeodeticCrs
+            Datum of ``coordinate``.
+        max_distance_meters : float
+            Largest accepted distance to a representative point.
+
+        Returns
+        -------
+        set[str]
+            Local government codes of the municipalities.
+
+        Raises
+        ------
+        ValueError
+            If ``max_distance_meters`` is not positive.
+        RuntimeError
+            If ``crs`` cannot be transformed.
+        """
+        if not max_distance_meters > 0:
+            raise ValueError(f"max_distance_meters must be positive, got {max_distance_meters}.")
+        return self._nearest_finder.list_nearby_municipalities(
+            coordinate, crs, max_distance_meters + self.NEARBY_LOT_MARGIN_METERS
+        )
+
+    def has_parcel_shape(self, code: AddressCode | str) -> bool:
+        """
+        Tell whether the shape of a code is looked up in the registry maps.
+
+        Parameters
+        ----------
+        code : AddressCode | str
+            Address code or its string form.
+
+        Returns
+        -------
+        bool
+            ``True`` for lot numbers of a town numbered by land parcels, or whose
+            numbering is unknown.
+
+        Raises
+        ------
+        ValueError
+            If a string code is malformed.
+        """
+        address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
+        return self._area_finder.has_parcel_shape(address_code)
+
+    def find_area(
+        self,
+        address: str,
+        *,
+        is_lot_verified: bool = False,
+        within: AddressCode | str | None = None,
+    ) -> AddressArea:
         """
         Find the shape of a free-form address.
 
@@ -646,6 +740,12 @@ class AddressCodec:
         ----------
         address : str
             Address in any common notation.
+        is_lot_verified : bool
+            Whether lot numbers must be registered, as in ``match``. Without
+            verification, unregistered lot numbers fall back to the shape of their town.
+        within : AddressCode | str | None
+            Prefecture, municipality, or town code the address must lie in, or ``None``
+            to search everywhere.
 
         Returns
         -------
@@ -655,9 +755,11 @@ class AddressCodec:
         Raises
         ------
         ValueError
-            If the address is blank.
+            If the address is blank or only a postal code, a lot number exceeds
+            ``LotNumber.MAX_NUMBER``, or ``within`` is malformed or has lot numbers.
         AddressNotFoundError
-            If the address does not match a registered area.
+            If the address does not match a registered area, or verified lot numbers are
+            not registered.
         AmbiguousAddressError
             If the address fits several areas or lot numbers equally well.
         AreaNotFoundError
@@ -668,7 +770,9 @@ class AddressCodec:
             If the shapes of the municipality have to be added to ``cache`` and a file
             cannot be downloaded.
         """
-        return self.find_area_code(self.encode(address))
+        return self.find_area_code(
+            self.encode(address, is_lot_verified=is_lot_verified, within=within)
+        )
 
     def find_area_code(self, code: AddressCode | str) -> AddressArea:
         """

@@ -1,4 +1,4 @@
-from address_codec_jp.address import Address
+from address_codec_jp.address import Address, AddressCode
 from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.frontends.serialization.json_value import JsonValue
 from address_codec_jp.results import (
@@ -64,7 +64,7 @@ class ResultSerializer:
         Returns
         -------
         dict[str, JsonValue]
-            ``address``.
+            ``code`` in canonical form and ``address``.
 
         Raises
         ------
@@ -75,7 +75,11 @@ class ResultSerializer:
         ReadingNotFoundError
             If katakana is requested and the registry has no reading of a name.
         """
-        return {"address": self._codec.decode(code, address_format)}
+        address_code = AddressCode.parse(code)
+        return {
+            "code": str(address_code),
+            "address": self._codec.decode(address_code, address_format),
+        }
 
     def location(self, location: AddressLocation) -> dict[str, JsonValue]:
         """

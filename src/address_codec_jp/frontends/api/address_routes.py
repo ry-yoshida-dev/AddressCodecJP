@@ -46,7 +46,6 @@ class AddressRoutes:
         self._pool: CodecPool = pool
         self._settings: ServiceSettings = settings
         self._crs_name: EnumName[GeodeticCrs] = EnumName(GeodeticCrs)
-        self._operation_name: EnumName[QueryOperation] = EnumName(QueryOperation)
         self._interpreter: InputInterpreter = InputInterpreter()
 
     def build_router(self) -> APIRouter:
@@ -81,7 +80,13 @@ class AddressRoutes:
         Returns
         -------
         JSONResponse
-            ``status`` and the numbers of municipalities with lots and boundaries.
+            ``status`` and the numbers of municipalities with lots, boundaries, and
+            registry maps.
+
+        Raises
+        ------
+        DatasetNotImportedError
+            If the database is not prepared, answered with 503.
         """
 
         def describe(codec: AddressCodec, coverage: DatasetCoverage) -> dict[str, JsonValue]:
@@ -89,6 +94,7 @@ class AddressRoutes:
                 "status": "ok",
                 "lot_municipality_count": len(coverage.lot_municipality_codes),
                 "boundary_municipality_count": len(coverage.boundary_municipality_codes),
+                "parcel_map_municipality_count": len(coverage.parcel_map_municipality_codes),
                 "imported_dataset_count": len(codec.list_imports()),
             }
 
@@ -387,14 +393,14 @@ class AddressRoutes:
                 f"A batch takes at most {self._settings.max_batch_size} inputs, "
                 + f"got {len(request.inputs)}."
             )
-        operation = self._interpreter.interpret(self._operation_name.parse, request.operation)
+        operation = request.operation
         options = QueryOptions(
             address_format=request.address_format.to_address_format(),
             is_lot_verified=request.is_lot_verified,
             crs=self._parse_crs(request.crs),
             max_distance_meters=request.max_distance_meters,
             is_parcel_included=request.is_parcel_included,
-            is_geometry_included=request.is_geometry_included,
+            is_geometry_included=request.resolve_geometry(),
         )
         inputs = list(request.inputs)
 
@@ -420,4 +426,5 @@ class AddressRoutes:
             coverage,
             publisher=self._settings.publisher,
             is_coverage_required=self._settings.is_coverage_required,
+            max_input_length=self._settings.max_input_length,
         )

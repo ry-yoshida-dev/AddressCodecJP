@@ -14,6 +14,7 @@ from the most specific built-in exception, so `except LookupError` keeps working
 | [ambiguous_address_error.py](ambiguous_address_error.py) | `AmbiguousAddressError` (`LookupError`): several areas or lots fit; carries the candidate codes |
 | [area_not_found_error.py](area_not_found_error.py) | `AreaNotFoundError` (`LookupError`): no area shape fits |
 | [boundary_format_error.py](boundary_format_error.py) | `BoundaryFormatError` (`ValueError`): census boundary or registry map file is malformed |
+| [database_replaced_error.py](database_replaced_error.py) | `DatabaseReplacedError` (`DatasetNotImportedError`): the database of a codec was replaced or removed; open the codec again |
 | [dataset_not_imported_error.py](dataset_not_imported_error.py) | `DatasetNotImportedError` (`RuntimeError`): a required dataset has not been imported |
 | [position_not_found_error.py](position_not_found_error.py) | `PositionNotFoundError` (`LookupError`): no representative point fits |
 | [reading_not_found_error.py](reading_not_found_error.py) | `ReadingNotFoundError` (`LookupError`): katakana reading of a name is missing |

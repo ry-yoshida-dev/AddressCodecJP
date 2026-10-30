@@ -6,6 +6,7 @@ from address_codec_jp.frontends.cli.command import Command
 from address_codec_jp.frontends.cli.command_arguments import CommandArguments
 from address_codec_jp.frontends.cli.record_writer import RecordWriter
 from address_codec_jp.frontends.serialization import CoordinateText, ResultSerializer
+from address_codec_jp.results import AddressArea, AddressLocation
 from address_codec_jp.text.formatting import AddressFormat, NameScript
 
 
@@ -37,7 +38,7 @@ class QueryAnswerer:
         Parameters
         ----------
         command : Command
-            Query command such as ``encode`` or ``area-at``.
+            Query command such as ``encode`` or ``areas-at``.
         namespace : CommandArguments
             Parsed options of the command.
         writer : RecordWriter
@@ -51,6 +52,8 @@ class QueryAnswerer:
             If nothing is registered for the input.
         ValueError
             If the input is malformed.
+        DatasetNotImportedError
+            If the data needed has not been imported.
         RuntimeError
             If ``command`` is not a query command.
         """
@@ -72,20 +75,10 @@ class QueryAnswerer:
                 fields = serializer.decoded(input_text, self._address_format(namespace))
                 writer.write(input_text, [[str(fields["address"])]], fields)
             case Command.LOCATE:
-                location = codec.locate(input_text, namespace.crs)
-                writer.write(
-                    input_text,
-                    [
-                        [
-                            str(location.code),
-                            str(location.located_code),
-                            location.level.name,
-                            f"{location.latitude_degrees:.9f}",
-                            f"{location.longitude_degrees:.9f}",
-                            str(location.crs),
-                        ]
-                    ],
-                    serializer.location(location),
+                self._write_location(writer, input_text, codec.locate(input_text, namespace.crs))
+            case Command.LOCATE_CODE:
+                self._write_location(
+                    writer, input_text, codec.locate_code(input_text, namespace.crs)
                 )
             case Command.NEAREST:
                 nearest = codec.find_nearest(
@@ -154,21 +147,10 @@ class QueryAnswerer:
                     serializer.named(named_areas, address_format),
                 )
             case Command.AREA:
-                area = codec.find_area(input_text)
-                writer.write(
-                    input_text,
-                    [
-                        [
-                            str(area.code),
-                            str(area.located_code),
-                            area.level.name,
-                            serializer.source_names(area),
-                            area.shape.to_geojson(),
-                        ]
-                    ],
-                    serializer.area(area, is_geometry_included=True),
-                )
-            case Command.AREA_AT:
+                self._write_area(writer, input_text, codec.find_area(input_text), namespace)
+            case Command.AREA_CODE:
+                self._write_area(writer, input_text, codec.find_area_code(input_text), namespace)
+            case Command.AREAS_AT:
                 areas = codec.find_areas_at(
                     self._coordinate_text.parse(input_text),
                     namespace.crs,
@@ -176,6 +158,7 @@ class QueryAnswerer:
                 )
                 if not areas:
                     raise AreaNotFoundError(f"No imported area shape contains {input_text!r}.")
+                is_geometry_included = namespace.is_geometry_included
                 writer.write(
                     input_text,
                     [
@@ -184,10 +167,11 @@ class QueryAnswerer:
                             serializer.area_address(area),
                             area.level.name,
                             serializer.source_names(area),
+                            *([area.shape.to_geojson()] if is_geometry_included else []),
                         ]
                         for area in areas
                     ],
-                    serializer.areas(areas, is_geometry_included=True),
+                    serializer.areas(areas, is_geometry_included=is_geometry_included),
                 )
             case (
                 Command.IMPORT
@@ -199,6 +183,46 @@ class QueryAnswerer:
                 raise RuntimeError(f"{command.value} is not a query command.")
             case _:
                 assert_never(command)
+
+    def _write_location(
+        self, writer: RecordWriter, input_text: str, location: AddressLocation
+    ) -> None:
+        writer.write(
+            input_text,
+            [
+                [
+                    str(location.code),
+                    str(location.located_code),
+                    location.level.name,
+                    f"{location.latitude_degrees:.9f}",
+                    f"{location.longitude_degrees:.9f}",
+                    str(location.crs),
+                ]
+            ],
+            self._serializer.location(location),
+        )
+
+    def _write_area(
+        self,
+        writer: RecordWriter,
+        input_text: str,
+        area: AddressArea,
+        namespace: CommandArguments,
+    ) -> None:
+        is_geometry_included = namespace.is_geometry_included
+        writer.write(
+            input_text,
+            [
+                [
+                    str(area.code),
+                    str(area.located_code),
+                    area.level.name,
+                    self._serializer.source_names(area),
+                    *([area.shape.to_geojson()] if is_geometry_included else []),
+                ]
+            ],
+            self._serializer.area(area, is_geometry_included=is_geometry_included),
+        )
 
     def _address_format(self, namespace: CommandArguments) -> AddressFormat:
         return AddressFormat(

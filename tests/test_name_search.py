@@ -96,8 +96,8 @@ def test_name_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Non
     assert cli.run(["--database", database, "import", str(TOWN_MASTER)]) == 0
     assert cli.run(["--database", database, "name", "府中市"]) == 0
     assert capsys.readouterr().out.splitlines()[-2:] == [
-        "132063\t東京都府中市\tMUNICIPALITY",
-        "342084\t広島県府中市\tMUNICIPALITY",
+        "府中市\t132063\t東京都府中市\tMUNICIPALITY",
+        "府中市\t342084\t広島県府中市\tMUNICIPALITY",
     ]
     assert cli.run(["--database", database, "name", "--output", "jsonl", "丸ノ内"]) == 0
     records: list[dict[str, object]] = [

@@ -30,17 +30,23 @@ from address_codec_jp.frontends.serialization import (
     JsonValue,
     ResultSerializer,
 )
-from address_codec_jp.results import AddressArea, AreaSource
+from address_codec_jp.results import AddressArea, AddressMatch, AreaSource, NearestAddress
 
 
 class QueryHandler:
     """
     Executor of web API queries on the codec of a worker thread.
 
-    With ``is_coverage_required``, a query that needs the lots or boundaries of a
-    municipality that the cache does not hold fails with ``DatasetNotImportedError``
-    instead of silently falling back to an enclosing area, because the service never
-    downloads them on use.
+    With ``is_coverage_required``, a query that needs the lots, boundaries, or registry
+    maps of a municipality that the cache does not hold fails with
+    ``DatasetNotImportedError`` instead of silently falling back to an enclosing area or
+    a farther address, because the service never downloads them on use. A nearest
+    address requires the lots of every municipality that ``list_nearby_municipalities``
+    gives for its distance, or for the largest distance when no lot is that near, since
+    any of them might hold a nearer lot.
+
+    An input longer than ``max_input_length``, or one whose numbers are too large to
+    look up, is rejected as invalid.
 
     Parameters
     ----------
@@ -52,6 +58,8 @@ class QueryHandler:
         Organization that processes and serves the data, named in the credits.
     is_coverage_required : bool
         Whether missing municipalities are rejected.
+    max_input_length : int
+        Largest number of characters of one input.
     """
 
     _REGISTRY: ClassVar[frozenset[DataAttribution]] = frozenset(
@@ -75,6 +83,7 @@ class QueryHandler:
         *,
         publisher: str,
         is_coverage_required: bool,
+        max_input_length: int,
     ) -> None:
         self._codec: AddressCodec = codec
         self._credit_writer: CreditWriter = CreditWriter(
@@ -82,6 +91,7 @@ class QueryHandler:
         )
         self._coverage: DatasetCoverage = coverage
         self._is_coverage_required: bool = is_coverage_required
+        self._max_input_length: int = max_input_length
         self._serializer: ResultSerializer = ResultSerializer(codec)
         self._error_serializer: ErrorSerializer = ErrorSerializer()
         self._error_status: ErrorStatus = ErrorStatus()
@@ -111,13 +121,13 @@ class QueryHandler:
         Raises
         ------
         InvalidRequestError
-            If the input is malformed.
+            If the input is malformed or too long.
         LookupError
             If nothing is found; ``AmbiguousAddressError`` if several areas fit.
         DatasetNotImportedError
             If the data needed is not prepared.
         """
-        result = self._run(operation, input_text, options)
+        result = self._run_checked(operation, input_text, options)
         return QueryAnswer(
             {"input": input_text, **result.fields}, self._write_credits(result.attributions)
         )
@@ -128,8 +138,8 @@ class QueryHandler:
         """
         Run one query per input, reporting failures in place of their results.
 
-        Only failures caused by an input are reported in place; a fault of the server
-        fails the whole request.
+        Failures caused by an input, including data not prepared for it, are reported in
+        place; a fault of the server fails the whole request.
 
         Parameters
         ----------
@@ -150,7 +160,7 @@ class QueryHandler:
         attributions: set[DataAttribution] = set(self._REGISTRY)
         for input_text in inputs:
             try:
-                result = self._run(operation, input_text, options)
+                result = self._run_checked(operation, input_text, options)
             except self._INPUT_ERRORS as error:
                 results.append(
                     {
@@ -164,38 +174,45 @@ class QueryHandler:
             attributions.update(result.attributions)
         return QueryAnswer({"results": results}, self._write_credits(attributions))
 
+    def _run_checked(
+        self, operation: QueryOperation, input_text: str, options: QueryOptions
+    ) -> QueryResult:
+        if len(input_text) > self._max_input_length:
+            raise InvalidRequestError(
+                f"An input takes at most {self._max_input_length} characters, "
+                + f"got {len(input_text)}."
+            )
+        try:
+            return self._run(operation, input_text, options)
+        except OverflowError as error:
+            raise InvalidRequestError("A number in the input is too large to look up.") from error
+
     def _run(
         self, operation: QueryOperation, input_text: str, options: QueryOptions
     ) -> QueryResult:
         match operation:
             case QueryOperation.ENCODE:
-                address_match = self._codec.match(self._require_address(input_text))
+                address_match = self._match(input_text, is_lot_verified=False)
                 if not options.is_lot_verified:
                     return QueryResult(self._serializer.match(address_match), self._REGISTRY)
                 self._require_lots(address_match.code)
-                address_match = self._codec.match(input_text, is_lot_verified=True)
+                address_match = self._match(input_text, is_lot_verified=True)
                 return QueryResult(
                     self._serializer.match(address_match),
                     self._REGISTRY | self._parcel_master_of(address_match.code),
                 )
             case QueryOperation.DECODE:
-                fields: dict[str, JsonValue] = {
-                    "code": str(self._parse_code(input_text)),
-                    **self._serializer.decoded(input_text, options.address_format),
-                }
+                fields: dict[str, JsonValue] = self._interpreter.interpret(
+                    lambda code: self._serializer.decoded(code, options.address_format),
+                    input_text,
+                )
                 return QueryResult(fields, self._REGISTRY)
             case QueryOperation.LOCATE:
                 return self._locate(self._encode(input_text), options)
             case QueryOperation.LOCATE_CODE:
                 return self._locate(self._parse_code(input_text), options)
             case QueryOperation.NEAREST:
-                nearest = self._codec.find_nearest(
-                    self._parse_coordinate(input_text),
-                    options.crs,
-                    options.max_distance_meters,
-                )
-                if self._is_coverage_required:
-                    self._coverage.require_lots(nearest.code.lg_code)
+                nearest = self._find_nearest(self._parse_coordinate(input_text), options)
                 return QueryResult(
                     self._serializer.nearest(nearest),
                     self._REGISTRY | self._parcel_master_of(nearest.code),
@@ -235,6 +252,11 @@ class QueryHandler:
                 )
                 if not areas:
                     raise AreaNotFoundError(f"No prepared area shape contains {input_text!r}.")
+                if self._is_coverage_required:
+                    for lg_code in sorted({area.code.lg_code for area in areas}):
+                        self._coverage.require_boundaries(lg_code)
+                        if options.is_parcel_included:
+                            self._coverage.require_parcel_maps(lg_code)
                 return QueryResult(
                     self._serializer.areas(
                         areas, is_geometry_included=options.is_geometry_included
@@ -251,7 +273,13 @@ class QueryHandler:
         return self._interpreter.interpret(self._coordinate_text.parse, input_text)
 
     def _encode(self, input_text: str) -> AddressCode:
-        return self._codec.encode(self._require_address(input_text))
+        return self._interpreter.interpret(self._codec.encode, self._require_address(input_text))
+
+    def _match(self, input_text: str, *, is_lot_verified: bool) -> AddressMatch:
+        return self._interpreter.interpret(
+            lambda address: self._codec.match(address, is_lot_verified=is_lot_verified),
+            self._require_address(input_text),
+        )
 
     def _require_address(self, input_text: str) -> str:
         if not input_text.strip():
@@ -269,9 +297,39 @@ class QueryHandler:
     def _area(self, code: AddressCode, options: QueryOptions) -> QueryResult:
         if self._is_coverage_required:
             self._coverage.require_boundaries(code.lg_code)
+            if self._codec.has_parcel_shape(code):
+                self._coverage.require_parcel_maps(code.lg_code)
         area = self._codec.find_area_code(code)
         fields = self._serializer.area(area, is_geometry_included=options.is_geometry_included)
         return QueryResult(fields, self._attributions_of([area]))
+
+    def _find_nearest(self, coordinate: GeoCoordinate, options: QueryOptions) -> NearestAddress:
+        if not self._is_coverage_required:
+            return self._codec.find_nearest(coordinate, options.crs, options.max_distance_meters)
+        try:
+            nearest = self._codec.find_nearest(coordinate, options.crs, options.max_distance_meters)
+        except PositionNotFoundError:
+            self._require_nearby_lots(coordinate, options, options.max_distance_meters)
+            raise
+        is_lot = nearest.code.machiaza_id is not None and bool(nearest.code.lot.numbers)
+        competing_distance_meters = (
+            min(nearest.distance_meters, options.max_distance_meters)
+            if is_lot
+            else options.max_distance_meters
+        )
+        self._require_nearby_lots(coordinate, options, competing_distance_meters)
+        return nearest
+
+    def _require_nearby_lots(
+        self, coordinate: GeoCoordinate, options: QueryOptions, distance_meters: float
+    ) -> None:
+        if distance_meters <= 0:
+            return
+        nearby_codes = self._codec.list_nearby_municipalities(
+            coordinate, options.crs, distance_meters
+        )
+        for lg_code in sorted(nearby_codes):
+            self._coverage.require_lots(lg_code)
 
     def _require_lots(self, code: AddressCode) -> None:
         if self._is_coverage_required and code.machiaza_id is not None and code.lot.numbers:

@@ -8,6 +8,7 @@ from address_codec_jp import (
     AddressCodec,
     AddressLevel,
     AddressLocation,
+    AddressNotFoundError,
     DatasetNotImportedError,
     PositionNotFoundError,
     RegistryFormatError,
@@ -80,6 +81,17 @@ def test_locate_code_accepts_string_and_code(located_codec: AddressCodec) -> Non
     by_code = located_codec.locate_code(by_text.code)
     assert by_text.located_code == by_code.located_code
     assert by_text.coordinate == by_code.coordinate
+
+
+def test_locate_within_an_area(located_codec: AddressCodec) -> None:
+    assert str(located_codec.locate("丸の内1-2-3", within="130001").code) == "131016-0011001-2-3"
+    with pytest.raises(AddressNotFoundError):
+        _ = located_codec.locate("丸の内1-2-3", within="340006")
+
+
+def test_locate_verifies_lot_numbers(located_codec: AddressCodec) -> None:
+    with pytest.raises(AddressNotFoundError, match="not registered"):
+        _ = located_codec.locate("千代田区丸の内1-999-999", is_lot_verified=True)
 
 
 def test_locate_on_another_datum(located_codec: AddressCodec) -> None:

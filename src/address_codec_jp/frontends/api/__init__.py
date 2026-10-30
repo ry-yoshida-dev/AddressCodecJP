@@ -5,6 +5,7 @@ from address_codec_jp.frontends.api.codec_pool import CodecPool
 from address_codec_jp.frontends.api.credit_writer import CreditWriter
 from address_codec_jp.frontends.api.data_attribution import DataAttribution
 from address_codec_jp.frontends.api.data_source import DataSource
+from address_codec_jp.frontends.api.database_busy_error import DatabaseBusyError
 from address_codec_jp.frontends.api.dataset_coverage import DatasetCoverage
 from address_codec_jp.frontends.api.error_status import ErrorStatus
 from address_codec_jp.frontends.api.file_signature import FileSignature
@@ -18,6 +19,7 @@ from address_codec_jp.frontends.api.query.operation import QueryOperation
 from address_codec_jp.frontends.api.query.options import QueryOptions
 from address_codec_jp.frontends.api.query.result import QueryResult
 from address_codec_jp.frontends.api.service_settings import ServiceSettings
+from address_codec_jp.frontends.api.validation_issue import ValidationIssue
 
 __all__ = [
     "AddressRoutes",
@@ -27,6 +29,7 @@ __all__ = [
     "CreditWriter",
     "DataAttribution",
     "DataSource",
+    "DatabaseBusyError",
     "DatasetCoverage",
     "ErrorStatus",
     "FileSignature",
@@ -40,4 +43,5 @@ __all__ = [
     "QueryOptions",
     "QueryResult",
     "ServiceSettings",
+    "ValidationIssue",
 ]

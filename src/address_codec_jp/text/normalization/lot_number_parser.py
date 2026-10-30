@@ -10,11 +10,16 @@ class LotNumberParser:
     Parser for block and residence numbers in normalized text.
 
     Accepted notations include ``2番3号``, ``2番地3``, ``2番地の3``, ``2-3`` and ``2の3``.
+    A number followed by a floor, building, or room marker such as ``3階``, ``2F``,
+    ``2号館``, or ``101号室`` belongs to the building and is not read as a lot number.
     """
 
+    _BUILDING_MARKER: ClassVar[str] = r"(?:[号番]?[館棟室]|階|[Ff](?![A-Za-z]))"
     _LOT: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?P<block>[1-9][0-9]*)(?![0-9丁])(?:番地|番)?(?:[-のノ之]?(?P<residence>[1-9][0-9]*)(?![0-9丁])(?:号|番地|番)?)?"
+        rf"(?P<block>[1-9][0-9]*)(?![0-9丁]|{_BUILDING_MARKER})(?:番地|番)?"
+        + rf"(?:[-のノ之]?(?P<residence>[1-9][0-9]*)(?![0-9丁]|{_BUILDING_MARKER})(?:号|番地|番)?)?"
     )
+    _BUILDING_NUMBER: ClassVar[re.Pattern[str]] = re.compile(rf"[0-9]+{_BUILDING_MARKER}")
 
     def parse(self, normalized_text: str) -> LotParseResult:
         """
@@ -42,3 +47,19 @@ class LotNumberParser:
             ),
             remainder=normalized_text[matched.end() :].lstrip("-"),
         )
+
+    def is_building_number(self, normalized_text: str) -> bool:
+        """
+        Tell whether the text starts with a floor, building, or room number.
+
+        Parameters
+        ----------
+        normalized_text : str
+            Text left after the town name and lot numbers.
+
+        Returns
+        -------
+        bool
+            ``True`` for text such as ``3階``, ``2F``, or ``2号館ビル``.
+        """
+        return self._BUILDING_NUMBER.match(normalized_text) is not None

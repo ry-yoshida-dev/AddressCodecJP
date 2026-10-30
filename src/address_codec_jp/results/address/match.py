@@ -14,7 +14,8 @@ class AddressMatch:
     address : Address
         Matched prefecture, municipality, town, and lot numbers.
     remainder : str
-        Trailing text that is not part of the code, such as a building name or room number.
+        Trailing text that is not part of the code, such as a building name or room number,
+        as written in the input.
     normalized_address : str
         Input after text normalization.
     postal_code : str | None

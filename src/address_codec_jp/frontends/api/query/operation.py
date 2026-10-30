@@ -1,9 +1,12 @@
-from enum import Enum, auto
+from enum import Enum
 
 
 class QueryOperation(Enum):
     """
     Query of the web API, applied to one text input.
+
+    Values are the names of the batch operations, which are also the names of the
+    command line sub-commands.
 
     Attributes
     ----------
@@ -31,14 +34,43 @@ class QueryOperation(Enum):
         ``latitude,longitude`` to the towns and parcels that contain it.
     """
 
-    ENCODE = auto()
-    DECODE = auto()
-    LOCATE = auto()
-    LOCATE_CODE = auto()
-    NEAREST = auto()
-    POSTAL = auto()
-    CHILDREN = auto()
-    NAME = auto()
-    AREA = auto()
-    AREA_CODE = auto()
-    AREAS_AT = auto()
+    ENCODE = "encode"
+    DECODE = "decode"
+    LOCATE = "locate"
+    LOCATE_CODE = "locate-code"
+    NEAREST = "nearest"
+    POSTAL = "postal"
+    CHILDREN = "children"
+    NAME = "name"
+    AREA = "area"
+    AREA_CODE = "area-code"
+    AREAS_AT = "areas-at"
+
+    @property
+    def is_geometry_included_by_default(self) -> bool:
+        """
+        Tell whether the operation writes GeoJSON geometries unless asked not to.
+
+        Returns
+        -------
+        bool
+            ``True`` for ``area`` and ``area-code``, whose shape is the result, and
+            ``False`` for ``areas-at``, as for the corresponding GET endpoints.
+        """
+        match self:
+            case QueryOperation.AREAS_AT:
+                return False
+            case _:
+                return True
+
+    @classmethod
+    def names(cls) -> list[str]:
+        """
+        List the operation names.
+
+        Returns
+        -------
+        list[str]
+            Values in definition order.
+        """
+        return [operation.value for operation in cls]

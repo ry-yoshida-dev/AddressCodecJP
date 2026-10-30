@@ -35,6 +35,7 @@ class CommandArguments(argparse.Namespace):
         self.is_postal_code_included: bool = False
         self.is_lot_verified: bool = False
         self.is_parcel_included: bool = False
+        self.is_geometry_included: bool = True
         self.crs: GeodeticCrs = GeodeticCrs.JGD2011
         self.max_distance: float = 0.0
         self.directory: str = ""

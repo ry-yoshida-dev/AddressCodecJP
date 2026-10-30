@@ -1,5 +1,6 @@
 import struct
 import zipfile
+import zlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -51,9 +52,14 @@ class ShapefileReader:
         BoundaryFormatError
             If the archive lacks a file or a file is malformed.
         """
-        with zipfile.ZipFile(path) as archive:
-            shapes = archive.read(self._member(archive, ".shp", path))
-            table = archive.read(self._member(archive, ".dbf", path))
+        try:
+            with zipfile.ZipFile(path) as archive:
+                shapes = archive.read(self._member(archive, ".shp", path))
+                table = archive.read(self._member(archive, ".dbf", path))
+        except (zipfile.BadZipFile, zlib.error, EOFError) as error:
+            raise BoundaryFormatError(
+                f"{path} is not a valid shapefile archive: {error}"
+            ) from error
         polygons = list(self._read_shapes(shapes, path))
         attributes = list(self._read_table(table, path))
         if len(polygons) != len(attributes):

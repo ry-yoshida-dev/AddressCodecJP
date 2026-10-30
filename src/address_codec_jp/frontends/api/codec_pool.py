@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import sqlite3
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -7,9 +9,13 @@ from typing import ClassVar
 
 from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.database.cache import DatabaseCache
+from address_codec_jp.errors import DatasetNotImportedError
+from address_codec_jp.frontends.api.database_busy_error import DatabaseBusyError
 from address_codec_jp.frontends.api.dataset_coverage import DatasetCoverage
 from address_codec_jp.frontends.api.file_signature import FileSignature
 from address_codec_jp.frontends.api.opened_codec import OpenedCodec
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class CodecPool:
@@ -21,6 +27,8 @@ class CodecPool:
     database file has been replaced, such as by ``DatabaseCache.refresh`` in another
     process, each thread reopens its codec before its next query; when it has been
     modified in place, such as by ``DatabaseCache.prepare``, the coverage is read again.
+    When it has been deleted, such as by ``DatabaseCache.clear``, queries fail with
+    ``DatasetNotImportedError`` until it is prepared again.
 
     Parameters
     ----------
@@ -49,7 +57,7 @@ class CodecPool:
         )
         self._codecs: dict[int, OpenedCodec] = {}
         self._lock: threading.Lock = threading.Lock()
-        self._coverage: DatasetCoverage = DatasetCoverage(frozenset(), frozenset(), {})
+        self._coverage: DatasetCoverage = DatasetCoverage(frozenset(), frozenset(), frozenset(), {})
         self._coverage_signature: FileSignature | None = None
 
     @property
@@ -92,27 +100,62 @@ class CodecPool:
         -------
         ResultType
             Result of ``query``.
+
+        Raises
+        ------
+        DatasetNotImportedError
+            If the database file has been deleted since the start.
+        DatabaseBusyError
+            If another process holds a lock on the database.
         """
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._run, query)
 
     def close(self) -> None:
-        """Close the codecs in the threads that opened them and stop the threads."""
+        """
+        Close the codecs in the threads that opened them and stop the threads.
+
+        Every thread is asked to close its codec. A thread still busy with a query after
+        ``CLOSE_TIMEOUT_SECONDS``, or a codec that fails to close, is logged and does not
+        keep the threads from stopping; a codec left open is closed when it is
+        collected.
+        """
         barrier = threading.Barrier(self._thread_count, timeout=self.CLOSE_TIMEOUT_SECONDS)
         futures = [
             self._executor.submit(self._close_thread_codec, barrier)
             for _ in range(self._thread_count)
         ]
         for future in futures:
-            future.result()
+            error = future.exception()
+            if error is not None:
+                _LOGGER.warning("A worker thread did not close its codec cleanly.", exc_info=error)
         self._executor.shutdown()
+        with self._lock:
+            unclosed_count = len(self._codecs)
+            self._codecs.clear()
+        if unclosed_count:
+            _LOGGER.warning("%d codecs were left open by busy worker threads.", unclosed_count)
 
     def _run[ResultType](
         self, query: Callable[[AddressCodec, DatasetCoverage], ResultType]
     ) -> ResultType:
-        signature = FileSignature.of(self._cache.path)
-        codec = self._thread_codec(signature)
-        return query(codec, self._current_coverage(codec, signature))
+        signature = self._read_signature()
+        try:
+            codec = self._thread_codec(signature)
+            return query(codec, self._current_coverage(codec, signature))
+        except sqlite3.OperationalError as error:
+            if DatabaseBusyError.is_busy(error):
+                raise DatabaseBusyError.from_error(error) from error
+            raise
+
+    def _read_signature(self) -> FileSignature:
+        try:
+            return FileSignature.of(self._cache.path)
+        except FileNotFoundError as error:
+            raise DatasetNotImportedError(
+                "The address database is not prepared on this server; run "
+                + "address-codec-jp cache prepare."
+            ) from error
 
     def _thread_codec(self, signature: FileSignature) -> AddressCodec:
         thread_id = threading.get_ident()
@@ -139,8 +182,10 @@ class CodecPool:
             return coverage
 
     def _close_thread_codec(self, barrier: threading.Barrier) -> None:
-        with self._lock:
-            opened = self._codecs.pop(threading.get_ident(), None)
-        if opened is not None:
-            opened.codec.close()
-        _ = barrier.wait()
+        try:
+            with self._lock:
+                opened = self._codecs.pop(threading.get_ident(), None)
+            if opened is not None:
+                opened.codec.close()
+        finally:
+            _ = barrier.wait()

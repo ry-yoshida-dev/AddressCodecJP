@@ -3,6 +3,7 @@ from address_codec_jp.errors.address_not_found_error import AddressNotFoundError
 from address_codec_jp.errors.ambiguous_address_error import AmbiguousAddressError
 from address_codec_jp.errors.area_not_found_error import AreaNotFoundError
 from address_codec_jp.errors.boundary_format_error import BoundaryFormatError
+from address_codec_jp.errors.database_replaced_error import DatabaseReplacedError
 from address_codec_jp.errors.dataset_not_imported_error import DatasetNotImportedError
 from address_codec_jp.errors.position_not_found_error import PositionNotFoundError
 from address_codec_jp.errors.reading_not_found_error import ReadingNotFoundError
@@ -16,6 +17,7 @@ __all__ = [
     "AmbiguousAddressError",
     "AreaNotFoundError",
     "BoundaryFormatError",
+    "DatabaseReplacedError",
     "DatasetNotImportedError",
     "PositionNotFoundError",
     "ReadingNotFoundError",

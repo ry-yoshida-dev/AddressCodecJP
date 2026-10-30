@@ -41,9 +41,9 @@ def test_postal_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     assert cli.run(["--database", database, "import", str(TOWN_MASTER)]) == 0
     assert cli.run(["--database", database, "postal", "100-0005", "--numeral", "kanji"]) == 0
     assert capsys.readouterr().out.splitlines()[-3:] == [
-        "131016-0011001\t東京都千代田区丸の内一丁目",
-        "131016-0011002\t東京都千代田区丸の内二丁目",
-        "131016-0011003\t東京都千代田区丸の内三丁目",
+        "100-0005\t131016-0011001\t東京都千代田区丸の内一丁目",
+        "100-0005\t131016-0011002\t東京都千代田区丸の内二丁目",
+        "100-0005\t131016-0011003\t東京都千代田区丸の内三丁目",
     ]
     assert cli.run(["--database", database, "postal", "--output", "jsonl", "999-9999"]) == 1
     records: list[dict[str, object]] = [

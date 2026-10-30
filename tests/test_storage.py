@@ -1,4 +1,6 @@
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -244,3 +246,48 @@ def test_town_listed_once_per_numbering_system_is_merged(tmp_path: Path) -> None
         towns = importer.database.towns
         assert towns.get_town("131016", "0011001").lot_systems == both_systems
         assert towns.get_town("131016", "0011000").lot_systems == both_systems
+
+
+INTERRUPTED_WRITER: str = """
+import os
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+connection.execute("PRAGMA cache_size = 1")
+connection.execute("BEGIN")
+connection.execute("CREATE TABLE interrupted (payload BLOB)")
+for _ in range(200):
+    connection.execute("INSERT INTO interrupted VALUES (?)", (os.urandom(4000),))
+os._exit(0)
+"""
+
+
+def test_open_read_only_rolls_back_a_write_of_a_killed_process(tmp_path: Path) -> None:
+    database = build_database(tmp_path)
+    _ = subprocess.run([sys.executable, "-I", "-c", INTERRUPTED_WRITER, str(database)], check=True)
+    journal = database.with_name(database.name + "-journal")
+    assert journal.is_file()
+    with AddressCodec.open(database) as codec:
+        assert str(codec.encode("千代田区丸の内1")) == "131016-0011001"
+    assert not journal.exists()
+    connection = sqlite3.connect(database)
+    tables = connection.execute("SELECT name FROM sqlite_master WHERE name = 'interrupted'")
+    assert tables.fetchall() == []
+    connection.close()
+
+
+def test_locked_database_is_not_reported_as_foreign(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = build_database(tmp_path)
+    monkeypatch.setattr(AddressDatabase, "BUSY_TIMEOUT_SECONDS", 0.05)
+    writer = sqlite3.connect(database, isolation_level=None)
+    _ = writer.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            _ = AddressDatabase.open_read_only(database)
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            _ = AddressDatabase.open_writable(database)
+    finally:
+        writer.close()

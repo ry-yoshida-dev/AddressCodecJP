@@ -35,6 +35,9 @@ from address_codec_jp.text.normalization import TextNormalizer
         ("2の三", "2の3"),
         ("本市１ 12番", "本市1-12番"),
         ("丸の内 1-2", "丸の内1-2"),
+        ("一番町5 一番館", "1番町5-1番館"),
+        ("丸の内1-2-3 一〇一号室", "丸の内1-2-3-101号室"),
+        ("丸の内1-2-3 三井ビル", "丸の内1-2-3-三井ビル"),
     ],
 )
 def test_normalize(text: str, expected: str) -> None:
@@ -62,3 +65,30 @@ def test_fold(text: str, expected: str) -> None:
 def test_normalize_name_returns_both_trailing_forms() -> None:
     assert TextNormalizer().normalize_name("白旗九ノ一") == {"白旗9ノ1", "白旗9ノ一"}
     assert TextNormalizer().normalize_name("丸の内") == {"丸の内"}
+
+
+@pytest.mark.parametrize(
+    ("text", "normalized_suffix", "expected"),
+    [
+        ("丸の内1-2-3 ABC Building 5F", "ABCBuilding5F", "ABC Building 5F"),
+        ("丸の内1丁目2番3号 ハイツ一番館", "ハイツ1番館", "ハイツ一番館"),
+        ("一番町5-1 ＡＢＣビル　２Ｆ ", "ABCビル2F", "ＡＢＣビル　２Ｆ"),
+        ("丸の内1-2-3", "", ""),
+        ("一番町5 一番館", "1番館", "一番館"),
+        ("丸の内1-2-3 ビル", "マンション", "マンション"),
+    ],
+)
+def test_find_original_suffix(text: str, normalized_suffix: str, expected: str) -> None:
+    assert TextNormalizer().find_original_suffix(text, normalized_suffix) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("〒100-0005", "only a postal code"),
+        ("100-0005", "only a postal code"),
+        ("　", "blank"),
+    ],
+)
+def test_describe_empty(text: str, expected: str) -> None:
+    assert expected in TextNormalizer().describe_empty(text)

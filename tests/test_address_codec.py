@@ -112,6 +112,29 @@ def test_match_keeps_building_name(codec: AddressCodec) -> None:
 
 
 @pytest.mark.parametrize(
+    ("address", "expected_code", "expected_remainder"),
+    [
+        ("千代田区一番町5番地 3階", "131016-0054000-5", "3階"),
+        ("千代田区一番町5 2F", "131016-0054000-5", "2F"),
+        ("千代田区丸の内2丁目7番地 2号館", "131016-0011002-7", "2号館"),
+        ("千代田区一番町 3階", "131016-0054000", "3階"),
+        ("千代田区丸の内1丁目 2F", "131016-0011001", "2F"),
+        ("千代田区丸の内1-2-3 ABC Building 5F", "131016-0011001-2-3", "ABC Building 5F"),
+        ("千代田区丸の内1丁目2番3号 ハイツ一番館", "131016-0011001-2-3", "ハイツ一番館"),
+        ("千代田区一番町5 一番館", "131016-0054000-5", "一番館"),
+        ("千代田区丸の内1-2-3 一〇一号室", "131016-0011001-2-3", "一〇一号室"),
+        ("千代田区丸の内1-2 三号館", "131016-0011001-2", "三号館"),
+    ],
+)
+def test_match_reads_floor_and_building_numbers_as_remainder(
+    codec: AddressCodec, address: str, expected_code: str, expected_remainder: str
+) -> None:
+    address_match = codec.match(address)
+    assert str(address_match.code) == expected_code
+    assert address_match.remainder == expected_remainder
+
+
+@pytest.mark.parametrize(
     "address",
     [
         "府中市",
@@ -147,6 +170,16 @@ def test_encode_rejects_unmatched(codec: AddressCodec, address: str) -> None:
 def test_encode_rejects_blank(codec: AddressCodec) -> None:
     with pytest.raises(ValueError, match="blank"):
         _ = codec.encode("　")
+
+
+def test_encode_rejects_postal_code_alone(codec: AddressCodec) -> None:
+    with pytest.raises(ValueError, match="only a postal code"):
+        _ = codec.encode("〒100-0005")
+
+
+def test_encode_rejects_oversized_lot_numbers(codec: AddressCodec) -> None:
+    with pytest.raises(ValueError, match="must not exceed"):
+        _ = codec.encode("千代田区丸の内1-99999999999999999999999")
 
 
 @pytest.mark.parametrize(

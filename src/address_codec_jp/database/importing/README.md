@@ -11,7 +11,7 @@ which are matched to address codes before they are stored.
 | Component | Responsibility |
 | --- | --- |
 | [registry_importer.py](registry_importer.py) | `RegistryImporter`: identifies registry files by header and imports each atomically, the town master first |
-| [area_importer.py](area_importer.py) | `AreaImporter`: matches census boundaries and registry map parcels to address codes and stores their shapes |
+| [area_importer.py](area_importer.py) | `AreaImporter`: matches census boundaries and registry map parcels to address codes and stores their shapes, the files of one municipality in one transaction |
 
 ## Examples
 

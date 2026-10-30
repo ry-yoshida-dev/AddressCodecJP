@@ -6,7 +6,8 @@ Reads the area shapes published outside the Address Base Registry: the town
 boundaries of the 2020 census (e-Stat, shapefile on JGD2011) and the land parcel maps
 of the registry offices (map XML on the plane rectangular coordinate system). Sheets on
 an arbitrary local coordinate system cannot be placed and are skipped; the others are
-projected to JGD2011. Shapes carry names, which `AreaImporter` matches to address codes.
+projected to JGD2011. Shapes carry names, which `AreaImporter` matches to address codes. A broken archive
+raises `BoundaryFormatError`.
 
 ## Components
 

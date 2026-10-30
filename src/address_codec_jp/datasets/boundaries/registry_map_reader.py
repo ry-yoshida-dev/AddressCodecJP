@@ -4,6 +4,7 @@ import re
 import unicodedata
 import xml.etree.ElementTree as ElementTree
 import zipfile
+import zlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -50,16 +51,21 @@ class RegistryMapReader:
         Raises
         ------
         BoundaryFormatError
-            If a map file is malformed.
+            If an archive or a map file is malformed.
         """
         if path.suffix.lower() == ".xml":
             return self._read_map(path.read_bytes(), path.name)
-        with zipfile.ZipFile(path) as archive:
-            return [
-                parcel
-                for name, data in self._iterate_maps(archive)
-                for parcel in self._read_map(data, name)
-            ]
+        try:
+            with zipfile.ZipFile(path) as archive:
+                return [
+                    parcel
+                    for name, data in self._iterate_maps(archive)
+                    for parcel in self._read_map(data, name)
+                ]
+        except (zipfile.BadZipFile, zlib.error, EOFError) as error:
+            raise BoundaryFormatError(
+                f"{path} is not a valid archive of map sheets: {error}"
+            ) from error
 
     def _iterate_maps(self, archive: zipfile.ZipFile) -> Iterator[tuple[str, bytes]]:
         for name in sorted(archive.namelist()):

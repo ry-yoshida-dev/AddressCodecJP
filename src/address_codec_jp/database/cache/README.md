@@ -11,6 +11,16 @@ requested again after every addition. Databases of older schema versions are rem
 when a new one is built; those of newer versions are kept for the library that uses them.
 Progress is logged at INFO level to the `address_codec_jp.database.cache` loggers.
 
+The registry maps of a municipality, one archive per registry office, are imported
+together, so a failed archive leaves the municipality to be added again in full. The
+import ledger is read again whenever the database file changes. A codec opens its
+database with `DatabaseCache.open_database`; once that file has been replaced or removed,
+such as by `refresh` or `clear` in any process, additions for the codec raise
+`DatabaseReplacedError` (a `DatasetNotImportedError`) instead of going to a file the
+codec does not read, and the codec has to be opened again. Without downloads, the codec
+keeps reading the file it opened. `max_age` requires downloads, and a refresh on first
+use that fails to download, read, or write keeps the current database with a warning.
+
 ## Components
 
 | Component | Responsibility |
@@ -20,6 +30,8 @@ Progress is logged at INFO level to the `address_codec_jp.database.cache` logger
 | [directory.py](directory.py) | `CacheDirectory`: database path, lock, working directories, and obsolete files of the cache directory |
 | [import_ledger.py](import_ledger.py) | `ImportLedger`: registry files and area datasets that are imported or known to be unpublished |
 | [area_target.py](area_target.py) | `AreaTarget`: one area dataset of one municipality to add |
+| [file_signature.py](file_signature.py) | `DatabaseFileSignature`: device, inode, modification time, and size of the database file |
+| [opened_database.py](opened_database.py) | `OpenedDatabase`: database a cache opened for a codec and the file it was opened on |
 | [status.py](status.py) | `CacheStatus`: path, size, build time, municipalities added, and obsolete files of the cache |
 
 ## Examples

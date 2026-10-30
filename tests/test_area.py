@@ -25,7 +25,7 @@ from address_codec_jp import (
 )
 from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
 from address_codec_jp.frontends.cli import CommandLineInterface
-from address_codec_jp.geometry import Polygon
+from address_codec_jp.geometry import Polygon, Ring
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 AREA_DIRECTORY: Path = FIXTURE_DIRECTORY / "areas"
@@ -76,6 +76,30 @@ def test_area_shape_round_trips_through_bytes_and_geojson() -> None:
         _ = AreaShape.from_bytes(shape.to_bytes()[:-8])
 
 
+def written_polygons(shape: AreaShape) -> list[list[Ring]]:
+    coordinates = shape.to_geojson_geometry()["coordinates"]
+    assert isinstance(coordinates, list)
+    return [
+        [tuple((position[0], position[1]) for position in ring) for ring in polygon]
+        for polygon in coordinates
+    ]
+
+
+def test_geojson_rings_follow_the_right_hand_rule() -> None:
+    clockwise = SQUARE.exterior[::-1]
+    hole = ((0.5, 0.5), (1.0, 0.5), (1.0, 1.0), (0.5, 1.0), (0.5, 0.5))
+    shape = AreaShape((Polygon(clockwise, (hole,)),))
+    assert written_polygons(shape) == [[SQUARE.exterior, hole[::-1]]]
+    assert AreaShape.from_bytes(shape.to_bytes()) == shape
+
+
+def test_census_boundaries_are_written_counterclockwise() -> None:
+    for area in CensusBoundaryReader().read(CENSUS_BOUNDARY):
+        for rings in written_polygons(area.shape):
+            assert not Polygon.is_clockwise(rings[0])
+            assert all(Polygon.is_clockwise(ring) for ring in rings[1:])
+
+
 def test_census_boundary_reader_reads_named_land_areas() -> None:
     areas = CensusBoundaryReader().read(CENSUS_BOUNDARY)
     addresses = {area.address for area in areas}
@@ -99,6 +123,30 @@ def test_registry_map_reader_reads_nested_archives(tmp_path: Path) -> None:
     with zipfile.ZipFile(outer, "w") as archive:
         archive.write(inner, inner.name)
     assert len(RegistryMapReader().read(outer)) == 2
+
+
+def test_registry_map_reader_rejects_a_broken_inner_archive(tmp_path: Path) -> None:
+    outer = tmp_path / "11324-0302-2026.zip"
+    with zipfile.ZipFile(outer, "w") as archive:
+        archive.writestr("11324-0302-1.zip", b"<html>maintenance</html>")
+    with pytest.raises(BoundaryFormatError, match="not a valid archive"):
+        _ = RegistryMapReader().read(outer)
+
+
+def test_import_of_several_files_is_atomic(
+    area_importer: AreaImporter, importer: RegistryImporter, tmp_path: Path
+) -> None:
+    broken = tmp_path / "11324-0303-2026.zip"
+    with zipfile.ZipFile(broken, "w") as archive:
+        archive.writestr("11324-0303-1.zip", b"<html>maintenance</html>")
+    with pytest.raises(BoundaryFormatError):
+        _ = area_importer.import_files([REGISTRY_MAP, broken], "113247")
+    assert importer.database.areas.list_imports() == []
+    assert not importer.database.areas.is_area_imported
+    imports = area_importer.import_files([REGISTRY_MAP, LOCAL_REGISTRY_MAP], "113247")
+    assert [item.source_name for item in importer.database.areas.list_imports()] == [
+        item.source_name for item in imports
+    ]
 
 
 def test_import_matches_areas_to_registered_towns(area_importer: AreaImporter) -> None:
@@ -206,6 +254,15 @@ def test_boundary_downloader_skips_empty_archives(
     assert boundary_downloader.download_census_boundary("016951", tmp_path / "data") is None
 
 
+def test_boundary_downloader_rejects_a_page_instead_of_an_archive(
+    boundary_downloader: BoundaryDownloader, boundary_mirror: Path, tmp_path: Path
+) -> None:
+    _ = (boundary_mirror / "census" / "11324.zip").write_text("<html>maintenance</html>")
+    with pytest.raises(RegistryDownloadError, match="no ZIP archive"):
+        _ = boundary_downloader.download_census_boundary("113247", tmp_path / "data")
+    assert list((tmp_path / "data").iterdir()) == []
+
+
 def test_boundary_downloader_picks_the_latest_map_of_each_office(
     boundary_downloader: BoundaryDownloader, tmp_path: Path
 ) -> None:
@@ -277,13 +334,49 @@ def test_area_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> No
     _ = capsys.readouterr()
     assert cli.run(["--database", database, "area", "千代田区丸の内1-2-3"]) == 0
     fields = capsys.readouterr().out.rstrip("\n").split("\t")
-    assert fields[:4] == ["131016-0011001-2-3", "131016-0011001", "TOWN", "census_boundary"]
-    assert fields[4].startswith('{"type":"MultiPolygon"')
-    assert cli.run(["--database", database, "area-at", "35.8362,139.5321", "--parcels"]) == 0
-    assert capsys.readouterr().out.splitlines() == [
-        "113247-0001000-123-4\t埼玉県入間郡三芳町竹間沢123番地4\tRESIDENCE\tregistry_map"
+    assert fields[:5] == [
+        "千代田区丸の内1-2-3",
+        "131016-0011001-2-3",
+        "131016-0011001",
+        "TOWN",
+        "census_boundary",
     ]
-    assert cli.run(["--database", database, "area-at", "35.8362,139.5321"]) == 1
-    assert "No imported area shape" in capsys.readouterr().err
+    assert fields[5].startswith('{"type":"MultiPolygon"')
+    assert cli.run(["--database", database, "areas-at", "35.8362,139.5321", "--parcels"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "35.8362,139.5321\t113247-0001000-123-4\t埼玉県入間郡三芳町竹間沢123番地4"
+        + "\tRESIDENCE\tregistry_map"
+    ]
+    assert cli.run(["--database", database, "areas-at", "35.8362,139.5321"]) == 1
+    assert "No imported area shape" in capsys.readouterr().out
     assert cli.run(["--database", database, "info"]) == 0
     assert "census_boundary" in capsys.readouterr().out
+
+
+def test_cache_records_registry_maps_only_when_every_archive_is_imported(
+    boundary_downloader: BoundaryDownloader, boundary_mirror: Path, tmp_path: Path
+) -> None:
+    maps = boundary_mirror / "maps"
+    broken = maps / "11324-0303-2026.zip"
+    with zipfile.ZipFile(broken, "w") as archive:
+        archive.writestr("11324-0303-1.zip", b"<html>maintenance</html>")
+    catalog = boundary_mirror / "catalog" / "11324.json"
+    resources = [
+        {"name": name, "url": (maps / name).as_uri()}
+        for name in ("11324-0302-2026.zip", "11324-0303-2026.zip")
+    ]
+    _ = catalog.write_text(json.dumps({"result": {"results": [{"resources": resources}]}}))
+    cache = DatabaseCache(tmp_path / "cache", RegistryDownloader(), boundary_downloader)
+    cache.path.parent.mkdir()
+    with RegistryImporter.open(cache.path) as importer:
+        _ = importer.import_file(FIXTURE_DIRECTORY / "mt_town_sample.csv")
+    with pytest.raises(BoundaryFormatError):
+        cache.ensure_areas(["113247"], is_parcel_included=True)
+    assert imported_areas(cache) == []
+    with zipfile.ZipFile(broken, "w") as archive:
+        archive.write(LOCAL_REGISTRY_MAP, LOCAL_REGISTRY_MAP.name)
+    cache.ensure_areas(["113247"], is_parcel_included=True)
+    names = sorted(
+        item.source_name for item in imported_areas(cache) if item.source is AreaSource.REGISTRY_MAP
+    )
+    assert names == ["11324-0302-2026.zip", "11324-0303-2026.zip"]

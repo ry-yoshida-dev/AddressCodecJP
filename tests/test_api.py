@@ -1,6 +1,8 @@
 import asyncio
 import re
 import shutil
+import sqlite3
+import threading
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -22,12 +24,14 @@ from address_codec_jp import (
     RegistryFormatError,
     RegistryImporter,
 )
+from address_codec_jp.database.storage import AddressDatabase
 from address_codec_jp.frontends.api import (
     ApplicationFactory,
     CodecPool,
     DatasetCoverage,
     ServiceSettings,
 )
+from address_codec_jp.results import AddressLocation
 
 FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 TOWN_LEVEL_FIXTURES: list[Path] = [
@@ -124,6 +128,7 @@ def open_client(
     *,
     is_coverage_required: bool = True,
     is_server_exception_raised: bool = True,
+    max_input_length: int = 1000,
 ) -> TestClient:
     settings = ServiceSettings(
         publisher=PUBLISHER,
@@ -131,6 +136,7 @@ def open_client(
         thread_count=2,
         max_batch_size=3,
         is_coverage_required=is_coverage_required,
+        max_input_length=max_input_length,
     )
     application: FastAPI = ApplicationFactory(settings).create()
     return TestClient(application, raise_server_exceptions=is_server_exception_raised)
@@ -270,10 +276,10 @@ def test_errors_map_to_statuses(
 def test_server_faults_hide_their_detail(
     cache_directory: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    def fail(*_arguments: object, **_options: object) -> AddressCode:
+    def fail(*_arguments: object, **_options: object) -> AddressLocation:
         raise error
 
-    monkeypatch.setattr(AddressCodec, "encode", fail)
+    monkeypatch.setattr(AddressCodec, "locate_code", fail)
     with open_client(cache_directory, is_server_exception_raised=False) as client:
         single = client.get("/v1/locations", params={"address": "千代田区"})
         batch = client.post("/v1/batch", json={"operation": "locate", "inputs": ["千代田区"]})
@@ -328,6 +334,7 @@ def test_health_reports_the_prepared_municipalities(client: TestClient) -> None:
         "status": "ok",
         "lot_municipality_count": 1,
         "boundary_municipality_count": 1,
+        "parcel_map_municipality_count": 0,
         "imported_dataset_count": len(TOWN_LEVEL_FIXTURES) + len(LOT_FIXTURE_NAMES),
     }
 
@@ -440,3 +447,211 @@ def test_batch_credits_every_dataset_once(cache_directory: Path) -> None:
             },
         )
     assert body_of(response)["attribution"] == [REGISTRY_CREDIT, PARCEL_MASTER_CREDIT]
+
+
+HUGE_LOT_CODE: str = "131016-0011001-" + "9" * 30
+
+
+def test_numbers_too_large_are_invalid_requests(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert client.get(f"/v1/codes/{HUGE_LOT_CODE}").status_code == 400
+
+    def overflow(*_arguments: object, **_options: object) -> AddressLocation:
+        raise OverflowError("Python int too large to convert to SQLite INTEGER")
+
+    monkeypatch.setattr(AddressCodec, "locate_code", overflow)
+    single = client.get("/v1/codes/131016-0011001-2-3/location")
+    batch = client.post(
+        "/v1/batch", json={"operation": "decode", "inputs": [HUGE_LOT_CODE, "131016-0011001"]}
+    )
+    assert (single.status_code, body_of(single)["error_type"]) == (400, "InvalidRequestError")
+    assert batch.status_code == 200
+    results = [read_object(result) for result in read_list(body_of(batch)["results"])]
+    assert [result.get("status") for result in results] == [400, None]
+
+
+@pytest.mark.parametrize(
+    ("path", "params"),
+    [
+        ("/v1/areas", {"address": "千代田区丸の内1", "geometry": "maybe"}),
+        ("/v1/areas", {}),
+        ("/v1/nearest", {"coordinate": "35.6822,139.7660", "max_distance": "0"}),
+    ],
+)
+def test_invalid_parameters_follow_the_error_contract(
+    client: TestClient, path: str, params: dict[str, str]
+) -> None:
+    response = client.get(path, params=params)
+    body = body_of(response)
+    assert response.status_code == 400
+    assert set(body) == {"error", "error_type"}
+    assert body["error_type"] == "InvalidRequestError"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"inputs": ["東京都"]},
+        {"operation": "encode", "inputs": "東京都"},
+        {"operation": "areas_at", "inputs": []},
+        {"operation": "nearest", "inputs": [], "max_distance": 0},
+        {"operation": "encode", "inputs": [], "unknown": True},
+    ],
+)
+def test_invalid_batch_bodies_follow_the_error_contract(
+    client: TestClient, body: dict[str, object]
+) -> None:
+    response = client.post("/v1/batch", json=body)
+    assert response.status_code == 400
+    assert body_of(response)["error_type"] == "InvalidRequestError"
+
+
+def test_malformed_json_is_an_invalid_request(client: TestClient) -> None:
+    response = client.post("/v1/batch", content=b"{", headers={"content-type": "application/json"})
+    assert (response.status_code, body_of(response)["error_type"]) == (400, "InvalidRequestError")
+
+
+def test_batch_geometry_defaults_follow_the_endpoints(client: TestClient) -> None:
+    def first_result(body: dict[str, object]) -> dict[str, object]:
+        response = client.post("/v1/batch", json=body)
+        return read_object(read_list(body_of(response)["results"])[0])
+
+    area = first_result({"operation": "area-code", "inputs": ["131016-0011001"]})
+    areas = first_result({"operation": "areas-at", "inputs": ["35.6822,139.7660"]})
+    without = first_result({"operation": "area", "inputs": ["千代田区丸の内1"], "geometry": False})
+    assert "geometry" in area
+    assert "geometry" not in read_object(read_list(areas["areas"])[0])
+    assert "geometry" not in without
+
+
+def test_batch_operations_are_named_like_the_commands(client: TestClient) -> None:
+    response = client.post(
+        "/v1/batch", json={"operation": "locate-code", "inputs": ["131016-0011001-2-3"]}
+    )
+    assert read_object(read_list(body_of(response)["results"])[0])["is_exact"] is True
+
+
+def test_nearest_requires_every_municipality_that_may_be_nearer(cache_directory: Path) -> None:
+    params = {"coordinate": "35.6830,139.7660"}
+    with open_client(cache_directory) as client:
+        rejected = client.get("/v1/nearest", params=params)
+        exact = client.get("/v1/nearest", params={"coordinate": "35.682456,139.765123"})
+    with open_client(cache_directory, is_coverage_required=False) as client:
+        accepted = client.get("/v1/nearest", params=params)
+    assert rejected.status_code == 503
+    assert "131067" in str(body_of(rejected)["error"])
+    assert exact.status_code == 200
+    assert body_of(accepted)["code"] == "131016-0011001-2-3"
+
+
+def test_parcels_at_a_coordinate_require_the_registry_maps(client: TestClient) -> None:
+    params = {"coordinate": "35.6822,139.7660"}
+    assert client.get("/v1/areas-at", params=params).status_code == 200
+    response = client.get("/v1/areas-at", params={**params, "parcels": "true"})
+    assert response.status_code == 503
+    assert "Registry maps" in str(body_of(response)["error"])
+
+
+def test_parcel_shapes_require_the_registry_maps(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def has_parcel_shape(_codec: AddressCodec, _code: AddressCode | str) -> bool:
+        return True
+
+    assert client.get("/v1/codes/131016-0011001/area").status_code == 200
+    monkeypatch.setattr(AddressCodec, "has_parcel_shape", has_parcel_shape)
+    assert client.get("/v1/codes/131016-0011001/area").status_code == 503
+
+
+def test_parcel_map_coverage_is_read_from_the_cache(tmp_path: Path) -> None:
+    with_maps = build_cache(tmp_path / "maps", is_lot_included=True, is_parcel_map_included=True)
+    pool = CodecPool(with_maps, thread_count=1)
+
+    def read_coverage(_codec: AddressCodec, coverage: DatasetCoverage) -> DatasetCoverage:
+        return coverage
+
+    coverage = asyncio.run(pool.run(read_coverage))
+    pool.close()
+    assert coverage.parcel_map_municipality_codes == frozenset({"113247"})
+    coverage.require_parcel_maps("113247")
+    coverage.require_parcel_maps("110001")
+    with pytest.raises(DatasetNotImportedError, match="Registry maps"):
+        coverage.require_parcel_maps("131016")
+
+
+def test_cleared_cache_is_reported_as_not_prepared(cache_directory: Path) -> None:
+    with open_client(cache_directory, is_server_exception_raised=False) as client:
+        assert client.get("/health").status_code == 200
+        _ = DatabaseCache.default(directory=cache_directory).clear()
+        health = client.get("/health")
+        query = client.get("/v1/codes/131016-0011001")
+    for response in (health, query):
+        assert response.status_code == 503
+        assert body_of(response)["error_type"] == "DatasetNotImportedError"
+
+
+def test_locked_database_asks_to_retry(
+    cache_directory: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(AddressDatabase, "BUSY_TIMEOUT_SECONDS", 0.05)
+    database_path = DatabaseCache.default(directory=cache_directory).path
+    with open_client(cache_directory, is_server_exception_raised=False) as client:
+        writer = sqlite3.connect(database_path, isolation_level=None)
+        _ = writer.execute("BEGIN EXCLUSIVE")
+        locked = client.get("/v1/codes/131016-0011001")
+        _ = writer.execute("ROLLBACK")
+        writer.close()
+        released = client.get("/v1/codes/131016-0011001")
+    assert locked.status_code == 503
+    assert locked.headers["retry-after"] == "1"
+    assert body_of(locked)["error_type"] == "DatabaseBusyError"
+    assert released.status_code == 200
+
+
+def test_pool_closes_although_a_thread_is_busy(
+    cache_directory: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(CodecPool, "CLOSE_TIMEOUT_SECONDS", 0.05)
+    pool = CodecPool(cache_directory, thread_count=2)
+    _ = asyncio.run(pool.run(identify))
+    is_started = threading.Event()
+    is_released = threading.Event()
+
+    def block(_codec: AddressCodec, _coverage: DatasetCoverage) -> None:
+        is_started.set()
+        _ = is_released.wait(5.0)
+
+    busy = threading.Thread(target=lambda: asyncio.run(pool.run(block)))
+    busy.start()
+    assert is_started.wait(5.0)
+    releaser = threading.Timer(0.3, is_released.set)
+    releaser.start()
+    pool.close()
+    busy.join()
+    releaser.join()
+    with pytest.raises(RuntimeError):
+        _ = asyncio.run(pool.run(identify))
+
+
+def test_long_inputs_are_rejected(cache_directory: Path) -> None:
+    long_address = "千代田区丸の内" + "1" * 20
+    with open_client(cache_directory, max_input_length=20) as client:
+        single = client.get("/v1/codes", params={"address": long_address})
+        batch = client.post(
+            "/v1/batch", json={"operation": "encode", "inputs": [long_address, "東京都"]}
+        )
+    assert (single.status_code, body_of(single)["error_type"]) == (400, "InvalidRequestError")
+    results = [read_object(result) for result in read_list(body_of(batch)["results"])]
+    assert [result.get("status") for result in results] == [400, None]
+
+
+def test_max_input_length_is_read_from_the_environment() -> None:
+    environment = {ServiceSettings.PUBLISHER_VARIABLE: PUBLISHER}
+    assert ServiceSettings.from_environment(environment).max_input_length == 1000
+    settings = ServiceSettings.from_environment(
+        {**environment, ServiceSettings.MAX_INPUT_LENGTH_VARIABLE: "200"}
+    )
+    assert settings.max_input_length == 200
+    with pytest.raises(ValueError, match="max_input_length must be positive"):
+        _ = ServiceSettings(publisher=PUBLISHER, max_input_length=0)

@@ -69,23 +69,29 @@ class BoundaryDownloader:
         Returns
         -------
         Path | None
-            Path of the archive, or ``None`` when e-Stat has no boundaries for the code.
+            Path of the archive, or ``None`` when e-Stat has no boundaries for the code,
+            which it tells by an empty ZIP archive or a missing file.
 
         Raises
         ------
         ValueError
             If the code is malformed.
         RegistryDownloadError
-            If the archive cannot be downloaded.
+            If the archive cannot be downloaded, or the response is not a ZIP archive.
         """
         code = self._five_digit_code(lg_code)
+        url = self._census_url_template.format(code=code)
         destination = directory / f"census_boundary_{lg_code}.zip"
-        path = self._fetcher.fetch_if_present(
-            self._census_url_template.format(code=code), destination
-        )
+        path = self._fetcher.fetch_if_present(url, destination)
         if path is None:
             return None
-        if self._is_empty_archive(path):
+        if not zipfile.is_zipfile(path):
+            path.unlink()
+            raise RegistryDownloadError(
+                f"{url} returned no ZIP archive, such as a page shown while the site is "
+                + "under maintenance; try again later."
+            )
+        if self._is_empty_archive(path, url):
             path.unlink()
             return None
         return path
@@ -190,11 +196,13 @@ class BoundaryDownloader:
             raise RegistryDownloadError(f"Unexpected catalog response from {url}.")
         return list(cast(list[object], value))
 
-    def _is_empty_archive(self, path: Path) -> bool:
-        if not zipfile.is_zipfile(path):
-            return True
-        with zipfile.ZipFile(path) as archive:
-            return not archive.namelist()
+    def _is_empty_archive(self, path: Path, url: str) -> bool:
+        try:
+            with zipfile.ZipFile(path) as archive:
+                return not archive.namelist()
+        except zipfile.BadZipFile as error:
+            path.unlink()
+            raise RegistryDownloadError(f"{url} returned a broken ZIP archive: {error}") from error
 
     def _five_digit_code(self, lg_code: str) -> str:
         code = AddressCode(lg_code=lg_code)

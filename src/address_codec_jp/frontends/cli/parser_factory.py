@@ -25,6 +25,9 @@ class ParserFactory:
         parser = argparse.ArgumentParser(
             prog="address-codec-jp",
             description="Convert Japanese addresses to and from address codes.",
+            epilog="Exit status: 0 when every input was answered, 1 when some input failed "
+            + "(each failure is written in place of its result), 2 for invalid arguments, "
+            + "and 3 when the command could not run or stopped.",
         )
         _ = parser.add_argument(
             "--database",
@@ -40,7 +43,8 @@ class ParserFactory:
             type=output_argument,
             metavar=output_argument.metavar,
             default=OutputFormat.TSV,
-            help="tsv, or jsonl with one object per input including errors.",
+            help="tsv with the input first on every line, or jsonl with one object per "
+            + "input; both include errors in place of results.",
         )
         crs_parser = argparse.ArgumentParser(add_help=False)
         crs_argument = EnumArgument(GeodeticCrs)
@@ -159,6 +163,15 @@ class ParserFactory:
             "inputs", nargs="*", metavar="address", help="Addresses; standard input if none."
         )
 
+        locate_code_parser = subparsers.add_parser(
+            Command.LOCATE_CODE.value,
+            parents=[query_parser, crs_parser],
+            help="Code to representative point.",
+        )
+        _ = locate_code_parser.add_argument(
+            "inputs", nargs="*", metavar="code", help="Address codes; standard input if none."
+        )
+
         nearest_parser = subparsers.add_parser(
             Command.NEAREST.value,
             parents=[query_parser, crs_parser],
@@ -212,31 +225,53 @@ class ParserFactory:
             help="Names such as 府中市 or 自由が丘; standard input if none.",
         )
 
+        area_geometry_parser = argparse.ArgumentParser(add_help=False)
+        _ = area_geometry_parser.add_argument(
+            "--no-geometry",
+            dest="is_geometry_included",
+            action="store_false",
+            help="Omit the GeoJSON geometry.",
+        )
         area_parser = subparsers.add_parser(
             Command.AREA.value,
-            parents=[query_parser],
+            parents=[query_parser, area_geometry_parser],
             help="Address to the shape of its town or land parcel as GeoJSON on JGD2011.",
         )
         _ = area_parser.add_argument(
             "inputs", nargs="*", metavar="address", help="Addresses; standard input if none."
         )
 
-        area_at_parser = subparsers.add_parser(
-            Command.AREA_AT.value,
+        area_code_parser = subparsers.add_parser(
+            Command.AREA_CODE.value,
+            parents=[query_parser, area_geometry_parser],
+            help="Code to the shape of its town or land parcel as GeoJSON on JGD2011.",
+        )
+        _ = area_code_parser.add_argument(
+            "inputs", nargs="*", metavar="code", help="Address codes; standard input if none."
+        )
+
+        areas_at_parser = subparsers.add_parser(
+            Command.AREAS_AT.value,
             parents=[query_parser, crs_parser],
             help="Coordinate to the towns, and optionally land parcels, whose shapes contain it.",
         )
-        _ = area_at_parser.add_argument(
+        _ = areas_at_parser.add_argument(
             "inputs",
             nargs="*",
             metavar="latitude,longitude",
             help="Coordinates in decimal degrees; standard input if none.",
         )
-        _ = area_at_parser.add_argument(
+        _ = areas_at_parser.add_argument(
             "--parcels",
             dest="is_parcel_included",
             action="store_true",
             help="Also list land parcels from the registry maps.",
+        )
+        _ = areas_at_parser.add_argument(
+            "--geometry",
+            dest="is_geometry_included",
+            action="store_true",
+            help="Add the GeoJSON geometries on JGD2011.",
         )
         return parser
 

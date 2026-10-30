@@ -21,12 +21,15 @@ class DatasetCoverage:
         Municipalities whose blocks, residences, and land parcels were added.
     boundary_municipality_codes : frozenset[str]
         Municipalities whose census town boundaries were added.
+    parcel_map_municipality_codes : frozenset[str]
+        Municipalities whose registry maps of land parcels were added.
     registry_map_dates : Mapping[str, date]
         Date the registry maps of each municipality were last obtained.
     """
 
     lot_municipality_codes: frozenset[str]
     boundary_municipality_codes: frozenset[str]
+    parcel_map_municipality_codes: frozenset[str]
     registry_map_dates: Mapping[str, date]
 
     @classmethod
@@ -44,7 +47,8 @@ class DatasetCoverage:
         Returns
         -------
         Self
-            Municipalities with lots, with boundaries, and the dates of their maps.
+            Municipalities with lots, with boundaries, and with registry maps, and the
+            dates of their maps.
         """
         registry_map_dates: dict[str, date] = {}
         for area_import in area_imports:
@@ -56,6 +60,7 @@ class DatasetCoverage:
         return cls(
             lot_municipality_codes=frozenset(status.lot_municipality_codes),
             boundary_municipality_codes=frozenset(status.boundary_municipality_codes),
+            parcel_map_municipality_codes=frozenset(status.parcel_map_municipality_codes),
             registry_map_dates=registry_map_dates,
         )
 
@@ -100,4 +105,26 @@ class DatasetCoverage:
         ):
             raise DatasetNotImportedError(
                 f"Town boundaries of municipality {lg_code} are not prepared on this server."
+            )
+
+    def require_parcel_maps(self, lg_code: str) -> None:
+        """
+        Fail unless the registry maps of land parcels of an area were added.
+
+        Parameters
+        ----------
+        lg_code : str
+            Local government code; prefecture codes always pass.
+
+        Raises
+        ------
+        DatasetNotImportedError
+            If the registry maps of the municipality have not been prepared.
+        """
+        if not AddressCode.is_prefecture_code(lg_code) and (
+            lg_code not in self.parcel_map_municipality_codes
+        ):
+            raise DatasetNotImportedError(
+                f"Registry maps of land parcels of municipality {lg_code} are not prepared "
+                + "on this server."
             )

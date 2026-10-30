@@ -13,7 +13,9 @@ class TextNormalizer:
     kanji numeral variants are unified, and a dash after katakana becomes the long vowel
     ``ー`` (``流通センタ－`` equals ``流通センター``). A kanji numeral run that is valid only
     without its leading ``一`` keeps that ``一`` as part of the preceding name
-    (``九ノ一十二番`` becomes ``9ノ一12番``). Characters that the registry uses to
+    (``九ノ一十二番`` becomes ``9ノ一12番``). Whitespace between a digit and a following
+    digit or kanji numeral becomes a dash, so separate numbers are not joined
+    (``5 一番館`` becomes ``5-1番館``). Characters that the registry uses to
     tell towns apart are kept. ``fold`` additionally unifies ``ヶ``/``ケ``/``が``,
     ``の``/``ノ``/``之`` and old-style kanji for a loose comparison. Folding keeps the
     text length, so positions in the strict and folded forms correspond.
@@ -44,7 +46,9 @@ class TextNormalizer:
         r"^〒?(?P<head>[0-9]{3})-?(?P<tail>[0-9]{4})"
     )
     _WHITESPACE: ClassVar[re.Pattern[str]] = re.compile(r"\s+")
-    _WHITESPACE_BETWEEN_DIGITS: ClassVar[re.Pattern[str]] = re.compile(r"(?<=[0-9])\s+(?=[0-9])")
+    _WHITESPACE_BETWEEN_NUMBERS: ClassVar[re.Pattern[str]] = re.compile(
+        f"(?<=[0-9])\\s+(?=[{_NUMERALS}])"
+    )
     _KE_VARIANTS: ClassVar[re.Pattern[str]] = re.compile(
         f"(?<=[{_KANJI}0-9])[ヶヵケが](?=[{_KANJI}0-9])"
     )
@@ -63,6 +67,7 @@ class TextNormalizer:
     _TRAILING_KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(f"[{KanjiNumeral.CHARACTERS}]+$")
     _NAME_ENDING_NUMERAL: ClassVar[str] = "一"
     _REPEATED_DASH: ClassVar[re.Pattern[str]] = re.compile("-{2,}")
+    _SUFFIX_SEARCH_SLACK: ClassVar[int] = 8
 
     def normalize(self, text: str) -> str:
         """
@@ -95,7 +100,7 @@ class TextNormalizer:
             Seven-digit postal code, or ``None`` when the address does not start with one.
         """
         prepared = unicodedata.normalize("NFKC", text)
-        prepared = self._WHITESPACE_BETWEEN_DIGITS.sub("-", prepared)
+        prepared = self._WHITESPACE_BETWEEN_NUMBERS.sub("-", prepared)
         prepared = self._normalize_dashes(self._WHITESPACE.sub("", prepared))
         matched = self._POSTAL_CODE.match(prepared)
         if matched is None:
@@ -129,6 +134,24 @@ class TextNormalizer:
             raise ValueError(f"Invalid postal code: {text!r}.")
         return matched.group("head") + matched.group("tail")
 
+    def describe_empty(self, text: str) -> str:
+        """
+        Explain why a text normalizes to nothing.
+
+        Parameters
+        ----------
+        text : str
+            Raw text whose ``normalize`` result is empty.
+
+        Returns
+        -------
+        str
+            Message that tells a postal code written alone from a blank text.
+        """
+        if self.extract_postal_code(text) is not None:
+            return f"Address {text!r} has only a postal code; list its towns by postal code."
+        return "Address must not be blank."
+
     def normalize_name(self, name: str) -> set[str]:
         """
         Normalize a registry name into every strict form it can take inside an address.
@@ -151,9 +174,39 @@ class TextNormalizer:
             self._normalize(name, is_trailing_number_converted=False),
         }
 
+    def find_original_suffix(self, text: str, normalized_suffix: str) -> str:
+        """
+        Find the end of a raw text that a suffix of its normalized form came from.
+
+        Parameters
+        ----------
+        text : str
+            Raw text as given to ``normalize``.
+        normalized_suffix : str
+            Suffix of ``normalize(text)``, such as the text left after a match.
+
+        Returns
+        -------
+        str
+            Shortest end of ``text`` that normalizes to ``normalized_suffix``, without
+            surrounding whitespace, or ``normalized_suffix`` itself when no end of
+            ``text`` normalizes to it. Ends whose normalized form is clearly longer than
+            ``normalized_suffix`` are not searched.
+        """
+        if not normalized_suffix:
+            return ""
+        for start in range(len(text) - 1, -1, -1):
+            candidate = text[start:]
+            normalized_candidate = self.normalize(candidate)
+            if normalized_candidate == normalized_suffix:
+                return candidate.strip()
+            if len(normalized_candidate) > len(normalized_suffix) + self._SUFFIX_SEARCH_SLACK:
+                break
+        return normalized_suffix
+
     def _normalize(self, text: str, *, is_trailing_number_converted: bool) -> str:
         normalized = unicodedata.normalize("NFKC", text)
-        normalized = self._WHITESPACE_BETWEEN_DIGITS.sub("-", normalized)
+        normalized = self._WHITESPACE_BETWEEN_NUMBERS.sub("-", normalized)
         normalized = self._WHITESPACE.sub("", normalized)
         normalized = self._normalize_dashes(normalized)
         normalized = self._POSTAL_CODE.sub("", normalized)

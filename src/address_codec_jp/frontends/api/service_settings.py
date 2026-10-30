@@ -27,12 +27,15 @@ class ServiceSettings:
     is_coverage_required : bool
         Whether a query whose municipality has not been prepared is rejected with
         HTTP 503 instead of falling back to an enclosing area.
+    max_input_length : int
+        Largest number of characters of one input, such as an address; longer inputs
+        are rejected with HTTP 400, because matching slows down quickly with length.
 
     Raises
     ------
     ValueError
-        If ``publisher`` is blank, or ``thread_count`` or ``max_batch_size`` is not
-        positive.
+        If ``publisher`` is blank, or ``thread_count``, ``max_batch_size``, or
+        ``max_input_length`` is not positive.
     """
 
     PUBLISHER_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_PUBLISHER"
@@ -40,6 +43,7 @@ class ServiceSettings:
     THREAD_COUNT_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_THREADS"
     MAX_BATCH_SIZE_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE"
     COVERAGE_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED"
+    MAX_INPUT_LENGTH_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH"
     _TRUE_TEXTS: ClassVar[frozenset[str]] = frozenset({"1", "true", "yes"})
     _FALSE_TEXTS: ClassVar[frozenset[str]] = frozenset({"0", "false", "no"})
 
@@ -48,6 +52,7 @@ class ServiceSettings:
     thread_count: int = 4
     max_batch_size: int = 1000
     is_coverage_required: bool = True
+    max_input_length: int = 1000
 
     def __post_init__(self) -> None:
         if not self.publisher.strip():
@@ -56,6 +61,8 @@ class ServiceSettings:
             raise ValueError(f"thread_count must be positive, got {self.thread_count}.")
         if self.max_batch_size <= 0:
             raise ValueError(f"max_batch_size must be positive, got {self.max_batch_size}.")
+        if self.max_input_length <= 0:
+            raise ValueError(f"max_input_length must be positive, got {self.max_input_length}.")
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> Self:
@@ -63,9 +70,9 @@ class ServiceSettings:
         Read the settings from environment variables.
 
         ``ADDRESS_CODEC_JP_API_PUBLISHER`` is required. ``ADDRESS_CODEC_JP_API_THREADS``,
-        ``ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE``, and
-        ``ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED`` (``true`` or ``false``) override the
-        defaults; the cache directory follows ``ADDRESS_CODEC_JP_CACHE_DIR``.
+        ``ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE``, ``ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH``,
+        and ``ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED`` (``true`` or ``false``) override
+        the defaults; the cache directory follows ``ADDRESS_CODEC_JP_CACHE_DIR``.
 
         Parameters
         ----------
@@ -97,6 +104,9 @@ class ServiceSettings:
             ),
             is_coverage_required=cls._parse_flag(
                 environment.get(cls.COVERAGE_VARIABLE), default=defaults.is_coverage_required
+            ),
+            max_input_length=int(
+                environment.get(cls.MAX_INPUT_LENGTH_VARIABLE, defaults.max_input_length)
             ),
         )
 

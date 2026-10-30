@@ -164,6 +164,9 @@ class AreaShape:
         """
         Build the shape as a GeoJSON MultiPolygon geometry object.
 
+        Exterior rings run counterclockwise and holes clockwise, as RFC 7946 requires,
+        whatever the orientation of the source; a ring is reversed, never simplified.
+
         Returns
         -------
         dict[str, str | list[list[list[list[float]]]]]
@@ -171,13 +174,17 @@ class AreaShape:
             about a centimeter.
         """
         coordinates = [
-            [self._write_ring(ring) for ring in (polygon.exterior, *polygon.holes)]
+            [
+                self._write_ring(polygon.exterior, is_clockwise=False),
+                *(self._write_ring(hole, is_clockwise=True) for hole in polygon.holes),
+            ]
             for polygon in self.polygons
         ]
         return {"type": "MultiPolygon", "coordinates": coordinates}
 
-    def _write_ring(self, ring: Ring) -> list[list[float]]:
+    def _write_ring(self, ring: Ring, *, is_clockwise: bool) -> list[list[float]]:
+        oriented = ring if Polygon.is_clockwise(ring) == is_clockwise else ring[::-1]
         return [
             [round(longitude, self._DECIMALS), round(latitude, self._DECIMALS)]
-            for longitude, latitude in ring
+            for longitude, latitude in oriented
         ]

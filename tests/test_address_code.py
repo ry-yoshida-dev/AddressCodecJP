@@ -87,6 +87,11 @@ def test_rejects_residence_without_block() -> None:
         _ = LotNumber(block=None, residence=3)
 
 
+def test_rejects_oversized_lot_numbers() -> None:
+    with pytest.raises(ValueError, match="must not exceed"):
+        _ = AddressCode.parse("131016-0011001-99999999999999999999")
+
+
 def test_rejects_lot_without_town() -> None:
     with pytest.raises(ValueError, match="require a machiaza_id"):
         _ = AddressCode("131016", None, LotNumber(1))

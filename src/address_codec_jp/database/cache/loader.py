@@ -6,6 +6,7 @@ from pathlib import Path
 from address_codec_jp.address import AddressCode, Prefecture
 from address_codec_jp.database.cache.area_target import AreaTarget
 from address_codec_jp.database.cache.directory import CacheDirectory
+from address_codec_jp.database.cache.file_signature import DatabaseFileSignature
 from address_codec_jp.database.cache.import_ledger import ImportLedger
 from address_codec_jp.database.importing import AreaImporter, RegistryImporter
 from address_codec_jp.datasets.address_base_registry import AbrDataset, DistributionScope
@@ -14,6 +15,7 @@ from address_codec_jp.datasets.download import (
     DistributedFile,
     RegistryDownloader,
 )
+from address_codec_jp.errors import DatabaseReplacedError
 from address_codec_jp.results import AreaSource
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -25,7 +27,11 @@ class CacheLoader:
 
     Every write holds the lock of the directory and downloads into a working directory
     that is removed afterwards. Files already imported, or known to be unpublished, are
-    skipped without taking the lock. Progress is logged at INFO level.
+    skipped without taking the lock. The area files of one dataset of a municipality are
+    imported in one transaction, so that it is logged as imported only when all of them
+    are. Additions on behalf of a codec name the file the codec opened, and are refused
+    when the database has been replaced or removed since. Progress is logged at INFO
+    level.
 
     Parameters
     ----------
@@ -106,7 +112,9 @@ class CacheLoader:
             _ = self._directory.remove_obsolete()
             _LOGGER.info("Built %s.", database_path)
 
-    def add_registry_files(self, targets: list[DistributedFile]) -> None:
+    def add_registry_files(
+        self, targets: list[DistributedFile], opened_file: DatabaseFileSignature | None = None
+    ) -> None:
         """
         Import registry files unless they are imported or known to be unpublished.
 
@@ -114,17 +122,23 @@ class CacheLoader:
         ----------
         targets : list[DistributedFile]
             Registry files to add; those the site does not distribute are remembered.
+        opened_file : DatabaseFileSignature | None
+            File a codec reads, or ``None`` when no codec waits for the files.
 
         Raises
         ------
+        DatabaseReplacedError
+            If the database is no longer ``opened_file``.
         RegistryDownloadError
             If a registry file cannot be downloaded.
         """
         database_path = self._directory.database_path
+        self._check_opened_file(opened_file)
         self._ledger.read(database_path)
         if all(self._ledger.is_registry_file_settled(target.file_name) for target in targets):
             return
         with self._directory.locked():
+            self._check_opened_file(opened_file)
             self._ledger.forget()
             self._ledger.read(database_path)
             pending = [
@@ -152,27 +166,38 @@ class CacheLoader:
             finally:
                 shutil.rmtree(working_directory, ignore_errors=True)
 
-    def add_areas(self, targets: list[AreaTarget]) -> None:
+    def add_areas(
+        self, targets: list[AreaTarget], opened_file: DatabaseFileSignature | None = None
+    ) -> None:
         """
         Import area datasets unless they are imported or known to be unpublished.
+
+        Each dataset is stored with all its files or not at all; the datasets imported
+        before one that fails are kept.
 
         Parameters
         ----------
         targets : list[AreaTarget]
             Area datasets to add.
+        opened_file : DatabaseFileSignature | None
+            File a codec reads, or ``None`` when no codec waits for the shapes.
 
         Raises
         ------
+        DatabaseReplacedError
+            If the database is no longer ``opened_file``.
         RegistryDownloadError
             If a file cannot be downloaded.
         BoundaryFormatError
             If a downloaded file is malformed.
         """
         database_path = self._directory.database_path
+        self._check_opened_file(opened_file)
         self._ledger.read(database_path)
         if all(self._ledger.is_area_settled(target) for target in targets):
             return
         with self._directory.locked():
+            self._check_opened_file(opened_file)
             self._ledger.forget()
             self._ledger.read(database_path)
             pending = [target for target in targets if not self._ledger.is_area_settled(target)]
@@ -184,8 +209,8 @@ class CacheLoader:
                 with AreaImporter.open(database_path) as importer:
                     for target in pending:
                         paths = self._download_areas(target, working_directory)
-                        for path in paths:
-                            _ = importer.import_file(path, target.lg_code)
+                        if paths:
+                            _ = importer.import_files(paths, target.lg_code)
                         self._ledger.settle_area(target, is_published=bool(paths))
             finally:
                 shutil.rmtree(working_directory, ignore_errors=True)
@@ -263,6 +288,17 @@ class CacheLoader:
             target.dataset.scope is DistributionScope.NATIONWIDE
             or target.dataset is AbrDataset.TOWN_POSITION
         )
+
+    def _check_opened_file(self, opened_file: DatabaseFileSignature | None) -> None:
+        if opened_file is None:
+            return
+        current = DatabaseFileSignature.of(self._directory.database_path)
+        if current is None or not opened_file.is_same_file(current):
+            raise DatabaseReplacedError(
+                f"The address database {self._directory.database_path} was replaced or "
+                + "removed after the codec opened it, such as by DatabaseCache.refresh or "
+                + "clear; close the codec and open it again."
+            )
 
     def _download_areas(self, target: AreaTarget, directory: Path) -> list[Path]:
         match target.source:
