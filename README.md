@@ -48,12 +48,13 @@ dependencies = [
 ```
 
 No database setup is needed. On first use, `AddressCodec.open()` downloads the
-nationwide town master and the prefecture, municipality, and town points (about 15 MB)
-from the ABR download site and builds a database (about 180 MB) in the user cache
-directory. The block, residence, and land parcel points of a municipality are added the
-first time an address there is located or verified, or a coordinate near it is
-searched; its census town boundaries the first time an area there is looked up, and its
-registry maps only when a parcel shape is needed.
+nationwide town master and the prefecture, municipality, and town points from the ABR
+download site and builds a database in the user cache directory. The block, residence,
+and land parcel points of a municipality are added the first time an address there is
+located or verified, or a coordinate near it is searched; its census town boundaries the
+first time an area there is looked up, and its registry maps only when a parcel shape is
+needed. The database therefore grows with every municipality added; `describe()` or
+`address-codec-jp cache info` reports its current size.
 
 The cache is a single SQLite file, `towns-v{schema version}.sqlite3`, e.g. in
 `~/Library/Caches/address-codec-jp/` on macOS and `~/.cache/address-codec-jp/` on Linux.
@@ -171,6 +172,12 @@ without a polygon of its own is made of the polygons of its towns. Shapes are on
 JGD2011 and written as GeoJSON MultiPolygons. Output is from the datasets released in
 October 2026.
 
+Names before the town may be shortened: the prefecture (`千代田区丸の内`), the ward of a
+designated city (`横浜市山下町`), its city (`中京区上本能寺前町`), or the whole
+municipality (`霞が関1-1-1`). When the rest fits several areas, `AmbiguousAddressError`
+lists them in `candidates`; a prefecture or postal code written with the address narrows
+them down (`大阪府梅田3-1-1`).
+
 ### Command line
 
 ```bash
@@ -229,7 +236,8 @@ OpenAPI documentation is served at `/docs`.
 | `ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE` | `1000` | Inputs per batch request |
 | `ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED` | `true` | Reject with 503 a query whose municipality lacks prepared lots or boundaries, instead of falling back to an enclosing area |
 
-Scale with uvicorn worker processes; a worker with four threads took about 100 MB. Run
+Scale with uvicorn worker processes; each thread holds its own codec and matching
+indexes, so memory grows with the threads per worker. Run
 `address-codec-jp cache prepare` or `cache refresh` on the same directory to extend or
 update a running service: a replaced database is reopened by each worker thread before
 its next query, so no restart is needed. With coverage required, a nearest address is

@@ -48,3 +48,14 @@ class TownSource(Protocol):
             Local government codes. Empty when no town has the postal code.
         """
         ...
+
+    def map_oaza_names(self) -> dict[str, set[str]]:
+        """
+        Map every oaza name to the municipalities that have a town under it.
+
+        Returns
+        -------
+        dict[str, set[str]]
+            Local government codes by oaza name. Towns without an oaza name are left out.
+        """
+        ...

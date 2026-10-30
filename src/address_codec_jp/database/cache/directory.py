@@ -60,7 +60,7 @@ class CacheDirectory:
         Returns
         -------
         Path
-            File such as ``towns-v4.sqlite3`` in the directory.
+            File such as ``towns-v5.sqlite3`` in the directory.
         """
         return self._root / f"towns-v{AddressDatabase.SCHEMA_VERSION}.sqlite3"
 

@@ -8,11 +8,13 @@ from address_codec_jp import (
     AddressFormat,
     AddressLevel,
     AddressNotFoundError,
+    AmbiguousAddressError,
     DigitWidth,
     LotStyle,
     NumeralStyle,
     RegistryImporter,
 )
+from address_codec_jp.text.matching import AreaMatcher
 
 TOWN_MASTER_HEADER: str = (
     "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"
@@ -83,6 +85,14 @@ TOWN_MASTER_HEADER: str = (
         ("北海道札幌市中央区", "011011"),
         ("函館市弁天町1丁", "012025-0007001"),
         ("函館市弁天町1丁目2", "012025-0007001-2"),
+        ("中区山下町279", "141046-0001000-279"),
+        ("神奈川県中区山下町279", "141046-0001000-279"),
+        ("北区芦辺町12番3号", "231037-0001000-12-3"),
+        ("霞が関1-2", "131016-0002001-2"),
+        ("東京都霞ヶ関1丁目2番", "131016-0002001-2"),
+        ("〒100-0013 霞が関1-2", "131016-0002001-2"),
+        ("府川町5", "342084-0001000-5"),
+        ("大字竹間沢123-4", "113247-0001000-123-4"),
     ],
 )
 def test_encode(codec: AddressCodec, address: str, expected: str) -> None:
@@ -124,6 +134,9 @@ def test_match_keeps_building_name(codec: AddressCodec) -> None:
         "台東区浅草橋12",
         "輪島市門前町本市112番3号",
         "名古屋市北区芦辺町五丁目",
+        "広島県霞が関1-2",
+        "霞が関ビル",
+        "存在しない町1-2",
     ],
 )
 def test_encode_rejects_unmatched(codec: AddressCodec, address: str) -> None:
@@ -273,6 +286,49 @@ def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> N
         assert str(codec.encode("北市山")) == "469025"
         with pytest.raises(LookupError, match="北市山"):
             _ = codec.encode("北市山谷1-2")
+
+
+def test_town_without_municipality_shared_by_municipalities(tmp_path: Path) -> None:
+    master = tmp_path / "master.csv"
+    _ = master.write_text(
+        TOWN_MASTER_HEADER
+        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,9990001,,0\n"
+        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,9990002,,0\n"
+        + "469025,0002000,試験県,,南市,,川原,,,,,,,,,,9990002,,0\n",
+        encoding="utf-8",
+    )
+    with RegistryImporter.open(":memory:") as importer:
+        _ = importer.import_file(master)
+        codec = AddressCodec(importer.database)
+        with pytest.raises(AmbiguousAddressError) as raised:
+            _ = codec.encode("山田1-2")
+        assert [str(code) for code in raised.value.candidates] == [
+            "469017-0001000-1-2",
+            "469025-0001000-1-2",
+        ]
+        assert str(codec.encode("〒999-0002 山田1-2")) == "469025-0001000-1-2"
+        assert str(codec.encode("川原1-2")) == "469025-0002000-1-2"
+
+
+def test_town_without_municipality_in_too_many_municipalities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(AreaMatcher, "_TOWN_ONLY_MUNICIPALITY_LIMIT", 1)
+    master = tmp_path / "master.csv"
+    _ = master.write_text(
+        TOWN_MASTER_HEADER
+        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0\n"
+        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,,,0\n"
+        + "469033,0001000,試験県,,西市,,山田東,,,,,,,,,,,,0\n",
+        encoding="utf-8",
+    )
+    with RegistryImporter.open(":memory:") as importer:
+        _ = importer.import_file(master)
+        codec = AddressCodec(importer.database)
+        with pytest.raises(AmbiguousAddressError, match="Add the municipality") as raised:
+            _ = codec.encode("山田1-2")
+        assert [str(code) for code in raised.value.candidates] == ["469017", "469025"]
+        assert str(codec.encode("山田東1-2")) == "469033-0001000-1-2"
 
 
 AMBIGUOUS_TOWN_CODES: frozenset[str] = frozenset(

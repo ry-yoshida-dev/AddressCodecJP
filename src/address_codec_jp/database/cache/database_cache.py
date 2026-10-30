@@ -35,13 +35,13 @@ class DatabaseCache:
     Address database built on first use from the registry download site.
 
     The database is first built with the nationwide town master and the representative
-    points of all prefectures, municipalities, and towns, which takes about 15 MB of
-    downloads and 180 MB on disk. Blocks, residences, and land parcels are added by
-    ``ensure_lots`` when an area needs them, from the residence indication and land
-    parcel files of its municipality, and town boundaries and land parcel maps by
-    ``ensure_areas``. ``prepare`` adds them ahead of time, e.g. while building a container
-    image, and with ``is_download_allowed=False`` nothing is downloaded on use, so that a
-    service answers from what was prepared and never waits for the network.
+    points of all prefectures, municipalities, and towns. Blocks, residences, and land
+    parcels are added by ``ensure_lots`` when an area needs them, from the residence
+    indication and land parcel files of its municipality, and town boundaries and land
+    parcel maps by ``ensure_areas``. ``prepare`` adds them ahead of time, e.g. while
+    building a container image, and with ``is_download_allowed=False`` nothing is
+    downloaded on use, so that a service answers from what was prepared and never waits
+    for the network.
 
     Each schema version has its own file, so a new version of the library builds a new
     database instead of failing on an old one; the files of older versions are removed
@@ -174,7 +174,7 @@ class DatabaseCache:
         Returns
         -------
         Path
-            File such as ``towns-v4.sqlite3`` in the cache directory.
+            File such as ``towns-v5.sqlite3`` in the cache directory.
         """
         return self._directory.database_path
 
@@ -310,7 +310,7 @@ class DatabaseCache:
         is_area_included : bool
             Whether the census town boundaries are added.
         is_parcel_included : bool
-            Whether the registry maps are added; tens of megabytes per municipality.
+            Whether the registry maps are added; they are large compared with the points.
 
         Raises
         ------

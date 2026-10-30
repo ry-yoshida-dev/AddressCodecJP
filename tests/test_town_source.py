@@ -30,6 +30,14 @@ class InMemoryTownSource:
         """List the municipalities that have a town with the postal code."""
         return {town.lg_code for town in self._towns if postal_code in town.postal_codes}
 
+    def map_oaza_names(self) -> dict[str, set[str]]:
+        """Map the oaza names of the towns to their municipalities."""
+        lg_codes_by_name: dict[str, set[str]] = {}
+        for town in self._towns:
+            if town.oaza_name:
+                lg_codes_by_name.setdefault(town.oaza_name, set()).add(town.lg_code)
+        return lg_codes_by_name
+
 
 def test_matcher_runs_on_any_town_source() -> None:
     source: TownSource = InMemoryTownSource(list(AbrTownCsvReader().read(FIXTURE)))

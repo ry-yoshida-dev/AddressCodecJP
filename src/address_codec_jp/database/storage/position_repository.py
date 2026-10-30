@@ -6,6 +6,7 @@ from typing import ClassVar
 from geo_coordinate import GeodeticCrs
 
 from address_codec_jp.address import AddressCode, LotNumber, LotSystem
+from address_codec_jp.database.storage.lot_system_column import LotSystemColumn
 from address_codec_jp.database.storage.position_changes import PositionChanges
 from address_codec_jp.datasets.address_base_registry import (
     AreaPosition,
@@ -50,23 +51,23 @@ class PositionRepository:
         CREATE TABLE town_positions (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
-            lot_system TEXT NOT NULL,
+            lot_system INTEGER NOT NULL,
             longitude REAL NOT NULL,
             latitude REAL NOT NULL,
             epsg INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id)
-        )
+        ) WITHOUT ROWID
         """,
         """
         CREATE TABLE lot_entries (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
-            lot_system TEXT NOT NULL,
+            lot_system INTEGER NOT NULL,
             lot_id TEXT NOT NULL,
             block INTEGER NOT NULL,
             residence INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id, lot_system, lot_id)
-        )
+        ) WITHOUT ROWID
         """,
         """
         CREATE INDEX lot_entries_by_number
@@ -80,13 +81,13 @@ class PositionRepository:
         CREATE TABLE lot_positions (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
-            lot_system TEXT NOT NULL,
+            lot_system INTEGER NOT NULL,
             lot_id TEXT NOT NULL,
             longitude REAL NOT NULL,
             latitude REAL NOT NULL,
             epsg INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id, lot_system, lot_id)
-        )
+        ) WITHOUT ROWID
         """,
         """
         CREATE INDEX lot_positions_by_coordinate
@@ -228,7 +229,7 @@ class PositionRepository:
                     (
                         removal.lg_code,
                         removal.machiaza_id,
-                        removal.lot_system.value,
+                        LotSystemColumn.encode(removal.lot_system),
                         removal.lot_id,
                     )
                     for removal in removals
@@ -238,9 +239,9 @@ class PositionRepository:
 
     def _save_chunk(self, records: Sequence[PositionRecord]) -> None:
         area_rows: list[tuple[str, float, float, int]] = []
-        town_rows: list[tuple[str, str, str, float, float, int]] = []
-        entry_rows: list[tuple[str, str, str, str, int, int]] = []
-        lot_position_rows: list[tuple[str, str, str, str, float, float, int]] = []
+        town_rows: list[tuple[str, str, int, float, float, int]] = []
+        entry_rows: list[tuple[str, str, int, str, int, int]] = []
+        lot_position_rows: list[tuple[str, str, int, str, float, float, int]] = []
         for record in records:
             match record:
                 case AreaPosition(lg_code=lg_code, point=point):
@@ -250,7 +251,7 @@ class PositionRepository:
                         (
                             record.lg_code,
                             record.machiaza_id,
-                            record.lot_system.value,
+                            LotSystemColumn.encode(record.lot_system),
                             record.point.longitude,
                             record.point.latitude,
                             record.point.crs.epsg,
@@ -261,7 +262,7 @@ class PositionRepository:
                         (
                             record.lg_code,
                             record.machiaza_id,
-                            record.lot_system.value,
+                            LotSystemColumn.encode(record.lot_system),
                             record.lot_id,
                             *self._to_number_columns(record.lot),
                         )
@@ -271,7 +272,7 @@ class PositionRepository:
                         (
                             record.lg_code,
                             record.machiaza_id,
-                            record.lot_system.value,
+                            LotSystemColumn.encode(record.lot_system),
                             record.lot_id,
                             record.point.longitude,
                             record.point.latitude,
@@ -365,7 +366,7 @@ class PositionRepository:
         return TownPosition(
             lg_code=lg_code,
             machiaza_id=machiaza_id,
-            lot_system=LotSystem(str(row[0])),
+            lot_system=LotSystemColumn.decode(row[0]),
             point=self._to_point(row[1:]),
         )
 
@@ -403,7 +404,7 @@ class PositionRepository:
                 + "JOIN lot_positions AS p USING (lg_code, machiaza_id, lot_system, lot_id) "
                 + "WHERE e.lg_code = ? AND e.machiaza_id = ? AND e.lot_system = ? "
                 + "AND e.block = ? AND e.residence = ? ORDER BY e.lot_id LIMIT 1",
-                (lg_code, machiaza_id, lot_system.value, block, residence),
+                (lg_code, machiaza_id, LotSystemColumn.encode(lot_system), block, residence),
             )
             if row is not None:
                 return self._to_point(row)

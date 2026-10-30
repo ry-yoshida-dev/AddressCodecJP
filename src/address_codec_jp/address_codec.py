@@ -313,7 +313,7 @@ class AddressCodec:
         -------
         list[Address]
             Town-level addresses ordered by code. Empty when no town has the postal code;
-            the registry gives postal codes for only about 13% of the towns.
+            the registry gives postal codes for only part of the towns.
 
         Raises
         ------

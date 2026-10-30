@@ -30,7 +30,13 @@ class AreaMatcher:
     town name must then confirm the municipality. Prefecture and county
     names may be omitted, the prefecture may be written without ``都``/``府``/``県``
     (``東京``), and the ward of a designated city may be omitted (``横浜市山下町``). When
-    such a name fits several municipalities, the town name must decide among them. For
+    such a name fits several municipalities, the town name must decide among them. A ward
+    written without its city (``中京区``) is tried only after every full municipality name.
+    An address that starts with no municipality name is read as a town name, optionally
+    after the prefecture (``霞が関1-1-1``): every municipality with an oaza that starts the
+    text is tried, and the reading must include lot numbers or end with the town name. An
+    oaza name followed by a number or the end of the text and found in too many
+    municipalities (``本町1-1``) rejects the address as ambiguous. For
     the text after the municipality, every combination of oaza, chome, koaza, and lot
     numbers is tried, and the best ``TownInterpretation`` wins. A reading is discarded when it reads
     no lot numbers but leaves digits unread (``浅草`` + ``橋6-1-1``), or puts lot numbers
@@ -57,6 +63,8 @@ class AreaMatcher:
     _UNREAD_CHOME: ClassVar[re.Pattern[str]] = re.compile(r"[0-9]+丁")
     _ASCII_DIGITS: ClassVar[frozenset[str]] = frozenset("0123456789")
     _PREFECTURE_SUFFIXES: ClassVar[tuple[str, ...]] = ("都", "府", "県")
+    _TOWN_ONLY_MUNICIPALITY_LIMIT: ClassVar[int] = 50
+    _TOWN_NAME_END: ClassVar[re.Pattern[str]] = re.compile(r"$|[0-9-]")
 
     def __init__(
         self, repository: TownSource, normalizer: TextNormalizer, lot_parser: LotNumberParser
@@ -66,7 +74,10 @@ class AreaMatcher:
         self._lot_parser: LotNumberParser = lot_parser
         self._prefecture_index: dict[str, Prefecture] | None = None
         self._municipality_index: dict[str, set[Municipality]] | None = None
-        self._ward_omitted_keys: set[str] = set()
+        self._abbreviated_keys: set[str] = set()
+        self._ward_index: dict[str, set[Municipality]] = {}
+        self._oaza_municipality_index: dict[str, set[str]] | None = None
+        self._municipalities_by_code: dict[str, Municipality] | None = None
         self._oaza_indexes: dict[str, NameIndex] = {}
         self._koaza_indexes: dict[tuple[tuple[str, str], ...], NameIndex] = {}
 
@@ -131,7 +142,7 @@ class AreaMatcher:
             for municipality_match in self._match_municipalities(normalized_address)
         ]
         if not municipality_matches:
-            return self._match_prefecture_only(normalized_address, postal_code)
+            return self._match_without_municipality(normalized_address, postal_code)
         longest_match = municipality_matches[0]
         if not NameIndex.strip_prefix(longest_match.remainder):
             return self._match_municipality_only(normalized_address, postal_code, longest_match)
@@ -151,37 +162,105 @@ class AreaMatcher:
             + f"{longest_match.remainder!r}."
         )
 
-    def _match_prefecture_only(self, text: str, postal_code: str | None) -> MatchOutcome:
+    def _match_without_municipality(self, text: str, postal_code: str | None) -> MatchOutcome:
         index = self._get_prefecture_index()
         keys = self._matching_prefixes(self._normalizer.fold(text), index)
-        if not keys:
-            return AddressNotFoundError(f"No prefecture or municipality matches {text!r}.")
-        key = keys[0]
-        prefecture = index[key]
-        remainder = text[len(key) :]
-        if remainder:
-            return AddressNotFoundError(
-                f"No municipality in {prefecture.name} matches {remainder!r}."
+        prefecture = index[keys[0]] if keys else None
+        remainder = text[len(keys[0]) :] if keys else text
+        if prefecture is not None and not remainder:
+            return AddressMatch(
+                address=Address(prefecture=prefecture),
+                remainder="",
+                normalized_address=text,
+                postal_code=postal_code,
+                town_name_tier=None,
             )
-        return AddressMatch(
-            address=Address(prefecture=prefecture),
-            remainder="",
-            normalized_address=text,
-            postal_code=postal_code,
-            town_name_tier=None,
+        town_outcome = self._match_town_only(text, remainder, postal_code, prefecture)
+        if town_outcome is not None:
+            return town_outcome
+        if prefecture is None:
+            return AddressNotFoundError(f"No prefecture, municipality, or town matches {text!r}.")
+        return AddressNotFoundError(
+            f"No municipality or town in {prefecture.name} matches {remainder!r}."
         )
+
+    def _match_town_only(
+        self,
+        normalized_address: str,
+        text: str,
+        postal_code: str | None,
+        prefecture: Prefecture | None,
+    ) -> MatchOutcome | None:
+        index = self._get_oaza_municipality_index()
+        municipalities_by_code = self._get_municipalities_by_code()
+        comparable_text = self._fold_town_text(text)
+        skipped_length = len(text) - len(comparable_text)
+        candidates: dict[str, Municipality] = {}
+        for key in self._matching_prefixes(comparable_text, index):
+            municipalities = self._narrow_by_postal_code(
+                MunicipalityMatch(
+                    name="",
+                    municipalities=[
+                        municipalities_by_code[lg_code]
+                        for lg_code in sorted(index[key])
+                        if prefecture is None
+                        or municipalities_by_code[lg_code].prefecture_name == prefecture.name
+                    ],
+                    remainder=text,
+                    is_name_abbreviated=True,
+                ),
+                postal_code,
+            ).municipalities
+            if len(municipalities) <= self._TOWN_ONLY_MUNICIPALITY_LIMIT:
+                candidates.update((item.lg_code, item) for item in municipalities)
+            elif self._TOWN_NAME_END.match(text[skipped_length + len(key) :]):
+                return AmbiguousAddressError(
+                    f"The town name of {text!r} is found in {len(municipalities)} "
+                    + "municipalities. Add the municipality.",
+                    tuple(AddressCode(lg_code=item.lg_code) for item in municipalities),
+                )
+        if not candidates:
+            return None
+        municipality_match = MunicipalityMatch(
+            name="",
+            municipalities=[candidates[lg_code] for lg_code in sorted(candidates)],
+            remainder=text,
+            is_name_abbreviated=True,
+        )
+        interpretations = [
+            item
+            for item in self._interpret_town(municipality_match, is_town_required=True)
+            if item.lot.numbers or not item.remainder
+        ]
+        if not interpretations:
+            return None
+        return self._select(normalized_address, postal_code, municipality_match, interpretations)
 
     def _match_municipalities(self, text: str) -> list[MunicipalityMatch]:
         index = self._get_municipality_index()
-        return [
-            MunicipalityMatch(
-                name=text[: len(key)],
-                municipalities=sorted(index[key], key=lambda municipality: municipality.lg_code),
-                remainder=text[len(key) :],
-                is_ward_omitted=key in self._ward_omitted_keys,
+        ward_index = self._get_ward_index()
+        folded = self._normalizer.fold(text)
+        full_name_matches = [
+            self._to_municipality_match(
+                text, key, index[key], is_name_abbreviated=key in self._abbreviated_keys
             )
-            for key in self._matching_prefixes(self._normalizer.fold(text), index)
+            for key in self._matching_prefixes(folded, index)
         ]
+        ward_matches = [
+            self._to_municipality_match(text, key, ward_index[key], is_name_abbreviated=False)
+            for key in self._matching_prefixes(folded, ward_index)
+        ]
+        return full_name_matches + ward_matches
+
+    def _to_municipality_match(
+        self, text: str, key: str, municipalities: set[Municipality], *, is_name_abbreviated: bool
+    ) -> MunicipalityMatch:
+        return MunicipalityMatch(
+            name=text[: len(key)],
+            municipalities=sorted(municipalities, key=lambda municipality: municipality.lg_code),
+            remainder=text[len(key) :],
+            is_name_abbreviated=is_name_abbreviated,
+        )
 
     def _narrow_by_postal_code(
         self, municipality_match: MunicipalityMatch, postal_code: str | None
@@ -199,7 +278,7 @@ class AreaMatcher:
         return replace(
             municipality_match,
             municipalities=selected,
-            is_ward_omitted=municipality_match.is_ward_omitted and len(selected) > 1,
+            is_name_abbreviated=municipality_match.is_name_abbreviated and len(selected) > 1,
         )
 
     def _match_municipality_only(
@@ -245,7 +324,6 @@ class AreaMatcher:
         interpretations: list[TownInterpretation],
     ) -> MatchOutcome:
         text = municipality_match.remainder
-        description = self._describe_all(municipality_match.municipalities)
         best_key = min(interpretation.ranking_key for interpretation in interpretations)
         best = [item for item in interpretations if item.ranking_key == best_key]
         if postal_code is not None:
@@ -254,8 +332,9 @@ class AreaMatcher:
         lots = {item.lot for item in best}
         candidates = self._candidate_codes(best)
         if len(towns) == 1 and len(lots) > 1:
+            municipality = next(iter(towns.values())).municipality
             return AmbiguousAddressError(
-                f"Lot numbers of {text!r} in {description} are ambiguous: "
+                f"Lot numbers of {text!r} in {self._describe(municipality)} are ambiguous: "
                 + f"{sorted(map(str, lots))}.",
                 candidates,
             )
@@ -265,9 +344,7 @@ class AreaMatcher:
                 + f"{town.koaza_name}({town.lg_code}-{town.machiaza_id})"
                 for town in towns.values()
             )
-            return AmbiguousAddressError(
-                f"{text!r} in {description} is ambiguous: {names}.", candidates
-            )
+            return AmbiguousAddressError(f"{text!r} is ambiguous: {names}.", candidates)
         town = next(iter(towns.values()))
         return AddressMatch(
             address=Address.for_town(town, best[0].lot),
@@ -400,6 +477,7 @@ class AreaMatcher:
     def _get_municipality_index(self) -> dict[str, set[Municipality]]:
         if self._municipality_index is None:
             index: dict[str, set[Municipality]] = defaultdict(set)
+            ward_index: dict[str, set[Municipality]] = defaultdict(set)
             municipalities = self._repository.list_municipalities()
             if not municipalities:
                 raise DatasetNotImportedError(
@@ -419,9 +497,36 @@ class AreaMatcher:
                     if municipality.ward_name:
                         ward_omitted_key = self._fold_name(prefix + municipality.city_name)
                         index[ward_omitted_key].add(municipality)
-                        self._ward_omitted_keys.add(ward_omitted_key)
+                        self._abbreviated_keys.add(ward_omitted_key)
+                        ward_index[self._fold_name(prefix + municipality.ward_name)].add(
+                            municipality
+                        )
+            self._ward_index = dict(ward_index)
             self._municipality_index = dict(index)
         return self._municipality_index
+
+    def _get_ward_index(self) -> dict[str, set[Municipality]]:
+        _ = self._get_municipality_index()
+        return self._ward_index
+
+    def _get_oaza_municipality_index(self) -> dict[str, set[str]]:
+        if self._oaza_municipality_index is None:
+            index: dict[str, set[str]] = defaultdict(set)
+            for oaza_name, lg_codes in self._repository.map_oaza_names().items():
+                for normalized_name in self._normalizer.normalize_name(oaza_name):
+                    key = self._fold_town_text(normalized_name)
+                    if key:
+                        index[key].update(lg_codes)
+            self._oaza_municipality_index = dict(index)
+        return self._oaza_municipality_index
+
+    def _get_municipalities_by_code(self) -> dict[str, Municipality]:
+        if self._municipalities_by_code is None:
+            self._municipalities_by_code = {
+                municipality.lg_code: municipality
+                for municipality in self._repository.list_municipalities()
+            }
+        return self._municipalities_by_code
 
     def _get_oaza_index(self, lg_code: str) -> NameIndex:
         if lg_code not in self._oaza_indexes:
@@ -451,6 +556,9 @@ class AreaMatcher:
 
     def _fold_name(self, name: str) -> str:
         return self._normalizer.fold(self._normalizer.normalize(name))
+
+    def _fold_town_text(self, normalized_text: str) -> str:
+        return self._normalizer.fold(NameIndex.strip_prefix(normalized_text))
 
     def _matching_prefixes(self, text: str, keys: Container[str]) -> list[str]:
         return [text[:length] for length in range(len(text), 0, -1) if text[:length] in keys]

@@ -4,9 +4,11 @@
 
 Identifies the most specific registered area at the start of a normalized address.
 The municipality is found by longest prefix, and a name shared by several
-municipalities is resolved by the town name. Every reading of oaza, chome, koaza, and
-lot numbers is then ranked; ties between different towns raise `AmbiguousAddressError`
-unless a written postal code tells them apart.
+municipalities is resolved by the town name. A ward written without its city, or an
+address that starts with a town name, is resolved by trying every municipality with
+such a ward or oaza. Every reading of oaza, chome, koaza, and lot numbers is then
+ranked; ties between different towns raise `AmbiguousAddressError` unless a written
+postal code tells them apart.
 
 ## Components
 
@@ -17,4 +19,4 @@ unless a written postal code tells them apart.
 | [candidate_set.py](candidate_set.py) | `CandidateSet`: towns compatible with a partial reading and the loosest `MatchTier` used |
 | [town_interpretation.py](town_interpretation.py) | `TownInterpretation`: a complete reading and its ranking key |
 | [municipality_match.py](municipality_match.py) | `MunicipalityMatch`: municipalities matching the leading name and remaining text |
-| [town_source.py](town_source.py) | `TownSource`: protocol of the municipality and town lookups that matching needs, implemented by `TownRepository` |
+| [town_source.py](town_source.py) | `TownSource`: protocol of the municipality, town, and oaza name lookups that matching needs, implemented by `TownRepository` |

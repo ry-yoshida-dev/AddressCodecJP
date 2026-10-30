@@ -1,9 +1,11 @@
 import sqlite3
+from collections import defaultdict
 from collections.abc import Iterable
 from itertools import batched
 from typing import ClassVar
 
-from address_codec_jp.address import LotSystem, Municipality, Prefecture, Town
+from address_codec_jp.address import Municipality, Prefecture, Town
+from address_codec_jp.database.storage.lot_system_column import LotSystemColumn
 from address_codec_jp.database.storage.town_replacement import TownReplacement
 from address_codec_jp.errors import AddressNotFoundError, RegistryFormatError
 
@@ -90,7 +92,7 @@ class TownRepository:
             koaza_kana TEXT NOT NULL,
             is_registered INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id)
-        )
+        ) WITHOUT ROWID
         """,
         """
         CREATE TABLE town_postal_codes (
@@ -98,7 +100,7 @@ class TownRepository:
             machiaza_id TEXT NOT NULL,
             postal_code TEXT NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id, postal_code)
-        )
+        ) WITHOUT ROWID
         """,
         """
         CREATE INDEX town_postal_codes_by_code
@@ -108,9 +110,9 @@ class TownRepository:
         CREATE TABLE town_lot_systems (
             lg_code TEXT NOT NULL,
             machiaza_id TEXT NOT NULL,
-            lot_system TEXT NOT NULL,
+            lot_system INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id, lot_system)
-        )
+        ) WITHOUT ROWID
         """,
     )
     _VALUE_SEPARATOR: ClassVar[str] = ";"
@@ -246,7 +248,7 @@ class TownRepository:
             _ = self._connection.executemany(
                 "INSERT INTO incoming_lot_systems VALUES (?, ?, ?)",
                 [
-                    (town.lg_code, town.machiaza_id, lot_system.value)
+                    (town.lg_code, town.machiaza_id, LotSystemColumn.encode(lot_system))
                     for town in chunk
                     for lot_system in town.lot_systems
                 ],
@@ -417,6 +419,23 @@ class TownRepository:
         ).fetchall()
         return {str(row[0]) for row in rows}
 
+    def map_oaza_names(self) -> dict[str, set[str]]:
+        """
+        Map every oaza name to the municipalities that have a town under it.
+
+        Returns
+        -------
+        dict[str, set[str]]
+            Local government codes by oaza name. Towns without an oaza name are left out.
+        """
+        lg_codes_by_name: dict[str, set[str]] = defaultdict(set)
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            "SELECT DISTINCT oaza_name, lg_code FROM towns WHERE oaza_name <> ''"
+        ).fetchall()
+        for row in rows:
+            lg_codes_by_name[str(row[0])].add(str(row[1]))
+        return dict(lg_codes_by_name)
+
     def list_towns_by_postal_code(self, postal_code: str) -> list[Town]:
         """
         List the registered towns that have a postal code.
@@ -489,7 +508,8 @@ class TownRepository:
             chome_kana=str(row[7]),
             koaza_kana=str(row[8]),
             lot_systems=frozenset(
-                LotSystem(value) for value in str(lot_systems).split(self._VALUE_SEPARATOR)
+                LotSystemColumn.decode(value)
+                for value in str(lot_systems).split(self._VALUE_SEPARATOR)
             ),
             is_registered=bool(row[9]),
             postal_codes=tuple(sorted(postal_codes.split(self._VALUE_SEPARATOR)))

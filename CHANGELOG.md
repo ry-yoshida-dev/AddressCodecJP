@@ -8,8 +8,20 @@ the API. The library is installed from git, so a version is a tagged commit
 
 ## [Unreleased]
 
+### Added
+
+- Addresses written without the municipality (`霞が関1-1-1`, `東京都霞が関1-1-1`) or with
+  a ward but without its designated city (`中京区上本能寺前町488`) are matched. A town
+  name found in several municipalities raises `AmbiguousAddressError` with the
+  candidates.
+- `TownSource.map_oaza_names`, which custom town sources must now implement.
+
 ### Changed
 
+- **Breaking:** the database schema version is 5. Tables keyed by town are stored
+  without row IDs and the numbering system as an integer, which makes the database
+  considerably smaller; a cache of version 4 is rebuilt on first use.
+- Messages of `AmbiguousAddressError` for several towns list only the candidate towns.
 - **Breaking:** the progress of `DatabaseCache` is logged by the loggers under
   `address_codec_jp.database.cache` instead of only
   `address_codec_jp.database.cache.database_cache`; listen on the package logger.
