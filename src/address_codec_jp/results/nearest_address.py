@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from address_codec_jp.address import AddressCode
-from address_codec_jp.results.address_location import AddressLocation
+from address_codec_jp.results.address.location import AddressLocation
 
 
 @dataclass(frozen=True, slots=True)

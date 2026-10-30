@@ -10,17 +10,15 @@ the position-related datasets as `PositionRecord`s that `storage` persists.
 
 | Component | Responsibility |
 | --- | --- |
-| [abr_csv_file.py](abr_csv_file.py) | `AbrCsvFile`: identifies the dataset of a registry CSV file or its ZIP archive and reads its rows, checking required columns and row lengths |
-| [abr_csv_row.py](abr_csv_row.py) | `AbrCsvRow`: line number and required column values of one data row |
-| [abr_dataset.py](abr_dataset.py) | `AbrDataset`: the downloadable and importable datasets, identified by their CSV header, with their distribution scope |
+| [csv_file.py](csv_file.py) | `AbrCsvFile`: identifies the dataset of a registry CSV file or its ZIP archive and reads its rows, checking required columns and row lengths |
+| [csv_row.py](csv_row.py) | `AbrCsvRow`: line number and required column values of one data row |
+| [dataset.py](dataset.py) | `AbrDataset`: the downloadable and importable datasets, identified by their CSV header, with their distribution scope |
 | [distribution_scope.py](distribution_scope.py) | `DistributionScope`: nationwide, per-prefecture, or per-municipality distribution |
-| [abr_town_csv_reader.py](abr_town_csv_reader.py) | `AbrTownCsvReader`: reads `mt_town_all.csv`, skipping abolished rows and naming the row of malformed values |
-| [abr_position_csv_reader.py](abr_position_csv_reader.py) | `AbrPositionCsvReader`: reads position extensions and the block, residence, and parcel number masters, turning abolished lots into removals |
+| [town_csv_reader.py](town_csv_reader.py) | `AbrTownCsvReader`: reads `mt_town_all.csv`, skipping abolished rows and naming the row of malformed values |
+| [position_csv_reader.py](position_csv_reader.py) | `AbrPositionCsvReader`: reads position extensions and the block, residence, and parcel number masters, turning abolished lots into removals |
 | [position_record.py](position_record.py) | `PositionRecord`: union of the records read from position-related datasets |
 | [area_position.py](area_position.py) | `AreaPosition`: point of a prefecture or municipality |
-| [lot_entry.py](lot_entry.py) | `LotEntry`: registry identifier of a block, residence, or parcel and its numbers |
-| [lot_position.py](lot_position.py) | `LotPosition`: point of a block, residence, or parcel identifier |
-| [lot_removal.py](lot_removal.py) | `LotRemoval`: block, residence, or parcel marked abolished by a number master |
+| [lot/](lot/) | Blocks, residences, and parcels read from the registry: identifiers, points, and removals |
 | [import_summary.py](import_summary.py) | `ImportSummary`: file, dataset, and numbers of stored, removed, and complemented rows of one import |
 
 ## Examples

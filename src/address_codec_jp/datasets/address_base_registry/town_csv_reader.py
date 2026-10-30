@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import ClassVar
 
 from address_codec_jp.address import LotSystem, Municipality, Town
-from address_codec_jp.datasets.address_base_registry.abr_csv_file import AbrCsvFile
-from address_codec_jp.datasets.address_base_registry.abr_dataset import AbrDataset
+from address_codec_jp.datasets.address_base_registry.csv_file import AbrCsvFile
+from address_codec_jp.datasets.address_base_registry.dataset import AbrDataset
 from address_codec_jp.errors import RegistryFormatError
 from address_codec_jp.text.normalization import KanjiNumeral
 

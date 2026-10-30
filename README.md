@@ -90,7 +90,7 @@ with AddressCodec.open(cache=DatabaseCache.default(max_age=timedelta(days=30))) 
 | No downloads on use | `is_download_allowed=False`: a missing database raises `DatasetNotImportedError`; missing points and shapes fall back to the enclosing areas |
 | Follow new releases | `max_age=timedelta(...)` refreshes on first use when older, keeping the current data with a warning if that fails; `refresh()` on demand |
 | Inspect or delete | `describe()` returns a `CacheStatus`; `clear()` |
-| See what it downloads | INFO records of the `address_codec_jp.database.cache.database_cache` logger |
+| See what it downloads | INFO records of the `address_codec_jp.database.cache` loggers |
 | Mirror the download site | `ADDRESS_CODEC_JP_BASE_URL` |
 
 Writes are serialized across processes by a lock file in the cache directory, so the
@@ -128,7 +128,9 @@ with AddressCodec.open() as codec:
     code = codec.encode("東京都千代田区丸の内１丁目２番３号")
     print(code, code.level.name)
     print(codec.decode(code, AddressFormat(numeral_style=NumeralStyle.KANJI)))
-    print(codec.decode(code, AddressFormat(lot_style=LotStyle.HYPHEN, is_prefecture_included=False)))
+    print(
+        codec.decode(code, AddressFormat(lot_style=LotStyle.HYPHEN, is_prefecture_included=False))
+    )
     print(codec.decode(code, AddressFormat(name_script=NameScript.KATAKANA)))
 
     match = codec.match("千代田区丸の内2-4-1 丸ビル")
@@ -284,6 +286,11 @@ Every error derives from `AddressCodecError` and from a built-in exception.
 uv sync --all-extras
 uv run pytest
 uv run ruff check src tests
+uv run ruff format --check src tests
 uv run mypy src tests
 uv run basedpyright
 ```
+
+CI runs these on Python 3.12 to 3.14. Record user-visible changes in
+[CHANGELOG.md](CHANGELOG.md), and tag a release as `v{version}` after bumping `version`
+in `pyproject.toml`.

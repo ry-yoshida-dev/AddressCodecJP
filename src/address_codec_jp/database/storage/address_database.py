@@ -5,7 +5,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
 
-from address_codec_jp.database.storage.area_repository import AreaRepository
+from address_codec_jp.database.storage.area.repository import AreaRepository
 from address_codec_jp.database.storage.import_log_repository import ImportLogRepository
 from address_codec_jp.database.storage.position_repository import PositionRepository
 from address_codec_jp.database.storage.town_repository import TownRepository

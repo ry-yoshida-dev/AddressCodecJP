@@ -11,10 +11,10 @@ from address_codec_jp.frontends.api.dataset_coverage import DatasetCoverage
 from address_codec_jp.frontends.api.format_parameters import FormatParameters
 from address_codec_jp.frontends.api.input_interpreter import InputInterpreter
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
-from address_codec_jp.frontends.api.query_answer import QueryAnswer
-from address_codec_jp.frontends.api.query_handler import QueryHandler
-from address_codec_jp.frontends.api.query_operation import QueryOperation
-from address_codec_jp.frontends.api.query_options import QueryOptions
+from address_codec_jp.frontends.api.query.answer import QueryAnswer
+from address_codec_jp.frontends.api.query.handler import QueryHandler
+from address_codec_jp.frontends.api.query.operation import QueryOperation
+from address_codec_jp.frontends.api.query.options import QueryOptions
 from address_codec_jp.frontends.api.service_settings import ServiceSettings
 from address_codec_jp.frontends.serialization import EnumName, JsonValue
 

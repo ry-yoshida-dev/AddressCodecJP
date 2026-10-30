@@ -125,7 +125,7 @@ class ApplicationFactory:
             return self._respond_internal_error(request, error)
         return JSONResponse(self._error_serializer.serialize(error), status_code=int(status))
 
-    def _respond_internal_error(self, _: Request, __: Exception) -> JSONResponse:
+    def _respond_internal_error(self, _request: Request, _error: Exception) -> JSONResponse:
         return JSONResponse(
             self.INTERNAL_ERROR_BODY, status_code=int(HTTPStatus.INTERNAL_SERVER_ERROR)
         )

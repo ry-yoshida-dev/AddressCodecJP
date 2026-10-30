@@ -14,7 +14,10 @@ database of `DatabaseCache`, built on first use.
 
 | Component | Responsibility |
 | --- | --- |
-| [command_line_interface.py](command_line_interface.py) | `CommandLineInterface`: argument parsing and command execution |
+| [command_line_interface.py](command_line_interface.py) | `CommandLineInterface`: dispatches a parsed command and reads the inputs of query commands |
+| [parser_factory.py](parser_factory.py) | `ParserFactory`: builds the argument parser of all sub-commands |
+| [query_answerer.py](query_answerer.py) | `QueryAnswerer`: answers one input of `encode`, `decode`, `locate`, `nearest`, `postal`, `area`, or `area-at` |
+| [database_maintainer.py](database_maintainer.py) | `DatabaseMaintainer`: runs `import`, `import-area`, `download`, `info`, and `cache` |
 | [command_arguments.py](command_arguments.py) | `CommandArguments`: typed argument namespace with enum-valued options |
 | [enum_argument.py](enum_argument.py) | `EnumArgument`: converts an option value to an enum member by case-insensitive name |
 | [command.py](command.py) | `Command`: `import`, `import-area`, `download`, `info`, `cache`, `encode`, `decode`, `locate`, `nearest`, `postal`, `area`, and `area-at` sub-commands |

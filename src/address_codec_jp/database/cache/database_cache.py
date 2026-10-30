@@ -10,12 +10,11 @@ import platformdirs
 
 from address_codec_jp.address import AddressCode, Prefecture
 from address_codec_jp.database.cache.area_target import AreaTarget
-from address_codec_jp.database.cache.cache_directory import CacheDirectory
-from address_codec_jp.database.cache.cache_status import CacheStatus
-from address_codec_jp.database.cache.import_ledger import ImportLedger
-from address_codec_jp.database.importing import AreaImporter, RegistryImporter
+from address_codec_jp.database.cache.directory import CacheDirectory
+from address_codec_jp.database.cache.loader import CacheLoader
+from address_codec_jp.database.cache.status import CacheStatus
 from address_codec_jp.database.storage import AddressDatabase, AreaImport
-from address_codec_jp.datasets.address_base_registry import AbrDataset, DistributionScope
+from address_codec_jp.datasets.address_base_registry import DistributionScope
 from address_codec_jp.datasets.download import (
     BoundaryDownloader,
     DistributedFile,
@@ -50,7 +49,7 @@ class DatabaseCache:
     into place when complete, so an interrupted build never leaves a partial database.
     Writes are serialized across processes by a lock file in the directory, so that the
     workers of a server can share one cache. Progress is logged to the
-    ``address_codec_jp.database.cache.database_cache`` logger at INFO level.
+    ``address_codec_jp.database.cache`` loggers at INFO level.
 
     Parameters
     ----------
@@ -102,11 +101,9 @@ class DatabaseCache:
         if max_age is not None and max_age <= timedelta(0):
             raise ValueError(f"max_age must be positive, got {max_age}.")
         self._directory: CacheDirectory = CacheDirectory(directory)
-        self._downloader: RegistryDownloader = downloader
-        self._boundary_downloader: BoundaryDownloader = boundary_downloader
+        self._loader: CacheLoader = CacheLoader(self._directory, downloader, boundary_downloader)
         self._is_download_allowed: bool = is_download_allowed
         self._max_age: timedelta | None = max_age
-        self._ledger: ImportLedger = ImportLedger()
         self._is_age_checked: bool = False
 
     @classmethod
@@ -227,7 +224,7 @@ class DatabaseCache:
                     f"The address database {self.path} has not been built and downloads "
                     + "are not allowed; call DatabaseCache.prepare first."
                 )
-            self._build()
+            self._loader.build()
         elif not self._is_age_checked:
             self._is_age_checked = True
             if self._is_download_allowed and self._is_expired():
@@ -255,9 +252,9 @@ class DatabaseCache:
         RegistryDownloadError
             If a registry file cannot be downloaded.
         """
-        database_path = self.ensure()
+        _ = self.ensure()
         if self._is_download_allowed:
-            self._add_registry_files(database_path, self._plan_lots(lg_codes))
+            self._loader.add_registry_files(self._loader.plan_lots(lg_codes))
 
     def ensure_areas(self, lg_codes: Iterable[str], *, is_parcel_included: bool) -> None:
         """
@@ -283,10 +280,10 @@ class DatabaseCache:
         BoundaryFormatError
             If a downloaded file is malformed.
         """
-        database_path = self.ensure()
+        _ = self.ensure()
         if self._is_download_allowed:
-            self._add_areas(
-                database_path, self._plan_areas(lg_codes, is_parcel_included=is_parcel_included)
+            self._loader.add_areas(
+                self._loader.plan_areas(lg_codes, is_parcel_included=is_parcel_included)
             )
 
     def prepare(
@@ -329,7 +326,7 @@ class DatabaseCache:
                 raise ValueError(f"Prefecture code must be 01 to 47, got {prefecture_code!r}.")
         lg_codes = [AddressCode(lg_code=code).lg_code for code in municipality_codes]
         if not self.is_built:
-            self._build()
+            self._loader.build()
         database_path = self.path
         with AddressDatabase.open_read_only(database_path) as database:
             lg_codes.extend(
@@ -338,15 +335,16 @@ class DatabaseCache:
                 if municipality.lg_code[:2] in prefecture_codes
             )
         _LOGGER.info("Preparing %d municipalities in %s.", len(set(lg_codes)), database_path)
-        self._add_registry_files(database_path, self._plan_lots(lg_codes))
+        self._loader.add_registry_files(self._loader.plan_lots(lg_codes))
         if is_area_included or is_parcel_included:
-            self._add_areas(
-                database_path,
+            self._loader.add_areas(
                 [
                     target
-                    for target in self._plan_areas(lg_codes, is_parcel_included=is_parcel_included)
+                    for target in self._loader.plan_areas(
+                        lg_codes, is_parcel_included=is_parcel_included
+                    )
                     if is_area_included or target.source is AreaSource.REGISTRY_MAP
-                ],
+                ]
             )
 
     def describe(self) -> CacheStatus:
@@ -415,7 +413,7 @@ class DatabaseCache:
         """
         with self._directory.locked():
             if not self.is_built:
-                self._build()
+                self._loader.build()
                 return
             _LOGGER.info("Refreshing %s.", self.path)
             with AddressDatabase.open_read_only(self.path) as database:
@@ -432,21 +430,20 @@ class DatabaseCache:
                 )
             staging_directory = self._directory.make_working_directory()
             try:
-                staging = type(self)(staging_directory, self._downloader, self._boundary_downloader)
-                staging._build()
-                staging._add_registry_files(
-                    staging.path,
+                staging = self._loader.with_directory(CacheDirectory(staging_directory))
+                staging.build()
+                staging.add_registry_files(
                     [
                         registry_file
                         for registry_file in registry_files
-                        if registry_file is not None and not self._is_town_level(registry_file)
-                    ],
+                        if registry_file is not None and not staging.is_town_level(registry_file)
+                    ]
                 )
-                staging._add_areas(staging.path, area_targets)
-                _ = staging.path.replace(self.path)
+                staging.add_areas(area_targets)
+                _ = staging.directory.database_path.replace(self.path)
             finally:
                 shutil.rmtree(staging_directory, ignore_errors=True)
-            self._ledger.reset()
+            self._loader.reset()
             _LOGGER.info("Refreshed %s.", self.path)
 
     def clear(self) -> list[Path]:
@@ -462,7 +459,7 @@ class DatabaseCache:
             return []
         with self._directory.locked():
             removed = [*self._directory.remove_obsolete(), *self._directory.remove_database()]
-            self._ledger.reset()
+            self._loader.reset()
         return removed
 
     def remove_obsolete(self) -> list[Path]:
@@ -480,25 +477,6 @@ class DatabaseCache:
         """
         return self._directory.remove_obsolete()
 
-    def _build(self) -> None:
-        with self._directory.locked():
-            if self.is_built:
-                return
-            _LOGGER.info("Building the address database in %s.", self.path)
-            working_directory = self._directory.make_working_directory()
-            try:
-                paths = [
-                    self._downloader.download(target, working_directory) for target in self._plan()
-                ]
-                database_path = working_directory / self.path.name
-                with RegistryImporter.open(database_path) as importer:
-                    _ = importer.import_files(paths)
-                _ = database_path.replace(self.path)
-            finally:
-                shutil.rmtree(working_directory, ignore_errors=True)
-            _ = self._directory.remove_obsolete()
-            _LOGGER.info("Built %s.", self.path)
-
     def _is_expired(self) -> bool:
         if self._max_age is None:
             return False
@@ -513,98 +491,5 @@ class DatabaseCache:
         except (RegistryDownloadError, BoundaryFormatError) as error:
             _LOGGER.warning("Could not refresh %s; using it as it is: %s", self.path, error)
 
-    def _add_registry_files(self, database_path: Path, targets: list[DistributedFile]) -> None:
-        self._ledger.read(database_path)
-        if all(self._ledger.is_registry_file_settled(target.file_name) for target in targets):
-            return
-        with self._directory.locked():
-            self._ledger.forget()
-            self._ledger.read(database_path)
-            pending = [
-                target
-                for target in targets
-                if not self._ledger.is_registry_file_settled(target.file_name)
-            ]
-            if not pending:
-                return
-            _LOGGER.info("Adding %d registry files to %s.", len(pending), database_path)
-            working_directory = self._directory.make_working_directory()
-            try:
-                downloaded = [
-                    self._downloader.download_if_distributed(target, working_directory)
-                    for target in pending
-                ]
-                paths = [path for path in downloaded if path is not None]
-                if paths:
-                    with RegistryImporter.open(database_path) as importer:
-                        _ = importer.import_files(paths)
-                for target, path in zip(pending, downloaded, strict=True):
-                    self._ledger.settle_registry_file(
-                        target.file_name, is_published=path is not None
-                    )
-            finally:
-                shutil.rmtree(working_directory, ignore_errors=True)
-
-    def _add_areas(self, database_path: Path, targets: list[AreaTarget]) -> None:
-        self._ledger.read(database_path)
-        if all(self._ledger.is_area_settled(target) for target in targets):
-            return
-        with self._directory.locked():
-            self._ledger.forget()
-            self._ledger.read(database_path)
-            pending = [target for target in targets if not self._ledger.is_area_settled(target)]
-            if not pending:
-                return
-            _LOGGER.info("Adding %d area datasets to %s.", len(pending), database_path)
-            working_directory = self._directory.make_working_directory()
-            try:
-                with AreaImporter.open(database_path) as importer:
-                    for target in pending:
-                        paths = self._download_areas(target, working_directory)
-                        for path in paths:
-                            _ = importer.import_file(path, target.lg_code)
-                        self._ledger.settle_area(target, is_published=bool(paths))
-            finally:
-                shutil.rmtree(working_directory, ignore_errors=True)
-
-    def _download_areas(self, target: AreaTarget, directory: Path) -> list[Path]:
-        match target.source:
-            case AreaSource.CENSUS_BOUNDARY:
-                path = self._boundary_downloader.download_census_boundary(target.lg_code, directory)
-                return [] if path is None else [path]
-            case AreaSource.REGISTRY_MAP:
-                return self._boundary_downloader.download_registry_maps(target.lg_code, directory)
-
     def _area_codes(self, area_imports: list[AreaImport], source: AreaSource) -> tuple[str, ...]:
         return tuple(sorted({item.lg_code for item in area_imports if item.source is source}))
-
-    def _plan(self) -> list[DistributedFile]:
-        return [
-            target
-            for target in self._downloader.plan(Prefecture.list_codes())
-            if self._is_town_level(target)
-        ]
-
-    def _plan_lots(self, lg_codes: Iterable[str]) -> list[DistributedFile]:
-        municipality_codes = sorted(
-            {lg_code for lg_code in lg_codes if not AddressCode.is_prefecture_code(lg_code)}
-        )
-        return self._downloader.plan_lots(municipality_codes)
-
-    def _plan_areas(self, lg_codes: Iterable[str], *, is_parcel_included: bool) -> list[AreaTarget]:
-        sources = [
-            AreaSource.CENSUS_BOUNDARY,
-            *([AreaSource.REGISTRY_MAP] if is_parcel_included else []),
-        ]
-        return [
-            AreaTarget(source, lg_code)
-            for lg_code in sorted(set(lg_codes))
-            if not AddressCode.is_prefecture_code(AddressCode(lg_code=lg_code).lg_code)
-            for source in sources
-        ]
-
-    def _is_town_level(self, target: DistributedFile) -> bool:
-        return (
-            target.dataset.scope is DistributionScope.NATIONWIDE
-            or target.dataset is AbrDataset.TOWN_POSITION
-        )

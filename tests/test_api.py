@@ -238,7 +238,7 @@ def test_errors_map_to_statuses(
 def test_server_faults_hide_their_detail(
     cache_directory: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    def fail(_: AddressCodec, address: str, *, is_lot_verified: bool = False) -> AddressCode:
+    def fail(*_arguments: object, **_options: object) -> AddressCode:
         raise error
 
     monkeypatch.setattr(AddressCodec, "encode", fail)

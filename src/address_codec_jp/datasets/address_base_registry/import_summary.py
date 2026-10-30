@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from address_codec_jp.datasets.address_base_registry.abr_dataset import AbrDataset
+from address_codec_jp.datasets.address_base_registry.dataset import AbrDataset
 
 
 @dataclass(frozen=True, slots=True)

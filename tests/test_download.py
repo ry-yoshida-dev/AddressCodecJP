@@ -166,19 +166,22 @@ def test_failed_write_raises_and_leaves_nothing(
 
 def test_remote_requests_are_spaced_and_identified(monkeypatch: pytest.MonkeyPatch) -> None:
     user_agents: list[str | None] = []
+    timeouts: list[float] = []
     waits: list[float] = []
 
     def respond(request: urllib.request.Request, timeout: float) -> urllib.response.addinfourl:
         user_agents.append(request.get_header("User-agent"))
+        timeouts.append(timeout)
         return urllib.response.addinfourl(
             io.BytesIO(b"{}"), email.message.Message(), request.full_url, 200
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", respond)
     monkeypatch.setattr(time, "sleep", waits.append)
-    fetcher = FileFetcher(request_interval_seconds=1.0)
+    fetcher = FileFetcher(timeout_seconds=30.0, request_interval_seconds=1.0)
     _ = fetcher.read("https://example.com/first")
     _ = fetcher.read("https://example.com/second")
+    assert timeouts == [30.0, 30.0]
     assert len(waits) == 1
     assert 0.5 < waits[0] <= 1.0
     assert all(

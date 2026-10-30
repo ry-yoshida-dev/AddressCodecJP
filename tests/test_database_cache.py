@@ -357,7 +357,7 @@ def test_caches_of_one_directory_add_files_once(cache: DatabaseCache, mirror: Pa
 
 
 def test_cache_logs_its_downloads(cache: DatabaseCache, caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.INFO, logger="address_codec_jp.database.cache.database_cache"):
+    with caplog.at_level(logging.INFO, logger="address_codec_jp.database.cache"):
         cache.ensure_lots(["113247"])
     assert "Building the address database" in caplog.text
     assert "Adding 6 registry files" in caplog.text
@@ -396,7 +396,7 @@ def test_failed_refresh_of_an_expired_cache_keeps_it_in_use(
         max_age=timedelta(milliseconds=1),
     )
     with (
-        caplog.at_level(logging.WARNING, logger="address_codec_jp.database.cache.database_cache"),
+        caplog.at_level(logging.WARNING, logger="address_codec_jp.database.cache"),
         AddressCodec.open(cache=aging) as codec,
     ):
         assert str(codec.encode("千代田区丸の内1")) == "131016-0011001"

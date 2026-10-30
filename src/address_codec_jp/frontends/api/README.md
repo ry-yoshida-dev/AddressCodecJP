@@ -28,15 +28,11 @@ caused by an input in place of its result; a fault of the server fails the reque
 | [application_factory.py](application_factory.py) | `ApplicationFactory`: builds the FastAPI application, checks the cache at start, and maps errors to responses |
 | [address_routes.py](address_routes.py) | `AddressRoutes`: the `/v1` endpoints and `/health` |
 | [codec_pool.py](codec_pool.py) | `CodecPool`: worker threads with one codec each, reopened when the database file is replaced |
-| [query_handler.py](query_handler.py) | `QueryHandler`: runs one or many queries on a thread's codec and enforces coverage |
-| [query_operation.py](query_operation.py) | `QueryOperation`: the queries of the API |
-| [query_options.py](query_options.py) | `QueryOptions`: format, datum, distance, parcel, and geometry options |
-| [query_answer.py](query_answer.py) | `QueryAnswer`: response fields and their credits |
+| [query/](query/) | Queries of the API: operations, options, the handler that runs them, and their results and answers |
 | [dataset_coverage.py](dataset_coverage.py) | `DatasetCoverage`: municipalities whose lots and boundaries the cache holds, and the dates of their maps |
 | [credit_writer.py](credit_writer.py) | `CreditWriter`: credits in the form required by the terms of use, with municipality names and map dates |
 | [data_source.py](data_source.py) | `DataSource`: Address Base Registry, parcel master, census boundaries, or registry maps |
 | [data_attribution.py](data_attribution.py) | `DataAttribution`: dataset to credit and the municipality it was used for |
-| [query_result.py](query_result.py) | `QueryResult`: fields of one query and the datasets it used |
 | [error_status.py](error_status.py) | `ErrorStatus`: HTTP status of each error |
 | [invalid_request_error.py](invalid_request_error.py) | `InvalidRequestError`: input or option that cannot be interpreted (400) |
 | [input_interpreter.py](input_interpreter.py) | `InputInterpreter`: parses request values, turning their `ValueError` into `InvalidRequestError` |

@@ -4,12 +4,12 @@ from pathlib import Path
 from geo_coordinate import GeodeticCrs
 
 from address_codec_jp.address import LotNumber, LotSystem
-from address_codec_jp.datasets.address_base_registry.abr_csv_file import AbrCsvFile
-from address_codec_jp.datasets.address_base_registry.abr_dataset import AbrDataset
 from address_codec_jp.datasets.address_base_registry.area_position import AreaPosition
-from address_codec_jp.datasets.address_base_registry.lot_entry import LotEntry
-from address_codec_jp.datasets.address_base_registry.lot_position import LotPosition
-from address_codec_jp.datasets.address_base_registry.lot_removal import LotRemoval
+from address_codec_jp.datasets.address_base_registry.csv_file import AbrCsvFile
+from address_codec_jp.datasets.address_base_registry.dataset import AbrDataset
+from address_codec_jp.datasets.address_base_registry.lot.entry import LotEntry
+from address_codec_jp.datasets.address_base_registry.lot.position import LotPosition
+from address_codec_jp.datasets.address_base_registry.lot.removal import LotRemoval
 from address_codec_jp.datasets.address_base_registry.position_record import PositionRecord
 from address_codec_jp.errors import RegistryFormatError
 from address_codec_jp.geometry import RepresentativePoint, TownPosition

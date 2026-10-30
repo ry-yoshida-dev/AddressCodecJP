@@ -20,10 +20,10 @@ from address_codec_jp.frontends.api.dataset_coverage import DatasetCoverage
 from address_codec_jp.frontends.api.error_status import ErrorStatus
 from address_codec_jp.frontends.api.input_interpreter import InputInterpreter
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
-from address_codec_jp.frontends.api.query_answer import QueryAnswer
-from address_codec_jp.frontends.api.query_operation import QueryOperation
-from address_codec_jp.frontends.api.query_options import QueryOptions
-from address_codec_jp.frontends.api.query_result import QueryResult
+from address_codec_jp.frontends.api.query.answer import QueryAnswer
+from address_codec_jp.frontends.api.query.operation import QueryOperation
+from address_codec_jp.frontends.api.query.options import QueryOptions
+from address_codec_jp.frontends.api.query.result import QueryResult
 from address_codec_jp.frontends.serialization import (
     CoordinateText,
     ErrorSerializer,

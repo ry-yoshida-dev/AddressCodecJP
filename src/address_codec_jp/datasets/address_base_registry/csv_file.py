@@ -4,8 +4,8 @@ import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 
-from address_codec_jp.datasets.address_base_registry.abr_csv_row import AbrCsvRow
-from address_codec_jp.datasets.address_base_registry.abr_dataset import AbrDataset
+from address_codec_jp.datasets.address_base_registry.csv_row import AbrCsvRow
+from address_codec_jp.datasets.address_base_registry.dataset import AbrDataset
 from address_codec_jp.errors import RegistryFormatError
 
 

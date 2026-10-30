@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import ClassVar
 
 from address_codec_jp.address import AddressCode
-from address_codec_jp.database.storage.area_import import AreaImport
-from address_codec_jp.database.storage.area_record import AreaRecord
+from address_codec_jp.database.storage.area.imported_file import AreaImport
+from address_codec_jp.database.storage.area.record import AreaRecord
 from address_codec_jp.geometry import AreaShape
 from address_codec_jp.results import AreaSource
 

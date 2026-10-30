@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from address_codec_jp.database.storage.area_record import AreaRecord
+from address_codec_jp.database.storage.area.record import AreaRecord
 
 
 @dataclass(frozen=True, slots=True)
