@@ -160,6 +160,39 @@ class ResultSerializer:
         ]
         return {"towns": towns}
 
+    def children(
+        self, addresses: list[Address], address_format: AddressFormat
+    ) -> dict[str, JsonValue]:
+        """
+        Describe the areas directly under an area.
+
+        Parameters
+        ----------
+        addresses : list[Address]
+            Result of ``AddressCodec.list_children``.
+        address_format : AddressFormat
+            Output format of the addresses.
+
+        Returns
+        -------
+        dict[str, JsonValue]
+            ``children``, each with its ``code``, ``address``, and ``level``.
+
+        Raises
+        ------
+        ReadingNotFoundError
+            If katakana is requested and the registry has no reading of a name.
+        """
+        children: list[JsonValue] = [
+            {
+                "code": str(address.code),
+                "address": self._codec.decode(address.code, address_format),
+                "level": address.code.level.name,
+            }
+            for address in addresses
+        ]
+        return {"children": children}
+
     def area(self, area: AddressArea, *, is_geometry_included: bool) -> dict[str, JsonValue]:
         """
         Describe the shape of an address.

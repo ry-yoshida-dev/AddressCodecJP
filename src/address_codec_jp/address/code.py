@@ -197,6 +197,22 @@ class AddressCode:
                 return AddressLevel.RESIDENCE
 
     @property
+    def is_oaza(self) -> bool:
+        """
+        Tell whether the code denotes an oaza-level town.
+
+        Returns
+        -------
+        bool
+            ``True`` for a town without lot numbers whose chome part is ``000``.
+        """
+        return (
+            self.machiaza_id is not None
+            and not self.lot.numbers
+            and self.machiaza_id.endswith(self._OAZA_CHOME_PART)
+        )
+
+    @property
     def parent(self) -> Self | None:
         """
         Code of the nearest enclosing area.
@@ -224,7 +240,7 @@ class AddressCode:
             case AddressLevel.BLOCK:
                 return type(self)(lg_code=self.lg_code, machiaza_id=self.machiaza_id)
             case AddressLevel.TOWN:
-                if self.machiaza_id is None or self.machiaza_id.endswith(self._OAZA_CHOME_PART):
+                if self.machiaza_id is None or self.is_oaza:
                     return type(self)(lg_code=self.lg_code)
                 return type(self)(
                     lg_code=self.lg_code,

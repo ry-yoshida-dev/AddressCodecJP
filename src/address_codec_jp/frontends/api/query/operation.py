@@ -19,6 +19,8 @@ class QueryOperation(Enum):
         ``latitude,longitude`` to the nearest address.
     POSTAL
         Postal code to its towns.
+    CHILDREN
+        Code to the registered areas directly under it.
     AREA
         Address to its shape.
     AREA_CODE
@@ -33,6 +35,7 @@ class QueryOperation(Enum):
     LOCATE_CODE = auto()
     NEAREST = auto()
     POSTAL = auto()
+    CHILDREN = auto()
     AREA = auto()
     AREA_CODE = auto()
     AREAS_AT = auto()

@@ -270,6 +270,53 @@ class AddressCodec:
         municipality = towns.get_municipality(address_code.lg_code)
         return Address(prefecture=municipality.prefecture, municipality=municipality)
 
+    def list_children(self, code: AddressCode | str) -> list[Address]:
+        """
+        List the registered areas directly under an area.
+
+        The children are the areas whose ``AddressCode.parent`` is the code: the
+        municipalities of a prefecture, with the wards of a designated city in place of
+        the city; the oaza of a municipality, together with the chome and koaza whose oaza
+        is not registered; and the chome and koaza of an oaza. Lot numbers are not listed.
+
+        Parameters
+        ----------
+        code : AddressCode | str
+            Prefecture, municipality, or town code, or its string form.
+
+        Returns
+        -------
+        list[Address]
+            Child areas ordered by code. Empty for a chome or koaza.
+
+        Raises
+        ------
+        ValueError
+            If a string code is malformed or the code has lot numbers.
+        AddressNotFoundError
+            If the area of the code is not registered.
+
+        Examples
+        --------
+        >>> with AddressCodec.open() as codec:  # doctest: +SKIP
+        ...     [codec.decode(child.code) for child in codec.list_children("131016-0011000")]
+        ['東京都千代田区丸の内1丁目', '東京都千代田区丸の内2丁目', '東京都千代田区丸の内3丁目']
+        """
+        address = self.resolve(code)
+        towns = self._database.towns
+        if address.lot.numbers:
+            raise ValueError(f"Areas under lot numbers are not listed, got {address.code}.")
+        if address.town is not None:
+            if not address.code.is_oaza:
+                return []
+            return [Address.for_town(town) for town in towns.list_oaza_members(address.town)]
+        if address.municipality is not None:
+            return [Address.for_town(town) for town in towns.list_top_towns(address.municipality)]
+        return [
+            Address(prefecture=municipality.prefecture, municipality=municipality)
+            for municipality in towns.list_prefecture_municipalities(address.prefecture.code)
+        ]
+
     def decode(
         self, code: AddressCode | str, address_format: AddressFormat = DEFAULT_FORMAT
     ) -> str:

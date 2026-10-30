@@ -357,13 +357,32 @@ class TownRepository:
         AddressNotFoundError
             If no municipality of the prefecture is registered.
         """
-        next_prefecture_code = f"{int(prefecture_code) + 1:02d}"
-        municipalities = self._query_municipalities(
-            "WHERE lg_code >= ? AND lg_code < ?", (prefecture_code, next_prefecture_code)
-        )
+        municipalities = self.list_prefecture_municipalities(prefecture_code)
         if not municipalities:
             raise AddressNotFoundError(f"Prefecture {prefecture_code} is not registered.")
         return municipalities[0].prefecture
+
+    def list_prefecture_municipalities(self, prefecture_code: str) -> list[Municipality]:
+        """
+        List the municipalities of a prefecture.
+
+        Wards of a designated city are listed in place of the city.
+
+        Parameters
+        ----------
+        prefecture_code : str
+            Two-digit prefecture code.
+
+        Returns
+        -------
+        list[Municipality]
+            Municipalities ordered by local government code. Empty when none of the
+            prefecture is registered.
+        """
+        next_prefecture_code = f"{int(prefecture_code) + 1:02d}"
+        return self._query_municipalities(
+            "WHERE lg_code >= ? AND lg_code < ?", (prefecture_code, next_prefecture_code)
+        )
 
     def list_municipalities(self) -> list[Municipality]:
         """
@@ -492,6 +511,54 @@ class TownRepository:
             f"{self._TOWN_SELECT} WHERE t.lg_code = ? ORDER BY t.machiaza_id", (lg_code,)
         ).fetchall()
         return [self._to_town(row, municipalities[0]) for row in rows]
+
+    def list_top_towns(self, municipality: Municipality) -> list[Town]:
+        """
+        List the towns directly under a municipality.
+
+        These are the oaza-level towns, whose chome part is ``000``, and the chome and
+        koaza whose oaza is not registered, such as koaza without an oaza name.
+
+        Parameters
+        ----------
+        municipality : Municipality
+            Registered municipality.
+
+        Returns
+        -------
+        list[Town]
+            Towns ordered by town identifier.
+        """
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            f"{self._TOWN_SELECT} WHERE t.lg_code = ? AND (substr(t.machiaza_id, 5) = '000' "
+            + "OR NOT EXISTS (SELECT 1 FROM towns AS o WHERE o.lg_code = t.lg_code "
+            + "AND o.machiaza_id = substr(t.machiaza_id, 1, 4) || '000')) "
+            + "ORDER BY t.machiaza_id",
+            (municipality.lg_code,),
+        ).fetchall()
+        return [self._to_town(row, municipality) for row in rows]
+
+    def list_oaza_members(self, oaza: Town) -> list[Town]:
+        """
+        List the chome and koaza of an oaza.
+
+        Parameters
+        ----------
+        oaza : Town
+            Registered oaza-level town, whose chome part is ``000``.
+
+        Returns
+        -------
+        list[Town]
+            Towns sharing the oaza part of the town identifier, ordered by town
+            identifier.
+        """
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            f"{self._TOWN_SELECT} WHERE t.lg_code = ? AND t.machiaza_id > ? "
+            + "AND t.machiaza_id <= ? ORDER BY t.machiaza_id",
+            (oaza.lg_code, oaza.machiaza_id, oaza.machiaza_id[:4] + "999"),
+        ).fetchall()
+        return [self._to_town(row, oaza.municipality) for row in rows]
 
     def _to_town(self, row: tuple[object, ...], municipality: Municipality) -> Town:
         chome_number = row[4]

@@ -151,6 +151,8 @@ with AddressCodec.open() as codec:
 
     towns = codec.find_areas_at(GeoCoordinate.from_degrees(35.6812, 139.7671))
     print([str(town.code) for town in towns])
+
+    print([codec.decode(child.code) for child in codec.list_children("131016-0011000")])
 ```
 
 ```
@@ -164,6 +166,7 @@ with AddressCodec.open() as codec:
 131016-0011001 TOWN False {"type":"MultiPolygon","coordi
 113247-0003000-585-1 True ['REGISTRY_MAP']
 ['131016-0011001']
+['東京都千代田区丸の内1丁目', '東京都千代田区丸の内2丁目', '東京都千代田区丸の内3丁目']
 ```
 
 `locate` and `find_area` fall back to the nearest enclosing area that has a point or
@@ -178,6 +181,12 @@ municipality (`霞が関1-1-1`). When the rest fits several areas, `AmbiguousAdd
 lists them in `candidates`; a prefecture or postal code written with the address narrows
 them down (`大阪府梅田3-1-1`).
 
+`list_children` lists the registered areas directly under a code, those whose `parent`
+it is: the municipalities of a prefecture, with the wards of a designated city in place
+of the city; the oaza of a municipality; and the chome and koaza of an oaza. Chome and
+koaza whose oaza is not registered are listed under the municipality. Lot numbers are
+not listed.
+
 ### Command line
 
 ```bash
@@ -185,6 +194,7 @@ uv run address-codec-jp encode "千代田区丸の内一の二の三" "東京都
 uv run address-codec-jp decode 131016-0011001-2-3 --numeral kanji
 uv run address-codec-jp locate "千代田区内幸町1-6-1" --crs wgs84
 uv run address-codec-jp nearest 35.6812,139.7671
+uv run address-codec-jp children 130001
 uv run address-codec-jp area "千代田区丸の内1-9-1"
 uv run address-codec-jp area-at 35.6812,139.7671 --parcels --output jsonl
 ```
@@ -217,6 +227,7 @@ CMD ["uvicorn", "--factory", "address_codec_jp.frontends.api:ApplicationFactory.
 | `GET /v1/locations?address=`, `GET /v1/codes/{code}/location` | Representative point; `crs` |
 | `GET /v1/nearest?coordinate=lat,lon` | Nearest address; `crs`, `max_distance` |
 | `GET /v1/postal-codes/{postal_code}` | Towns of a postal code; format options as for decoding |
+| `GET /v1/codes/{code}/children` | Areas directly under a prefecture, municipality, or oaza; format options as for decoding |
 | `GET /v1/areas?address=`, `GET /v1/codes/{code}/area` | Shape; `geometry=false` omits the GeoJSON |
 | `GET /v1/areas-at?coordinate=lat,lon` | Containing towns; `parcels=true` adds parcels, `geometry=true` adds GeoJSON |
 | `POST /v1/batch` | `{"operation": "locate", "inputs": [...]}` with the same options; per-input `status` on failure |

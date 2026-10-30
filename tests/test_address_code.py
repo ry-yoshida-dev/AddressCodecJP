@@ -68,6 +68,20 @@ def test_lineage_lists_enclosing_areas(code: str, lineage: list[str]) -> None:
     assert AddressCode.for_prefecture("13").parent is None
 
 
+@pytest.mark.parametrize(
+    ("code", "is_oaza"),
+    [
+        ("131067-0004000", True),
+        ("131067-0004001", False),
+        ("131067-0004000-2", False),
+        ("131067", False),
+        ("130001", False),
+    ],
+)
+def test_is_oaza_tells_oaza_level_towns(code: str, is_oaza: bool) -> None:
+    assert AddressCode.parse(code).is_oaza is is_oaza
+
+
 def test_rejects_residence_without_block() -> None:
     with pytest.raises(ValueError, match="requires a block"):
         _ = LotNumber(block=None, residence=3)

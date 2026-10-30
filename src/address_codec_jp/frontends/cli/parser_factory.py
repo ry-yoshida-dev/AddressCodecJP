@@ -189,6 +189,18 @@ class ParserFactory:
             metavar="postal_code",
             help="Postal codes such as 100-0005; standard input if none.",
         )
+        children_parser = subparsers.add_parser(
+            Command.CHILDREN.value,
+            parents=[query_parser, format_parser],
+            help="Code to the registered areas directly under it.",
+        )
+        _ = children_parser.add_argument(
+            "inputs",
+            nargs="*",
+            metavar="code",
+            help="Prefecture, municipality, or town codes; standard input if none.",
+        )
+
         area_parser = subparsers.add_parser(
             Command.AREA.value,
             parents=[query_parser],

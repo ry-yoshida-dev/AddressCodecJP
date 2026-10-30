@@ -15,6 +15,10 @@ the API. The library is installed from git, so a version is a tagged commit
   name found in several municipalities raises `AmbiguousAddressError` with the
   candidates.
 - `TownSource.map_oaza_names`, which custom town sources must now implement.
+- `AddressCodec.list_children` lists the registered areas directly under a prefecture,
+  municipality, or oaza, also as the `children` command, `GET /v1/codes/{code}/children`,
+  and the `children` batch operation. `AddressCode.is_oaza` tells
+  whether a code is an oaza-level town.
 
 ### Changed
 

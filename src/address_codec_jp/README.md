@@ -13,7 +13,7 @@ area shapes when needed; `AddressCodec.open()` uses it when no path is given.
 
 | Component | Responsibility |
 | --- | --- |
-| [address_codec.py](address_codec.py) | `AddressCodec` facade: match, encode, resolve, decode, list_by_postal_code, locate, find_nearest, find_area, find_areas_at |
+| [address_codec.py](address_codec.py) | `AddressCodec` facade: match, encode, resolve, decode, list_children, list_by_postal_code, locate, find_nearest, find_area, find_areas_at |
 | [\_\_main\_\_.py](__main__.py) | `python -m address_codec_jp` entry point |
 | [address/](address/) | Address codes and registered units: prefecture, municipality, town, and lot numbers |
 | [geometry/](geometry/) | Representative points and polygons |

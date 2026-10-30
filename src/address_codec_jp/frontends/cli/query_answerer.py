@@ -121,6 +121,21 @@ class QueryAnswerer:
                     ],
                     serializer.towns(addresses, address_format),
                 )
+            case Command.CHILDREN:
+                address_format = self._address_format(namespace)
+                children = codec.list_children(input_text)
+                writer.write(
+                    input_text,
+                    [
+                        [
+                            str(child.code),
+                            codec.decode(child.code, address_format),
+                            child.code.level.name,
+                        ]
+                        for child in children
+                    ],
+                    serializer.children(children, address_format),
+                )
             case Command.AREA:
                 area = codec.find_area(input_text)
                 writer.write(

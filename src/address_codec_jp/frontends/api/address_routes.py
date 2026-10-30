@@ -64,6 +64,7 @@ class AddressRoutes:
         _ = router.get("/v1/codes/{code}")(self.decode)
         _ = router.get("/v1/codes/{code}/location")(self.locate_code)
         _ = router.get("/v1/codes/{code}/area")(self.find_area_code)
+        _ = router.get("/v1/codes/{code}/children")(self.list_children)
         _ = router.get("/v1/locations")(self.locate)
         _ = router.get("/v1/nearest")(self.find_nearest)
         _ = router.get("/v1/postal-codes/{postal_code}")(self.list_by_postal_code)
@@ -227,6 +228,28 @@ class AddressRoutes:
         """
         options = QueryOptions(address_format=address_format.to_address_format())
         return await self._respond(QueryOperation.POSTAL, postal_code, options)
+
+    async def list_children(
+        self, *, code: CodePath, address_format: Annotated[FormatParameters, Query()]
+    ) -> JSONResponse:
+        """
+        List the registered areas directly under a code.
+
+        Parameters
+        ----------
+        code : CodePath
+            Prefecture, municipality, or town code.
+        address_format : FormatParameters
+            Format of the addresses.
+
+        Returns
+        -------
+        JSONResponse
+            ``code`` and ``children``, each with its ``code``, ``address``, and
+            ``level``; empty for a chome or koaza.
+        """
+        options = QueryOptions(address_format=address_format.to_address_format())
+        return await self._respond(QueryOperation.CHILDREN, code, options)
 
     async def find_area(
         self,

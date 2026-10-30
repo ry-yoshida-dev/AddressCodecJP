@@ -207,6 +207,13 @@ class QueryHandler:
                 return QueryResult(
                     self._serializer.towns(addresses, options.address_format), self._REGISTRY
                 )
+            case QueryOperation.CHILDREN:
+                children = self._interpreter.interpret(self._codec.list_children, input_text)
+                fields = {
+                    "code": str(self._parse_code(input_text)),
+                    **self._serializer.children(children, options.address_format),
+                }
+                return QueryResult(fields, self._REGISTRY)
             case QueryOperation.AREA:
                 return self._area(self._encode(input_text), options)
             case QueryOperation.AREA_CODE:
