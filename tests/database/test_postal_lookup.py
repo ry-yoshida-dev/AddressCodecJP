@@ -6,8 +6,7 @@ import pytest
 from address_codec_jp import AddressCodec
 from address_codec_jp.frontends.cli import CommandLineInterface
 from address_codec_jp.text.normalization import TextNormalizer
-
-TOWN_MASTER: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
+from tests.fixture_paths import TOWN_MASTER
 
 
 @pytest.mark.parametrize("text", ["100-0005", "〒1000005", "１００－０００５", " 100 0005 "])

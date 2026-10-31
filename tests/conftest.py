@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from address_codec_jp import AddressCodec, RegistryImporter
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
-FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*.csv"))
 
 

@@ -1,16 +1,19 @@
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.address import Address, AddressCode, AddressLevel
+from address_codec_jp.address import Address, AddressCode
 from address_codec_jp.database.cache import DatabaseCache
-from address_codec_jp.database.storage import AddressDatabase, AreaImport, DatasetImport
-from address_codec_jp.errors import AddressNotFoundError, DatasetNotImportedError
-from address_codec_jp.geocoding import AddressLocator, AreaFinder, NearestAddressFinder
+from address_codec_jp.database.storage import (
+    AddressDatabase,
+    AddressDirectory,
+    AreaImport,
+    DatasetImport,
+)
+from address_codec_jp.geocoding import Geocoder
 from address_codec_jp.results import (
     AddressArea,
     AddressLocation,
@@ -19,8 +22,7 @@ from address_codec_jp.results import (
     NearestAddress,
 )
 from address_codec_jp.text.formatting import AddressFormat, AddressFormatter
-from address_codec_jp.text.matching import AreaMatcher, GroupMatcher, NameSearcher
-from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
+from address_codec_jp.text.matching import AddressReader
 
 
 class AddressCodec:
@@ -28,8 +30,11 @@ class AddressCodec:
     Converter between free-form Japanese addresses, address codes, and coordinates.
 
     A codec only reads its database; use ``RegistryImporter`` to import registry
-    datasets. Matching indexes are built from the database on first use, so create the
-    codec after importing. A codec must be used only in the thread that opened it.
+    datasets. Text is read by ``AddressReader``, codes are resolved by
+    ``AddressDirectory``, and points and shapes are found by ``Geocoder``, which adds
+    the datasets of a municipality from ``cache`` before they are needed. Matching
+    indexes are built from the database on first use, so create the codec after
+    importing. A codec must be used only in the thread that opened it.
 
     Parameters
     ----------
@@ -48,26 +53,16 @@ class AddressCodec:
     """
 
     DEFAULT_FORMAT: ClassVar[AddressFormat] = AddressFormat()
-
-    NEARBY_LOT_MARGIN_METERS: ClassVar[float] = 5000.0
-    NEARBY_AREA_RADII_METERS: ClassVar[tuple[float, ...]] = (1000.0, 5000.0)
     DEFAULT_MAX_DISTANCE_METERS: ClassVar[float] = 1000.0
 
     def __init__(self, database: AddressDatabase, cache: DatabaseCache | None = None) -> None:
         self._database: AddressDatabase = database
-        self._cache: DatabaseCache | None = cache
-        self._normalizer: TextNormalizer = TextNormalizer()
-        self._matcher: AreaMatcher = AreaMatcher(
-            database.towns, self._normalizer, LotNumberParser()
-        )
-        self._group_matcher: GroupMatcher = GroupMatcher(self._matcher, self._normalizer)
-        self._name_searcher: NameSearcher = NameSearcher(
-            database.towns, self._normalizer, self._matcher.municipality_names
-        )
+        self._reader: AddressReader = AddressReader(database.towns)
+        self._directory: AddressDirectory = AddressDirectory(database.towns)
         self._formatter: AddressFormatter = AddressFormatter()
-        self._locator: AddressLocator = AddressLocator(database.positions)
-        self._nearest_finder: NearestAddressFinder = NearestAddressFinder(database.positions)
-        self._area_finder: AreaFinder = AreaFinder(database.areas, database.positions)
+        self._geocoder: Geocoder = Geocoder(
+            database.towns, database.positions, database.areas, cache
+        )
 
     @classmethod
     def open(
@@ -199,29 +194,21 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        normalized_address = self._normalizer.normalize(address)
-        if not normalized_address:
-            raise ValueError(self._normalizer.describe_empty(address))
-        address_match = self._matcher.match(
-            normalized_address,
-            self._normalizer.extract_postal_code(address),
-            within=self._parse_area(within),
-        )
-        address_match = replace(
-            address_match,
-            remainder=self._normalizer.find_original_suffix(address, address_match.remainder),
-        )
+        address_match = self._reader.match(address, self._parse_area(within))
         if is_lot_verified:
-            self.verify_lot(address_match.code)
+            self._geocoder.verify_lot(address_match.code)
         return address_match
 
-    def _parse_area(self, within: AddressCode | str | None) -> AddressCode | None:
-        area = (
-            within
-            if within is None or isinstance(within, AddressCode)
-            else AddressCode.parse(within)
-        )
-        if area is not None and area.lot.numbers:
+    @staticmethod
+    def _parse_code(code: AddressCode | str) -> AddressCode:
+        return code if isinstance(code, AddressCode) else AddressCode.parse(code)
+
+    @classmethod
+    def _parse_area(cls, within: AddressCode | str | None) -> AddressCode | None:
+        if within is None:
+            return None
+        area = cls._parse_code(within)
+        if area.lot.numbers:
             raise ValueError(f"The area to search must not have lot numbers, got {area}.")
         return area
 
@@ -273,10 +260,10 @@ class AddressCodec:
         ...     str(group.area), [str(item.code) for item in group.matches]
         ('130001', ['131016-0011001-1', '132063'])
         """
-        group_match = self._group_matcher.match(addresses)
+        group_match = self._reader.match_group(addresses)
         if is_lot_verified:
             for address_match in group_match.matches:
-                self.verify_lot(address_match.code)
+                self._geocoder.verify_lot(address_match.code)
         return group_match
 
     def verify_lot(self, code: AddressCode) -> None:
@@ -300,20 +287,7 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        if code.machiaza_id is None or not code.is_lot:
-            return
-        self._ensure_lots(code)
-        positions = self._database.positions
-        if not positions.is_lot_imported:
-            raise DatasetNotImportedError(
-                "No block, residence, or parcel master has been imported to verify lot numbers."
-            )
-        if not positions.has_lots(code.lg_code, code.machiaza_id):
-            raise AddressNotFoundError(
-                f"No block, residence, or parcel of {code} has been imported."
-            )
-        if not positions.contains_lot(code.lg_code, code.machiaza_id, code.lot):
-            raise AddressNotFoundError(f"Lot numbers of {code} are not registered.")
+        self._geocoder.verify_lot(code)
 
     def encode(
         self,
@@ -383,16 +357,7 @@ class AddressCodec:
         AddressNotFoundError
             If the area of the code is not registered.
         """
-        address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
-        towns = self._database.towns
-        if address_code.machiaza_id is not None:
-            return Address.for_town(
-                towns.get_town(address_code.lg_code, address_code.machiaza_id), address_code.lot
-            )
-        if address_code.level is AddressLevel.PREFECTURE:
-            return Address(prefecture=towns.get_prefecture(address_code.prefecture_code))
-        municipality = towns.get_municipality(address_code.lg_code)
-        return Address(prefecture=municipality.prefecture, municipality=municipality)
+        return self._directory.resolve(self._parse_code(code))
 
     def list_children(self, code: AddressCode | str) -> list[Address]:
         """
@@ -426,20 +391,7 @@ class AddressCodec:
         ...     [codec.decode(child.code) for child in codec.list_children("131016-0011000")]
         ['東京都千代田区丸の内1丁目', '東京都千代田区丸の内2丁目', '東京都千代田区丸の内3丁目']
         """
-        address = self.resolve(code)
-        towns = self._database.towns
-        if address.lot.numbers:
-            raise ValueError(f"Areas under lot numbers are not listed, got {address.code}.")
-        if address.town is not None:
-            if not address.code.is_oaza:
-                return []
-            return [Address.for_town(town) for town in towns.list_oaza_members(address.town)]
-        if address.municipality is not None:
-            return [Address.for_town(town) for town in towns.list_top_towns(address.municipality)]
-        return [
-            Address(prefecture=municipality.prefecture, municipality=municipality)
-            for municipality in towns.list_prefecture_municipalities(address.prefecture.code)
-        ]
+        return self._directory.list_children(self._parse_code(code))
 
     def decode(
         self, code: AddressCode | str, address_format: AddressFormat = DEFAULT_FORMAT
@@ -491,10 +443,7 @@ class AddressCodec:
         ValueError
             If the text is not a postal code.
         """
-        towns = self._database.towns.list_towns_by_postal_code(
-            self._normalizer.parse_postal_code(postal_code)
-        )
-        return [Address.for_town(town) for town in towns]
+        return self._directory.list_by_postal_code(self._reader.parse_postal_code(postal_code))
 
     def list_by_name(self, name: str, *, within: AddressCode | str | None = None) -> list[Address]:
         """
@@ -536,10 +485,7 @@ class AddressCodec:
         ...     [codec.decode(area.code) for area in codec.list_by_name("府中市")]
         ['東京都府中市', '広島県府中市']
         """
-        normalized_name = self._normalizer.normalize(name)
-        if not normalized_name:
-            raise ValueError("Name must not be blank.")
-        return self._name_searcher.search(normalized_name, within=self._parse_area(within))
+        return self._reader.search_names(name, self._parse_area(within))
 
     def locate(
         self,
@@ -628,13 +574,7 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
-        self._ensure_lots(address_code)
-        return self._locator.locate(address_code, crs)
-
-    def _ensure_lots(self, code: AddressCode) -> None:
-        if self._cache is not None and code.is_lot:
-            self._cache.ensure_lots([code.lg_code])
+        return self._geocoder.locate(self._parse_code(code), crs)
 
     def find_nearest(
         self,
@@ -648,7 +588,7 @@ class AddressCodec:
         Blocks, residences, and parcels are preferred; the nearest town is returned only
         when no lot point is within ``max_distance_meters``. With a ``cache``, the lots
         of the municipalities whose town points lie within ``max_distance_meters`` plus
-        ``NEARBY_LOT_MARGIN_METERS`` are added first.
+        ``Geocoder.NEARBY_LOT_MARGIN_METERS`` are added first.
 
         Parameters
         ----------
@@ -678,11 +618,7 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        if self._cache is not None and max_distance_meters > 0:
-            self._cache.ensure_lots(
-                self.list_nearby_municipalities(coordinate, crs, max_distance_meters)
-            )
-        return self._nearest_finder.find(coordinate, crs, max_distance_meters)
+        return self._geocoder.find_nearest(coordinate, crs, max_distance_meters)
 
     def list_nearby_municipalities(
         self,
@@ -694,8 +630,8 @@ class AddressCodec:
         List the municipalities whose lots ``find_nearest`` may return.
 
         These are the municipalities whose town points lie within
-        ``max_distance_meters`` plus ``NEARBY_LOT_MARGIN_METERS``; ``find_nearest`` adds
-        their lots first when it has a ``cache``.
+        ``max_distance_meters`` plus ``Geocoder.NEARBY_LOT_MARGIN_METERS``;
+        ``find_nearest`` adds their lots first when it has a ``cache``.
 
         Parameters
         ----------
@@ -718,11 +654,7 @@ class AddressCodec:
         RuntimeError
             If ``crs`` cannot be transformed.
         """
-        if not max_distance_meters > 0:
-            raise ValueError(f"max_distance_meters must be positive, got {max_distance_meters}.")
-        return self._nearest_finder.list_nearby_municipalities(
-            coordinate, crs, max_distance_meters + self.NEARBY_LOT_MARGIN_METERS
-        )
+        return self._geocoder.list_nearby_municipalities(coordinate, crs, max_distance_meters)
 
     def has_parcel_shape(self, code: AddressCode | str) -> bool:
         """
@@ -744,8 +676,7 @@ class AddressCodec:
         ValueError
             If a string code is malformed.
         """
-        address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
-        return self._area_finder.has_parcel_shape(address_code)
+        return self._geocoder.has_parcel_shape(self._parse_code(code))
 
     def find_area(
         self,
@@ -826,13 +757,7 @@ class AddressCodec:
             If the shapes of the municipality have to be added to ``cache`` and a file
             cannot be downloaded.
         """
-        address_code = code if isinstance(code, AddressCode) else AddressCode.parse(code)
-        if self._cache is not None and not AddressCode.is_prefecture_code(address_code.lg_code):
-            self._cache.ensure_areas(
-                [address_code.lg_code],
-                is_parcel_included=self._area_finder.has_parcel_shape(address_code),
-            )
-        return self._area_finder.find(address_code)
+        return self._geocoder.find_area(self._parse_code(code))
 
     def find_areas_at(
         self,
@@ -845,9 +770,9 @@ class AddressCodec:
         Find the towns, and optionally the land parcels, whose shapes contain a coordinate.
 
         With a ``cache``, the town boundaries of the municipalities whose town points lie
-        within the first of ``NEARBY_AREA_RADII_METERS`` are added first, then within the
-        next radius while no town contains the coordinate. Land parcel maps are added
-        only for the municipalities of the containing towns.
+        within the first of ``Geocoder.NEARBY_AREA_RADII_METERS`` are added first, then
+        within the next radius while no town contains the coordinate. Land parcel maps
+        are added only for the municipalities of the containing towns.
 
         Parameters
         ----------
@@ -872,29 +797,4 @@ class AddressCodec:
         RuntimeError
             If ``crs`` cannot be transformed.
         """
-        if self._cache is not None:
-            self._ensure_areas_at(
-                self._cache, coordinate, crs, is_parcel_included=is_parcel_included
-            )
-        return self._area_finder.list_at(coordinate, crs, is_parcel_included=is_parcel_included)
-
-    def _ensure_areas_at(
-        self,
-        cache: DatabaseCache,
-        coordinate: GeoCoordinate,
-        crs: GeodeticCrs,
-        *,
-        is_parcel_included: bool,
-    ) -> None:
-        towns: list[AddressArea] = []
-        for radius_meters in self.NEARBY_AREA_RADII_METERS:
-            cache.ensure_areas(
-                self._nearest_finder.list_nearby_municipalities(coordinate, crs, radius_meters),
-                is_parcel_included=False,
-            )
-            if self._database.areas.is_area_imported:
-                towns = self._area_finder.list_at(coordinate, crs, is_parcel_included=False)
-            if towns:
-                break
-        if is_parcel_included:
-            cache.ensure_areas({town.code.lg_code for town in towns}, is_parcel_included=True)
+        return self._geocoder.find_areas_at(coordinate, crs, is_parcel_included=is_parcel_included)

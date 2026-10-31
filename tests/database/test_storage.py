@@ -17,13 +17,14 @@ from address_codec_jp import (
     UnsupportedDatabaseError,
 )
 from address_codec_jp.datasets.address_base_registry import AbrTownCsvReader
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
 HEADER: str = (
     "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"
     + "pref_kana,county_kana,city_kana,ward_kana,oaza_cho_kana,chome_kana,koaza_kana,"
-    + "post_code,ablt_date,rsdt_addr_flg\n"
+    + "post_code,ablt_date,rsdt_addr_flg,koaza_aka_code\n"
 )
-EMPTY_TRAILING_COLUMNS: str = ",,,,,,,,,,0"
+EMPTY_TRAILING_COLUMNS: str = ",,,,,,,,,,0,0"
 MARUNOUCHI_ROW: str = "131016,0011001,東京都,,千代田区,,丸の内,一丁目,"
 
 
@@ -171,8 +172,8 @@ def test_abolished_towns_are_skipped(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
         HEADER
-        + "131016,0011001,東京都,,千代田区,,丸の内,一丁目,,,,,,,,,,,0\n"
-        + "131016,0011002,東京都,,千代田区,,丸の内,二丁目,,,,,,,,,,2020-04-01,0\n",
+        + "131016,0011001,東京都,,千代田区,,丸の内,一丁目,,,,,,,,,,,0,0\n"
+        + "131016,0011002,東京都,,千代田区,,丸の内,二丁目,,,,,,,,,,2020-04-01,0,0\n",
         encoding="utf-8",
     )
     assert [town.machiaza_id for town in AbrTownCsvReader().read(master)] == ["0011001"]
@@ -183,7 +184,7 @@ def test_town_reader_keeps_readings_and_postal_codes(tmp_path: Path) -> None:
     _ = master.write_text(
         HEADER
         + "131016,0011001,東京都,,千代田区,,丸の内,一丁目,,"
-        + "トウキョウト,,チヨダク,,マルノウチ,１チョウメ,,1000013;1000005,,1\n",
+        + "トウキョウト,,チヨダク,,マルノウチ,１チョウメ,,1000013;1000005,,1,0\n",
         encoding="utf-8",
     )
     town = next(AbrTownCsvReader().read(master))
@@ -223,13 +224,13 @@ def test_municipality_names_must_agree(tmp_path: Path) -> None:
 
 def test_town_reader_rejects_an_unknown_numbering_flag(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
-    _ = master.write_text(HEADER + MARUNOUCHI_ROW + ",,,,,,,,,,2\n", encoding="utf-8")
+    _ = master.write_text(HEADER + MARUNOUCHI_ROW + ",,,,,,,,,,2,0\n", encoding="utf-8")
     with pytest.raises(RegistryFormatError, match="Row 2: rsdt_addr_flg"):
         _ = list(AbrTownCsvReader().read(master))
 
 
 def test_town_reader_rejects_other_datasets() -> None:
-    positions = Path(__file__).parent / "fixtures" / "positions" / "mt_town_pos_sample.csv"
+    positions = FIXTURE_DIRECTORY / "positions" / "mt_town_pos_sample.csv"
     with pytest.raises(RegistryFormatError, match="not the town master"):
         _ = list(AbrTownCsvReader().read(positions))
 
@@ -237,7 +238,7 @@ def test_town_reader_rejects_other_datasets() -> None:
 def test_town_listed_once_per_numbering_system_is_merged(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
-        HEADER + MARUNOUCHI_ROW + ",,,,,,,,,,0\n" + MARUNOUCHI_ROW + ",,,,,,,,,,1\n",
+        HEADER + MARUNOUCHI_ROW + ",,,,,,,,,,0,0\n" + MARUNOUCHI_ROW + ",,,,,,,,,,1,0\n",
         encoding="utf-8",
     )
     both_systems = {LotSystem.RESIDENCE_INDICATION, LotSystem.LAND_PARCEL}

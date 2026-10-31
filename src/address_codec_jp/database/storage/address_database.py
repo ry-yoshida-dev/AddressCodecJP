@@ -34,7 +34,7 @@ class AddressDatabase:
     """
 
     APPLICATION_ID: ClassVar[int] = 0x41434A50
-    SCHEMA_VERSION: ClassVar[int] = 6
+    SCHEMA_VERSION: ClassVar[int] = 7
     MEMORY_PATH: ClassVar[str] = ":memory:"
     BUSY_TIMEOUT_SECONDS: ClassVar[float] = 120.0
 

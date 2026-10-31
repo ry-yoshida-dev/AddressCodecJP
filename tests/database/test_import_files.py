@@ -10,8 +10,8 @@ from address_codec_jp import (
     RegistryImporter,
 )
 from address_codec_jp.frontends.cli import CommandLineInterface
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
-FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 TOWN_MASTER: Path = FIXTURE_DIRECTORY / "mt_town_sample.csv"
 POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*.csv"))
 
@@ -72,7 +72,7 @@ def test_import_command_accepts_every_dataset(
     database = str(tmp_path / "towns.sqlite3")
     sources = [str(path) for path in [*POSITION_FIXTURES, TOWN_MASTER]]
     assert CommandLineInterface().run(["--database", database, "import", *sources]) == 0
-    assert capsys.readouterr().out.splitlines()[0].startswith("Imported 42 rows of mt_town")
+    assert capsys.readouterr().out.splitlines()[0].startswith("Imported 58 rows of mt_town")
 
 
 def test_a_path_given_twice_is_imported_once(tmp_path: Path) -> None:

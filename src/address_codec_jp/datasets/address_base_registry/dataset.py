@@ -199,6 +199,7 @@ class AbrDataset(Enum):
                     "oaza_cho_kana",
                     "chome_kana",
                     "koaza_kana",
+                    "koaza_aka_code",
                     "rsdt_addr_flg",
                     "post_code",
                     "ablt_date",

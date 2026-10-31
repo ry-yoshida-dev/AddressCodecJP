@@ -1,3 +1,4 @@
+from address_codec_jp.text.matching.address_reader import AddressReader
 from address_codec_jp.text.matching.area_matcher import AreaMatcher
 from address_codec_jp.text.matching.candidate_set import CandidateSet
 from address_codec_jp.text.matching.group_matcher import GroupMatcher
@@ -10,6 +11,7 @@ from address_codec_jp.text.matching.town_name_index import TownNameIndex
 from address_codec_jp.text.matching.town_source import TownSource
 
 __all__ = [
+    "AddressReader",
     "AreaMatcher",
     "CandidateSet",
     "GroupMatcher",

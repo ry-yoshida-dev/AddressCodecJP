@@ -45,6 +45,7 @@ class TownRepository:
         "chome_kana",
         "koaza_kana",
         "is_registered",
+        "is_street_direction",
     )
     _MUNICIPALITY_COLUMNS: ClassVar[str] = ", ".join(_MUNICIPALITY_COLUMN_NAMES)
     _TOWN_COLUMNS: ClassVar[str] = ", ".join(_TOWN_COLUMN_NAMES)
@@ -91,6 +92,7 @@ class TownRepository:
             chome_kana TEXT NOT NULL,
             koaza_kana TEXT NOT NULL,
             is_registered INTEGER NOT NULL,
+            is_street_direction INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id)
         ) WITHOUT ROWID
         """,
@@ -187,7 +189,7 @@ class TownRepository:
         complemented_cursor = self._connection.execute(
             f"INSERT OR IGNORE INTO towns ({self._TOWN_COLUMNS}) "
             + "SELECT lg_code, substr(machiaza_id, 1, 4) || '000', oaza_name, '', NULL, '', "
-            + "oaza_kana, '', '', 0 FROM towns WHERE chome_number IS NOT NULL "
+            + "oaza_kana, '', '', 0, 0 FROM towns WHERE chome_number IS NOT NULL "
             + "GROUP BY lg_code, substr(machiaza_id, 1, 4)"
         )
         for table, column in (
@@ -240,6 +242,7 @@ class TownRepository:
                         town.chome_kana,
                         town.koaza_kana,
                         town.is_registered,
+                        town.is_street_direction,
                         self._VALUE_SEPARATOR.join(town.postal_codes),
                     )
                     for town in chunk
@@ -314,12 +317,33 @@ class TownRepository:
         AddressNotFoundError
             If no town has the identifiers.
         """
+        town = self.find_town(lg_code, machiaza_id)
+        if town is None:
+            raise AddressNotFoundError(f"Town {lg_code}-{machiaza_id} is not registered.")
+        return town
+
+    def find_town(self, lg_code: str, machiaza_id: str) -> Town | None:
+        """
+        Fetch one town by its identifiers when it is registered.
+
+        Parameters
+        ----------
+        lg_code : str
+            Six-digit local government code.
+        machiaza_id : str
+            Seven-digit town identifier.
+
+        Returns
+        -------
+        Town | None
+            Matching town, or ``None`` when no town has the identifiers.
+        """
         rows: list[tuple[object, ...]] = self._connection.execute(
             f"{self._TOWN_SELECT} WHERE t.lg_code = ? AND t.machiaza_id = ?",
             (lg_code, machiaza_id),
         ).fetchall()
         if not rows:
-            raise AddressNotFoundError(f"Town {lg_code}-{machiaza_id} is not registered.")
+            return None
         return self._to_town(rows[0], self.get_municipality(lg_code))
 
     def get_municipality(self, lg_code: str) -> Municipality:
@@ -462,6 +486,20 @@ class TownRepository:
         for row in rows:
             lg_codes_by_name[str(row[0])].add(str(row[1]))
         return dict(lg_codes_by_name)
+
+    def list_street_municipality_codes(self) -> set[str]:
+        """
+        List the municipalities that have a town whose koaza is a street direction.
+
+        Returns
+        -------
+        set[str]
+            Local government codes; empty when no town is a street direction.
+        """
+        rows: list[tuple[object, ...]] = self._connection.execute(
+            "SELECT DISTINCT lg_code FROM towns WHERE is_street_direction = 1"
+        ).fetchall()
+        return {str(row[0]) for row in rows}
 
     def list_town_names(self) -> set[str]:
         """
@@ -612,8 +650,8 @@ class TownRepository:
 
     def _to_town(self, row: tuple[object, ...], municipality: Municipality) -> Town:
         chome_number = row[4]
-        postal_codes = row[10]
-        lot_systems = row[11]
+        postal_codes = row[11]
+        lot_systems = row[12]
         return Town(
             municipality=municipality,
             machiaza_id=str(row[1]),
@@ -629,6 +667,7 @@ class TownRepository:
                 for value in str(lot_systems).split(self._VALUE_SEPARATOR)
             ),
             is_registered=bool(row[9]),
+            is_street_direction=bool(row[10]),
             postal_codes=tuple(sorted(postal_codes.split(self._VALUE_SEPARATOR)))
             if isinstance(postal_codes, str)
             else (),

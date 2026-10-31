@@ -32,8 +32,8 @@ from address_codec_jp.frontends.api import (
     ServiceSettings,
 )
 from address_codec_jp.results import AddressLocation
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
-FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 TOWN_LEVEL_FIXTURES: list[Path] = [
     FIXTURE_DIRECTORY / "mt_town_sample.csv",
     FIXTURE_DIRECTORY / "positions" / "mt_pref_pos_sample.csv",

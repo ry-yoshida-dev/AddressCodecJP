@@ -15,6 +15,7 @@ database is next opened, also read-only, and a database that stays locked raises
 | --- | --- |
 | [address_database.py](address_database.py) | `AddressDatabase`: owns the SQLite connection, opens read-only or writable, groups writes in transactions, and rejects files of another application or schema version |
 | [town_repository.py](town_repository.py) | `TownRepository`: municipalities, towns, postal codes, and numbering systems; replacement on import and lookup of prefectures, municipalities, and towns, of the areas directly under them, and of towns by oaza or koaza name |
+| [address_directory.py](address_directory.py) | `AddressDirectory`: resolves codes to registered areas and lists the areas directly under a code or with a postal code |
 | [town_replacement.py](town_replacement.py) | `TownReplacement`: numbers of stored and complemented towns of a replacement |
 | [lot_system_column.py](lot_system_column.py) | `LotSystemColumn`: compact integer stored for each `LotSystem` |
 | [position_repository.py](position_repository.py) | `PositionRepository`: points, joined from numbers and identifiers at lookup; lot existence checks, bounding-box queries, and removal of orphaned rows |

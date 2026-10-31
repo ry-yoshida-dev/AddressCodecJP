@@ -10,6 +10,15 @@ the API. The library is installed from git, so a version is a tagged commit
 
 ### Added
 
+- Kyoto street directions (通り名) are matched before the oaza name, as Kyoto addresses
+  are written (`烏丸通塩小路下る東塩小路町`), and after it, also with notation variants
+  (`上ル`, `下がる`, `通り`, `入ル`), and the ward and city may be omitted. With lot
+  numbers, the address is matched to the oaza, whose lot numbers the registry lists, so
+  that it locates the residence or parcel. A direction the registry does not list
+  decides between oaza of the same name by the streets it shares with theirs. Street
+  directions are decoded before the oaza name, and a code of a street direction with
+  lot numbers is verified, located, and shaped as the lot numbers of its oaza.
+  `Town.is_street_direction` marks them, read from `koaza_aka_code` of the town master.
 - Addresses written without the municipality (`霞が関1-1-1`, `東京都霞が関1-1-1`) or with
   a ward but without its designated city (`中京区上本能寺前町488`) are matched. A town
   name found in several municipalities raises `AmbiguousAddressError` with the
@@ -46,10 +55,19 @@ the API. The library is installed from git, so a version is a tagged commit
 
 ### Changed
 
-- **Breaking:** the database schema version is 6. Tables keyed by town are stored
+- **Breaking:** the database schema version is 7. Tables keyed by town are stored
   without row IDs and the numbering system as an integer, which makes the database
-  considerably smaller, and towns are indexed by oaza and koaza name for
-  `list_by_name`; a cache of an older version is rebuilt on first use.
+  considerably smaller, towns are indexed by oaza and koaza name for `list_by_name`,
+  and towns record whether their koaza is a Kyoto street direction; a cache of an older
+  version is rebuilt on first use.
+- **Breaking:** the town master requires the `koaza_aka_code` column, `Town` requires
+  `is_street_direction`, and custom town sources must implement
+  `TownSource.list_street_municipality_codes`.
+- **Breaking:** `AddressCodec` delegates to `AddressReader` (text matching),
+  `AddressDirectory` (code lookup), and `Geocoder` (points, shapes, and the datasets
+  added before a lookup). `NEARBY_LOT_MARGIN_METERS` and `NEARBY_AREA_RADII_METERS`
+  moved from `AddressCodec` to `Geocoder`, which takes the `TownRepository` and any
+  `DatasetSupplier` in place of `DatabaseCache`.
 - Messages of `AmbiguousAddressError` for several towns list only the candidate towns.
 - A designated city written without its ward and town (`〒231-0023 横浜市`) raises
   `AmbiguousAddressError` instead of being read as the ward of the postal code.

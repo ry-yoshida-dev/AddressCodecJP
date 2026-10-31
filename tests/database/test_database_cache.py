@@ -26,8 +26,8 @@ from address_codec_jp import (
 )
 from address_codec_jp.database.cache import CacheDirectory, CacheLoader
 from address_codec_jp.frontends.cli import CommandLineInterface
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
-FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 FIXTURE_NAMES: dict[AbrDataset, str] = {
     AbrDataset.TOWN: "mt_town_sample.csv",
     AbrDataset.PREFECTURE_POSITION: "positions/mt_pref_pos_sample.csv",

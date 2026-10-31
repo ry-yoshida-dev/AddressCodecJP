@@ -14,7 +14,7 @@ the position-related datasets as `PositionRecord`s that `storage` persists.
 | [csv_row.py](csv_row.py) | `AbrCsvRow`: line number and required column values of one data row |
 | [dataset.py](dataset.py) | `AbrDataset`: the downloadable and importable datasets, identified by their CSV header, with their distribution scope |
 | [distribution_scope.py](distribution_scope.py) | `DistributionScope`: nationwide, per-prefecture, or per-municipality distribution |
-| [town_csv_reader.py](town_csv_reader.py) | `AbrTownCsvReader`: reads `mt_town_all.csv`, skipping abolished rows and naming the row of malformed values |
+| [town_csv_reader.py](town_csv_reader.py) | `AbrTownCsvReader`: reads `mt_town_all.csv`, skipping abolished rows, marking Kyoto street directions by `koaza_aka_code`, and naming the row of malformed values |
 | [position_csv_reader.py](position_csv_reader.py) | `AbrPositionCsvReader`: reads position extensions and the block, residence, and parcel number masters, turning abolished lots into removals |
 | [position_record.py](position_record.py) | `PositionRecord`: union of the records read from position-related datasets |
 | [area_position.py](area_position.py) | `AreaPosition`: point of a prefecture or municipality |

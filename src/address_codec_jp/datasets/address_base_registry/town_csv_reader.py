@@ -32,6 +32,7 @@ class AbrTownCsvReader:
         "ward_kana",
     )
     _POSTAL_CODE_SEPARATOR: ClassVar[str] = ";"
+    _STREET_DIRECTION_CODE: ClassVar[str] = "2"
     _CHOME: ClassVar[re.Pattern[str]] = re.compile(
         f"(?P<number>[0-9０-９]+|[{KanjiNumeral.CHARACTERS}]+)丁目?"
     )
@@ -94,6 +95,7 @@ class AbrTownCsvReader:
             ),
             postal_codes=self._parse_postal_codes(values["post_code"]),
             is_registered=True,
+            is_street_direction=values["koaza_aka_code"] == self._STREET_DIRECTION_CODE,
         )
 
     def _to_municipality(self, values: dict[str, str]) -> Municipality:

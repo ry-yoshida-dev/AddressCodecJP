@@ -11,7 +11,13 @@ from address_codec_jp.text.normalization import KanjiNumeral
 
 
 class AddressFormatter:
-    """Renderer of prefectures, municipalities, and towns as address text."""
+    """
+    Renderer of prefectures, municipalities, and towns as address text.
+
+    A street direction of Kyoto (``Town.is_street_direction``) is written before the oaza
+    name, as addresses in Kyoto are written (``烏丸通塩小路下る東塩小路町``); other koaza
+    follow the oaza and chome.
+    """
 
     _FULL_WIDTH_TABLE: ClassVar[dict[int, int]] = str.maketrans(
         "0123456789-", "０１２３４５６７８９－"
@@ -44,11 +50,13 @@ class AddressFormatter:
             If katakana is requested and the registry has no reading of a name.
         """
         if address.town is not None:
+            town = address.town
             text = (
-                self._postal_code_text(address.town, address_format)
-                + self._municipality_text(address.town.municipality, address_format)
-                + self._name(address.town.oaza_name, address.town.oaza_kana, address_format)
-                + self._format_numbers(address.town, address.lot, address_format)
+                self._postal_code_text(town, address_format)
+                + self._municipality_text(town.municipality, address_format)
+                + (self._koaza_text(town, address_format) if town.is_street_direction else "")
+                + self._name(town.oaza_name, town.oaza_kana, address_format)
+                + self._format_numbers(town, address.lot, address_format)
             )
         elif address.municipality is not None:
             text = self._municipality_text(address.municipality, address_format)
@@ -111,9 +119,12 @@ class AddressFormatter:
             return "-".join([self._format_numeral(town.chome_number, address_format), *lot_numbers])
         return (
             self._format_chome(town, address_format)
-            + self._name(town.koaza_name, town.koaza_kana, address_format)
+            + ("" if town.is_street_direction else self._koaza_text(town, address_format))
             + self._format_lot(town, lot_numbers, address_format)
         )
+
+    def _koaza_text(self, town: Town, address_format: AddressFormat) -> str:
+        return self._name(town.koaza_name, town.koaza_kana, address_format)
 
     def _format_chome(self, town: Town, address_format: AddressFormat) -> str:
         if town.chome_number is None:

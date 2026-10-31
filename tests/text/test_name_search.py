@@ -5,8 +5,7 @@ import pytest
 
 from address_codec_jp import AddressCodec
 from address_codec_jp.frontends.cli import CommandLineInterface
-
-TOWN_MASTER: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
+from tests.fixture_paths import TOWN_MASTER
 
 
 def codes_named(codec: AddressCodec, name: str, within: str | None = None) -> list[str]:

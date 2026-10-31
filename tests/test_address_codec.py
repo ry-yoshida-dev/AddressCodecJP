@@ -15,11 +15,12 @@ from address_codec_jp import (
     RegistryImporter,
 )
 from address_codec_jp.text.matching import AreaMatcher
+from tests.fixture_paths import TOWN_MASTER
 
 TOWN_MASTER_HEADER: str = (
     "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"
     + "pref_kana,county_kana,city_kana,ward_kana,oaza_cho_kana,chome_kana,koaza_kana,"
-    + "post_code,ablt_date,rsdt_addr_flg\n"
+    + "post_code,ablt_date,rsdt_addr_flg,koaza_aka_code\n"
 )
 
 
@@ -288,14 +289,14 @@ def test_round_trip(codec: AddressCodec) -> None:
 def test_codec_created_after_reimport_matches_new_towns(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
-        TOWN_MASTER_HEADER + "131067,0012000,東京都,,台東区,,浅草,,,,,,,,,,,,0\n",
+        TOWN_MASTER_HEADER + "131067,0012000,東京都,,台東区,,浅草,,,,,,,,,,,,0,0\n",
         encoding="utf-8",
     )
     with RegistryImporter.open(":memory:") as importer:
         _ = importer.import_file(master)
         assert str(AddressCodec(importer.database).encode("台東区浅草")) == "131067-0012000"
         _ = master.write_text(
-            TOWN_MASTER_HEADER + "131067,0004001,東京都,,台東区,,浅草橋,一丁目,,,,,,,,,,,0\n",
+            TOWN_MASTER_HEADER + "131067,0004001,東京都,,台東区,,浅草橋,一丁目,,,,,,,,,,,0,0\n",
             encoding="utf-8",
         )
         _ = importer.import_file(master)
@@ -307,8 +308,8 @@ def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> N
     master = tmp_path / "master.csv"
     _ = master.write_text(
         TOWN_MASTER_HEADER
-        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0\n"
-        + "469025,0001000,試験県,,北市山,,川,,,,,,,,,,,,0\n",
+        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0,0\n"
+        + "469025,0001000,試験県,,北市山,,川,,,,,,,,,,,,0,0\n",
         encoding="utf-8",
     )
     with RegistryImporter.open(":memory:") as importer:
@@ -325,9 +326,9 @@ def test_town_without_municipality_shared_by_municipalities(tmp_path: Path) -> N
     master = tmp_path / "master.csv"
     _ = master.write_text(
         TOWN_MASTER_HEADER
-        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,9990001,,0\n"
-        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,9990002,,0\n"
-        + "469025,0002000,試験県,,南市,,川原,,,,,,,,,,9990002,,0\n",
+        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,9990001,,0,0\n"
+        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,9990002,,0,0\n"
+        + "469025,0002000,試験県,,南市,,川原,,,,,,,,,,9990002,,0,0\n",
         encoding="utf-8",
     )
     with RegistryImporter.open(":memory:") as importer:
@@ -350,9 +351,9 @@ def test_town_without_municipality_in_too_many_municipalities(
     master = tmp_path / "master.csv"
     _ = master.write_text(
         TOWN_MASTER_HEADER
-        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0\n"
-        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,,,0\n"
-        + "469033,0001000,試験県,,西市,,山田東,,,,,,,,,,,,0\n",
+        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0,0\n"
+        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,,,0,0\n"
+        + "469033,0001000,試験県,,西市,,山田東,,,,,,,,,,,,0,0\n",
         encoding="utf-8",
     )
     with RegistryImporter.open(":memory:") as importer:
@@ -372,8 +373,20 @@ AMBIGUOUS_TOWN_CODES: frozenset[str] = frozenset(
         "172049-0144116",
         "172049-0196000",
         "172049-0196110",
+        "261041-0102000",
+        "261041-0106000",
     }
 )
+STREET_DIRECTION_OAZA_CODES: dict[str, str] = {
+    "261041-0102102": "261041-0102000",
+    "261041-0106102": "261041-0106000",
+    "261041-0106110": "261041-0106000",
+    "261041-0369102": "261041-0369000",
+    "261041-1337102": "261041-1337000",
+    "261068-0416113": "261068-0416000",
+    "261068-0416114": "261068-0416000",
+    "261068-0416115": "261068-0416000",
+}
 KANJI_AMBIGUOUS_TOWN_CODES: frozenset[str] = frozenset({"042021-0093103", "173843-0089134"})
 
 
@@ -386,9 +399,7 @@ def test_decode_output_encodes_back(
     address_format = AddressFormat(
         numeral_style=numeral_style, lot_style=lot_style, digit_width=digit_width
     )
-    master_rows = (Path(__file__).parent / "fixtures" / "mt_town_sample.csv").read_text(
-        encoding="utf-8"
-    )
+    master_rows = TOWN_MASTER.read_text(encoding="utf-8")
     town_codes = sorted(
         {f"{row.split(',')[0]}-{row.split(',')[1]}" for row in master_rows.splitlines()[1:]}
         - AMBIGUOUS_TOWN_CODES
@@ -397,4 +408,6 @@ def test_decode_output_encodes_back(
     for town_code in town_codes:
         for lot_suffix in ["", "-5", "-12-3", "-123-45"]:
             code = AddressCode.parse(town_code + lot_suffix)
-            assert codec.encode(codec.decode(code, address_format)) == code, str(code)
+            lot_town_code = STREET_DIRECTION_OAZA_CODES.get(town_code, town_code)
+            expected = AddressCode.parse((lot_town_code if lot_suffix else town_code) + lot_suffix)
+            assert codec.encode(codec.decode(code, address_format)) == expected, str(code)

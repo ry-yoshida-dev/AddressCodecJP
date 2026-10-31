@@ -12,7 +12,7 @@ from address_codec_jp import (
 TOWN_MASTER_HEADER: str = (
     "lg_code,machiaza_id,pref,county,city,ward,oaza_cho,chome,koaza,"
     + "pref_kana,county_kana,city_kana,ward_kana,oaza_cho_kana,chome_kana,koaza_kana,"
-    + "post_code,ablt_date,rsdt_addr_flg\n"
+    + "post_code,ablt_date,rsdt_addr_flg,koaza_aka_code\n"
 )
 
 
@@ -72,9 +72,9 @@ def test_group_decides_town_without_municipality(tmp_path: Path) -> None:
     master = tmp_path / "master.csv"
     _ = master.write_text(
         TOWN_MASTER_HEADER
-        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0\n"
-        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,,,0\n"
-        + "469025,0002000,試験県,,南市,,川原,,,,,,,,,,,,0\n",
+        + "469017,0001000,試験県,,北市,,山田,,,,,,,,,,,,0,0\n"
+        + "469025,0001000,試験県,,南市,,山田,,,,,,,,,,,,0,0\n"
+        + "469025,0002000,試験県,,南市,,川原,,,,,,,,,,,,0,0\n",
         encoding="utf-8",
     )
     with RegistryImporter.open(":memory:") as importer:

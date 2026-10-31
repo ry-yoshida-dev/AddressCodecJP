@@ -190,6 +190,29 @@ them down (`大阪府梅田3-1-1`), and so does an area code given as `within`
 `within` and `is_lot_verified` as `match` does. Lot numbers above
 `LotNumber.MAX_NUMBER` and an address that is only a postal code raise `ValueError`.
 
+Kyoto street directions (通り名) are read before the town name, as they are usually
+written, or after it, as the registry lists them, also with variants such as `上ル` or
+`通り`. Without lot numbers, the address is the street direction itself; lot numbers
+belong to the town, so with them the code is that of the town, which locates the
+residence or parcel. A street direction the registry does not list is skipped, and
+decides between towns of the same name in the ward by the streets it names. The ward and
+city may be omitted (`烏丸通塩小路下る東塩小路町`). A code of a street direction with lot
+numbers, such as `261068-0416115-538-1`, is located, verified, and shaped as the same
+lot numbers of its town.
+
+```python
+with AddressCodec.open() as codec:
+    print(codec.encode("京都市下京区烏丸通塩小路下る東塩小路町"))
+    print(codec.encode("京都市下京区烏丸通塩小路下ル東塩小路町721"))
+    print(codec.decode("261068-0416115"))
+```
+
+```
+261068-0416115
+261068-0416000-721
+京都府京都市下京区烏丸通塩小路下る東塩小路町
+```
+
 `match_group` reads addresses that all lie in one common area: the narrowest
 prefecture, municipality, or town that encloses a candidate of every address decides
 those ambiguous on their own. Next to `千代田区丸の内1-1`, `府中市` is 東京都府中市. The
@@ -334,7 +357,10 @@ Every error derives from `AddressCodecError` and from a built-in exception.
 ## Limitations
 
 - Lot numbers are checked against the registry only with `is_lot_verified=True`.
-- Kyoto-style street directions (`上る`/`西入`) are not interpreted.
+- Kyoto street directions (`烏丸通塩小路下る`) are matched only in Kyoto, against the
+  directions the registry lists; one that is not listed is skipped and only decides
+  between towns of the same name. The same direction and town in two wards is
+  ambiguous without the ward.
 - Town polygons are the census boundaries of October 2020. About 3% of them match no
   current town (renamed towns, merged areas, river beds) and are skipped; koaza without
   their own polygon fall back to their oaza.

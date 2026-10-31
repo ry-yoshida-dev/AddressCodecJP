@@ -1,12 +1,10 @@
 from collections.abc import Collection
-from pathlib import Path
 
 from address_codec_jp.address import Municipality, Town
 from address_codec_jp.datasets.address_base_registry import AbrTownCsvReader
 from address_codec_jp.text.matching import AreaMatcher, TownSource
 from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
-
-FIXTURE: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
+from tests.fixture_paths import TOWN_MASTER
 
 
 class InMemoryTownSource:
@@ -39,6 +37,10 @@ class InMemoryTownSource:
                 lg_codes_by_name.setdefault(town.oaza_name, set()).add(town.lg_code)
         return lg_codes_by_name
 
+    def list_street_municipality_codes(self) -> set[str]:
+        """List the municipalities that have a street direction."""
+        return {town.lg_code for town in self._towns if town.is_street_direction}
+
     def list_town_names(self) -> set[str]:
         """List the oaza and koaza names of the towns."""
         return {name for town in self._towns for name in (town.oaza_name, town.koaza_name) if name}
@@ -52,7 +54,7 @@ class InMemoryTownSource:
 
 
 def test_matcher_runs_on_any_town_source() -> None:
-    source: TownSource = InMemoryTownSource(list(AbrTownCsvReader().read(FIXTURE)))
+    source: TownSource = InMemoryTownSource(list(AbrTownCsvReader().read(TOWN_MASTER)))
     normalizer = TextNormalizer()
     matcher = AreaMatcher(source, normalizer, LotNumberParser())
     address_match = matcher.match(normalizer.normalize("千代田区丸の内1-2-3"), None)

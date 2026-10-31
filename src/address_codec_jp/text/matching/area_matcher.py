@@ -3,16 +3,17 @@ from collections.abc import Container
 from dataclasses import replace
 from typing import ClassVar
 
-from address_codec_jp.address import Address, AddressCode, Municipality, Prefecture
+from address_codec_jp.address import Address, AddressCode, Municipality, Prefecture, Town
 from address_codec_jp.errors import (
     AddressNotFoundError,
     AmbiguousAddressError,
 )
-from address_codec_jp.results import AddressMatch
+from address_codec_jp.results import AddressMatch, MatchTier
 from address_codec_jp.text.matching.candidate_set import CandidateSet
 from address_codec_jp.text.matching.municipality_match import MunicipalityMatch
 from address_codec_jp.text.matching.municipality_name_index import MunicipalityNameIndex
 from address_codec_jp.text.matching.name_index import NameIndex
+from address_codec_jp.text.matching.street_direction_reader import StreetDirectionReader
 from address_codec_jp.text.matching.town_interpretation import TownInterpretation
 from address_codec_jp.text.matching.town_name_index import TownNameIndex
 from address_codec_jp.text.matching.town_source import TownSource
@@ -34,9 +35,10 @@ class AreaMatcher:
     written without its city (``中京区``) is tried only after every full municipality name.
     An address that starts with no municipality name is read as a town name, optionally
     after the prefecture (``霞が関1-1-1``): every municipality with an oaza that starts the
-    text is tried, and the reading must include lot numbers or end with the town name. An
-    oaza name followed by a number or the end of the text and found in too many
-    municipalities (``本町1-1``) rejects the address as ambiguous. For
+    text, or with a street direction followed by one of its oaza names, is tried, and the
+    reading must include lot numbers or end with the town name. An oaza name followed by
+    a number or the end of the text and found in too many municipalities (``本町1-1``)
+    rejects the address as ambiguous. For
     the text after the municipality, every combination of oaza, chome, koaza, and lot
     numbers is tried, and the best ``TownInterpretation`` wins. A reading is discarded when it reads
     no lot numbers but leaves digits unread (``浅草`` + ``橋6-1-1``) other than a floor or
@@ -48,6 +50,16 @@ class AreaMatcher:
     as ``within`` discards every municipality and town outside it before the readings
     are ranked. A designated city written without its ward still needs a town name when
     the postal code or ``within`` leaves only one of its wards.
+
+    A street direction of Kyoto (``Town.is_street_direction``) is read both after the
+    oaza name, as the registry orders them, and before it, as addresses in Kyoto are
+    usually written (``烏丸通塩小路下る東塩小路町``). A written direction that matches no
+    registered one is skipped before an oaza with a street direction that shares a
+    street name with it, and decides between oaza of the same name by its resemblance
+    to theirs, at ``MatchTier.FOLDED`` and below every registered reading. Lot numbers
+    belong to the oaza, so an address with lot numbers is matched to the oaza of its
+    street direction when the registry lists that oaza, and to the street direction
+    itself otherwise.
 
     Parameters
     ----------
@@ -68,6 +80,7 @@ class AreaMatcher:
     _ASCII_DIGITS: ClassVar[frozenset[str]] = frozenset("0123456789")
     _TOWN_ONLY_MUNICIPALITY_LIMIT: ClassVar[int] = 50
     _TOWN_NAME_END: ClassVar[re.Pattern[str]] = re.compile(r"$|[0-9-]")
+    _UNREGISTERED_STREET_PENALTY: ClassVar[int] = MatchTier.FOLDED.penalty + 1
 
     def __init__(
         self, repository: TownSource, normalizer: TextNormalizer, lot_parser: LotNumberParser
@@ -77,6 +90,8 @@ class AreaMatcher:
         self._lot_parser: LotNumberParser = lot_parser
         self._name_index: MunicipalityNameIndex = MunicipalityNameIndex(repository, normalizer)
         self._town_names: TownNameIndex = TownNameIndex(repository, normalizer)
+        self._streets: StreetDirectionReader = StreetDirectionReader(normalizer)
+        self._street_keys_by_municipality: dict[str, frozenset[str]] = {}
 
     @property
     def municipality_names(self) -> MunicipalityNameIndex:
@@ -290,6 +305,8 @@ class AreaMatcher:
                     + "municipalities. Add the municipality.",
                     tuple(AddressCode(lg_code=item.lg_code) for item in municipalities),
                 )
+        for municipality in self._street_municipalities(text, postal_code, prefecture, within):
+            _ = candidates.setdefault(municipality.lg_code, municipality)
         if not candidates:
             return None
         municipality_match = MunicipalityMatch(
@@ -306,6 +323,36 @@ class AreaMatcher:
         if not interpretations:
             return None
         return self._select(normalized_address, postal_code, municipality_match, interpretations)
+
+    def _street_municipalities(
+        self,
+        text: str,
+        postal_code: str | None,
+        prefecture: Prefecture | None,
+        within: AddressCode | None,
+    ) -> list[Municipality]:
+        municipalities_by_code = self._town_names.municipalities_by_code
+        municipalities = [
+            municipality
+            for municipality in (
+                municipalities_by_code[lg_code]
+                for lg_code in sorted(self._town_names.street_municipality_codes)
+            )
+            if (prefecture is None or municipality.prefecture_name == prefecture.name)
+            and self._overlaps(municipality, within)
+            and self._street_first_options(
+                municipality, self._town_names.oazas(municipality.lg_code), text
+            )
+        ]
+        return self._narrow_by_postal_code(
+            MunicipalityMatch(
+                name="",
+                municipalities=municipalities,
+                remainder=text,
+                is_name_abbreviated=True,
+            ),
+            postal_code,
+        ).municipalities
 
     def _match_municipalities(self, text: str) -> list[MunicipalityMatch]:
         name_index = self._name_index
@@ -497,12 +544,69 @@ class AreaMatcher:
         return [item for item in narrowed if item.towns] or interpretations
 
     def _interpret_all(self, municipality: Municipality, text: str) -> list[TownInterpretation]:
-        return [
-            interpretation
-            for oaza_candidates in self._town_names.oazas(municipality.lg_code).match_all(text)
+        oaza_index = self._town_names.oazas(municipality.lg_code)
+        readings = [
+            town_candidates
+            for oaza_candidates in oaza_index.match_all(text)
             for chome_candidates in self._chome_options(oaza_candidates)
             for town_candidates in self._koaza_options(chome_candidates)
+        ]
+        readings.extend(
+            chome_candidates
+            for street_candidates in self._street_first_options(municipality, oaza_index, text)
+            for chome_candidates in self._chome_options(street_candidates)
+        )
+        return [
+            interpretation
+            for town_candidates in readings
             if (interpretation := self._interpret(town_candidates, len(text))) is not None
+        ]
+
+    def _street_first_options(
+        self, municipality: Municipality, oaza_index: NameIndex, text: str
+    ) -> list[CandidateSet]:
+        street_keys = self._street_keys(municipality)
+        if not street_keys:
+            return []
+        options: list[CandidateSet] = []
+        for end in self._streets.split_points(text, street_keys):
+            street, rest = text[:end], text[end:]
+            for oaza_candidates in oaza_index.match_all(rest):
+                if oaza_candidates.remainder != rest:
+                    options.extend(self._read_street_before_oaza(street, oaza_candidates))
+        return options
+
+    def _street_keys(self, municipality: Municipality) -> frozenset[str]:
+        lg_code = municipality.lg_code
+        if lg_code not in self._street_keys_by_municipality:
+            self._street_keys_by_municipality[lg_code] = self._streets.fold_names(
+                self._town_names.list_street_directions(lg_code)
+            )
+        return self._street_keys_by_municipality[lg_code]
+
+    def _read_street_before_oaza(
+        self, street: str, oaza_candidates: CandidateSet
+    ) -> list[CandidateSet]:
+        registered = self._streets.match(street, oaza_candidates.towns)
+        if registered is not None:
+            return [
+                replace(
+                    oaza_candidates,
+                    towns=registered.towns,
+                    penalty=oaza_candidates.penalty + registered.penalty,
+                    loosest_tier=oaza_candidates.loosest_tier.loosen(registered.loosest_tier),
+                )
+            ]
+        oaza_towns = self._streets.find_closest_oazas(street, oaza_candidates.towns)
+        if not oaza_towns:
+            return []
+        return [
+            replace(
+                oaza_candidates,
+                towns=oaza_towns,
+                penalty=oaza_candidates.penalty + self._UNREGISTERED_STREET_PENALTY,
+                loosest_tier=MatchTier.FOLDED,
+            )
         ]
 
     def _chome_options(self, candidates: CandidateSet) -> list[CandidateSet]:
@@ -550,7 +654,10 @@ class AreaMatcher:
                 loosest_tier=candidates.loosest_tier.loosen(koaza_candidates.loosest_tier),
                 split_digit_count=candidates.split_digit_count + koaza_candidates.split_digit_count,
             )
-            for koaza_candidates in koaza_index.match_all(candidates.remainder)
+            for koaza_candidates in [
+                *koaza_index.match_all(candidates.remainder),
+                *self._streets.match_all(candidates.remainder, candidates.towns),
+            ]
         ]
         without_koaza = [town for town in candidates.towns if not town.koaza_name]
         if without_koaza:
@@ -575,9 +682,8 @@ class AreaMatcher:
             and not self._lot_parser.is_building_number(lot_result.remainder)
         ):
             return None
-        towns = [
-            town for town in candidates.towns if town.is_registered or not lot_result.lot.numbers
-        ]
+        towns = self._lot_towns(candidates.towns) if lot_result.lot.numbers else candidates.towns
+        towns = [town for town in towns if town.is_registered or not lot_result.lot.numbers]
         if not towns:
             return None
         return TownInterpretation(
@@ -588,6 +694,14 @@ class AreaMatcher:
             penalty=candidates.penalty,
             loosest_tier=candidates.loosest_tier,
         )
+
+    def _lot_towns(self, towns: list[Town]) -> list[Town]:
+        selected: dict[tuple[str, str], Town] = {}
+        for town in towns:
+            oaza = self._town_names.find_oaza(town) if town.is_street_direction else None
+            lot_town = oaza if oaza is not None and oaza.is_registered else town
+            _ = selected.setdefault((lot_town.lg_code, lot_town.machiaza_id), lot_town)
+        return list(selected.values())
 
     def _matching_prefixes(self, text: str, keys: Container[str]) -> list[str]:
         return [text[:length] for length in range(len(text), 0, -1) if text[:length] in keys]

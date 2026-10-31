@@ -6,8 +6,8 @@ import pytest
 
 from address_codec_jp import AbrDataset, AddressCodec, DatasetImport, RegistryImporter
 from address_codec_jp.frontends.cli import CommandLineInterface
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
-FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 TOWN_MASTER: Path = FIXTURE_DIRECTORY / "mt_town_sample.csv"
 TOWN_POSITIONS: Path = FIXTURE_DIRECTORY / "positions" / "mt_town_pos_sample.csv"
 
@@ -55,5 +55,5 @@ def test_info_command_lists_imports(tmp_path: Path, capsys: pytest.CaptureFixtur
     _ = capsys.readouterr()
     assert CommandLineInterface().run(["--database", database, "info"]) == 0
     columns = capsys.readouterr().out.strip().split("\t")
-    assert columns[1:4] == ["mt_town", "42", "mt_town_sample.csv"]
+    assert columns[1:4] == ["mt_town", "58", "mt_town_sample.csv"]
     assert len(columns[4]) == 64

@@ -15,12 +15,12 @@ from address_codec_jp.frontends.cli import (
     ParserFactory,
 )
 from address_codec_jp.frontends.query import QueryOperation
+from tests.fixture_paths import TOWN_MASTER
 
-FIXTURE: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
 POSITION_SOURCES: list[str] = sorted(
-    str(path) for path in (FIXTURE.parent / "positions").glob("*.csv")
+    str(path) for path in (TOWN_MASTER.parent / "positions").glob("*.csv")
 )
-CENSUS_BOUNDARY: Path = FIXTURE.parent / "areas" / "census_boundary_131016.zip"
+CENSUS_BOUNDARY: Path = TOWN_MASTER.parent / "areas" / "census_boundary_131016.zip"
 
 
 @pytest.fixture
@@ -28,7 +28,8 @@ def database(tmp_path: Path) -> Path:
     """Database imported from the sample town master through the CLI."""
     database_path = tmp_path / "towns.sqlite3"
     assert (
-        CommandLineInterface().run(["--database", str(database_path), "import", str(FIXTURE)]) == 0
+        CommandLineInterface().run(["--database", str(database_path), "import", str(TOWN_MASTER)])
+        == 0
     )
     return database_path
 

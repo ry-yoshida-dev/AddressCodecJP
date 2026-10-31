@@ -61,6 +61,17 @@ class TownSource(Protocol):
         """
         ...
 
+    def list_street_municipality_codes(self) -> set[str]:
+        """
+        List the municipalities that have a town whose koaza is a street direction.
+
+        Returns
+        -------
+        set[str]
+            Local government codes; empty when no town is a street direction.
+        """
+        ...
+
     def list_town_names(self) -> set[str]:
         """
         List every oaza and koaza name.

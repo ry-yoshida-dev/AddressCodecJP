@@ -43,6 +43,11 @@ class Town:
         ``False`` for an oaza-level town that this library added because the registry
         lists the oaza only by chome. Such a town cannot carry lot numbers, because lot
         numbers of that oaza belong to one of its chome.
+    is_street_direction : bool
+        Whether the koaza is a street direction of Kyoto (通り名) such as
+        ``烏丸通塩小路下る``, given by ``koaza_aka_code`` ``2`` of the registry. Such a
+        koaza locates the town along its streets, while the lot numbers belong to the
+        oaza, and it is written before the oaza name.
 
     Readings are empty strings when the name is empty or the registry has no reading.
 
@@ -64,6 +69,7 @@ class Town:
     lot_systems: frozenset[LotSystem]
     postal_codes: tuple[str, ...]
     is_registered: bool
+    is_street_direction: bool
 
     _POSTAL_CODE: ClassVar[re.Pattern[str]] = re.compile(r"[0-9]{7}")
 

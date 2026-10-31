@@ -26,8 +26,8 @@ from address_codec_jp import (
 from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
 from address_codec_jp.frontends.cli import CommandLineInterface
 from address_codec_jp.geometry import Polygon, Ring
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
-FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 AREA_DIRECTORY: Path = FIXTURE_DIRECTORY / "areas"
 CENSUS_BOUNDARY: Path = AREA_DIRECTORY / "census_boundary_131016.zip"
 REGISTRY_MAP: Path = AREA_DIRECTORY / "registry_map_113247.xml"

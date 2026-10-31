@@ -5,8 +5,7 @@ import pytest
 
 from address_codec_jp import AddressCode, AddressCodec, AddressNotFoundError
 from address_codec_jp.frontends.cli import CommandLineInterface
-
-TOWN_MASTER: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
+from tests.fixture_paths import TOWN_MASTER
 
 
 @pytest.mark.parametrize(

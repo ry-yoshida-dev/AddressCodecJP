@@ -21,8 +21,8 @@ from address_codec_jp.datasets.address_base_registry import (
     LotEntry,
     LotRemoval,
 )
+from tests.fixture_paths import FIXTURE_DIRECTORY
 
-FIXTURE_DIRECTORY: Path = Path(__file__).parent / "fixtures"
 POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*.csv"))
 
 
@@ -182,7 +182,7 @@ def test_unexpressible_lots_are_skipped_and_abolished_lots_removed() -> None:
     block_records = list(reader.read(positions / "mt_rsdtdsp_blk_sample.csv"))
     assert [type(record) for record in block_records] == [LotEntry, LotRemoval]
     assert len(list(reader.read(positions / "mt_rsdtdsp_rsdt_sample.csv"))) == 1
-    assert len(list(reader.read(positions / "mt_parcel_sample.csv"))) == 4
+    assert len(list(reader.read(positions / "mt_parcel_sample.csv"))) == 5
 
 
 def test_newer_master_removes_abolished_lots(
