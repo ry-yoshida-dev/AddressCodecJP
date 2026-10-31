@@ -6,6 +6,7 @@ from address_codec_jp.text.matching.municipality_name_index import MunicipalityN
 from address_codec_jp.text.matching.name_index import NameIndex
 from address_codec_jp.text.matching.name_searcher import NameSearcher
 from address_codec_jp.text.matching.town_interpretation import TownInterpretation
+from address_codec_jp.text.matching.town_name_index import TownNameIndex
 from address_codec_jp.text.matching.town_source import TownSource
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "NameIndex",
     "NameSearcher",
     "TownInterpretation",
+    "TownNameIndex",
     "TownSource",
 ]

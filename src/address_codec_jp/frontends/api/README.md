@@ -36,7 +36,7 @@ endpoint of the operation.
 | [application_factory.py](application_factory.py) | `ApplicationFactory`: builds the FastAPI application, checks the cache at start, and maps errors to responses |
 | [address_routes.py](address_routes.py) | `AddressRoutes`: the `/v1` endpoints and `/health` |
 | [codec_pool.py](codec_pool.py) | `CodecPool`: worker threads with one codec each, reopened when the database file is replaced, and closed even when a thread is busy |
-| [query/](query/) | Queries of the API: operations, options, the handler that runs them, and their results and answers |
+| [query/](query/) | Queries of the API: the handler that runs them, the coverage guard that checks them, and their answers |
 | [dataset_coverage.py](dataset_coverage.py) | `DatasetCoverage`: municipalities whose lots, boundaries, and registry maps the cache holds, and the dates of their maps |
 | [credit_writer.py](credit_writer.py) | `CreditWriter`: credits in the form required by the terms of use, with municipality names and map dates |
 | [data_source.py](data_source.py) | `DataSource`: Address Base Registry, parcel master, census boundaries, or registry maps |
@@ -49,7 +49,6 @@ endpoint of the operation.
 | [service_settings.py](service_settings.py) | `ServiceSettings`: publisher, threads, batch size, input length, and coverage policy, read from the environment |
 | [format_parameters.py](format_parameters.py) | `FormatParameters`: request parameters of the address format |
 | [batch_request.py](batch_request.py) | `BatchRequest`: body of `POST /v1/batch` |
-| [file_signature.py](file_signature.py) | `FileSignature`: tells a replaced database file from a modified one |
 | [opened_codec.py](opened_codec.py) | `OpenedCodec`: codec of a thread and the file it was opened on |
 
 ## Examples

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from address_codec_jp.address_codec import AddressCodec
-from address_codec_jp.frontends.api.file_signature import FileSignature
+from address_codec_jp.database.cache import DatabaseFileSignature
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,9 +13,9 @@ class OpenedCodec:
     ----------
     codec : AddressCodec
         Codec bound to the thread that opened it.
-    signature : FileSignature
+    signature : DatabaseFileSignature
         Signature of the database file when the codec was opened.
     """
 
     codec: AddressCodec
-    signature: FileSignature
+    signature: DatabaseFileSignature

@@ -26,6 +26,7 @@ the Ministry of Justice.
 | [test_lot_number_parser.py](test_lot_number_parser.py) | Lot number notations |
 | [test_storage.py](test_storage.py) | Town master import, numbering systems, abolished rows, orphaned positions, read-only opening, and database identification |
 | [test_cli.py](test_cli.py) | Command line commands, standard input, and JSON Lines output |
+| [test_query_runner.py](test_query_runner.py) | Shared query runner with its interpreters and guards, including the coverage checks of lots, nearest addresses, and shapes |
 | [test_postal_code.py](test_postal_code.py) | Postal code extraction, disambiguation, and output |
 | [test_download.py](test_download.py) | Download plans, distributed files, atomic downloads from a `file://` mirror, failed and truncated downloads, and the `download` command |
 | [test_import_log.py](test_import_log.py) | Import log of datasets, digests, and the `info` command |

@@ -7,7 +7,14 @@ from typing import cast
 import pytest
 
 from address_codec_jp import AddressCodec, AddressMatch, DatasetNotImportedError
-from address_codec_jp.frontends.cli import CommandLineInterface, ExitStatus
+from address_codec_jp.frontends.cli import (
+    CommandArguments,
+    CommandLineInterface,
+    ExitStatus,
+    MaintenanceCommand,
+    ParserFactory,
+)
+from address_codec_jp.frontends.query import QueryOperation
 
 FIXTURE: Path = Path(__file__).parent / "fixtures" / "mt_town_sample.csv"
 POSITION_SOURCES: list[str] = sorted(
@@ -24,6 +31,24 @@ def database(tmp_path: Path) -> Path:
         CommandLineInterface().run(["--database", str(database_path), "import", str(FIXTURE)]) == 0
     )
     return database_path
+
+
+def test_commands_parse_to_their_enums() -> None:
+    parser = ParserFactory().build()
+    for operation in QueryOperation:
+        namespace = parser.parse_args([operation.value], namespace=CommandArguments())
+        assert namespace.command is operation
+    maintenance_arguments: dict[MaintenanceCommand, list[str]] = {
+        MaintenanceCommand.IMPORT: ["registry.csv"],
+        MaintenanceCommand.IMPORT_AREA: ["boundary.zip", "--lg-code", "131016"],
+        MaintenanceCommand.DOWNLOAD: ["downloads"],
+        MaintenanceCommand.INFO: [],
+        MaintenanceCommand.CACHE: [],
+    }
+    assert set(maintenance_arguments) == set(MaintenanceCommand)
+    for command, arguments in maintenance_arguments.items():
+        namespace = parser.parse_args([command.value, *arguments], namespace=CommandArguments())
+        assert namespace.command is command
 
 
 def test_encode_and_decode(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -230,6 +255,29 @@ def test_tsv_rows_start_with_their_input(
     assert lines[1] == "130001\t131016\t東京都千代田区\tMUNICIPALITY"
     assert all(line.startswith("130001\t") for line in lines[1:-1])
     assert lines[-1].startswith("abc\tERROR\tValueError\t")
+
+
+def test_postal_and_name_list_areas_or_report_nothing_found(
+    database: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli = CommandLineInterface()
+    arguments = ["--database", str(database)]
+    assert cli.run([*arguments, "postal", "100-0005", "999-9999"]) == ExitStatus.INPUT_FAILURE
+    assert cli.run([*arguments, "name", "丸の内", "存在しない"]) == ExitStatus.INPUT_FAILURE
+    assert capsys.readouterr().out.splitlines() == [
+        "100-0005\t131016-0011001\t東京都千代田区丸の内1丁目",
+        "100-0005\t131016-0011002\t東京都千代田区丸の内2丁目",
+        "100-0005\t131016-0011003\t東京都千代田区丸の内3丁目",
+        "999-9999\tERROR\tAddressNotFoundError\tNo town is registered with '999-9999'.",
+        "丸の内\t131016-0011000\t東京都千代田区丸の内\tTOWN",
+        "存在しない\tERROR\tAddressNotFoundError\tNo area is named '存在しない'.",
+    ]
+    assert cli.run([*arguments, "name", "丸の内", "--output", "jsonl"]) == ExitStatus.SUCCESS
+    assert json.loads(capsys.readouterr().out) == {
+        "input": "丸の内",
+        "name": "丸の内",
+        "areas": [{"code": "131016-0011000", "address": "東京都千代田区丸の内", "level": "TOWN"}],
+    }
 
 
 def test_tsv_values_keep_the_columns(database: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -8,11 +8,10 @@ from pathlib import Path
 from typing import ClassVar
 
 from address_codec_jp.address_codec import AddressCodec
-from address_codec_jp.database.cache import DatabaseCache
+from address_codec_jp.database.cache import DatabaseCache, DatabaseFileSignature
 from address_codec_jp.errors import DatasetNotImportedError
 from address_codec_jp.frontends.api.database_busy_error import DatabaseBusyError
 from address_codec_jp.frontends.api.dataset_coverage import DatasetCoverage
-from address_codec_jp.frontends.api.file_signature import FileSignature
 from address_codec_jp.frontends.api.opened_codec import OpenedCodec
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -58,7 +57,7 @@ class CodecPool:
         self._codecs: dict[int, OpenedCodec] = {}
         self._lock: threading.Lock = threading.Lock()
         self._coverage: DatasetCoverage = DatasetCoverage(frozenset(), frozenset(), frozenset(), {})
-        self._coverage_signature: FileSignature | None = None
+        self._coverage_signature: DatabaseFileSignature | None = None
 
     @property
     def database_path(self) -> Path:
@@ -148,16 +147,16 @@ class CodecPool:
                 raise DatabaseBusyError.from_error(error) from error
             raise
 
-    def _read_signature(self) -> FileSignature:
-        try:
-            return FileSignature.of(self._cache.path)
-        except FileNotFoundError as error:
+    def _read_signature(self) -> DatabaseFileSignature:
+        signature = DatabaseFileSignature.of(self._cache.path)
+        if signature is None:
             raise DatasetNotImportedError(
                 "The address database is not prepared on this server; run "
                 + "address-codec-jp cache prepare."
-            ) from error
+            )
+        return signature
 
-    def _thread_codec(self, signature: FileSignature) -> AddressCodec:
+    def _thread_codec(self, signature: DatabaseFileSignature) -> AddressCodec:
         thread_id = threading.get_ident()
         with self._lock:
             opened = self._codecs.get(thread_id)
@@ -170,7 +169,9 @@ class CodecPool:
             self._codecs[thread_id] = OpenedCodec(codec, signature)
         return codec
 
-    def _current_coverage(self, codec: AddressCodec, signature: FileSignature) -> DatasetCoverage:
+    def _current_coverage(
+        self, codec: AddressCodec, signature: DatabaseFileSignature
+    ) -> DatasetCoverage:
         with self._lock:
             if self._coverage_signature == signature:
                 return self._coverage

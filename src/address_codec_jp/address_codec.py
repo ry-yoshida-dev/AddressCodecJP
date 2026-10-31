@@ -51,6 +51,7 @@ class AddressCodec:
 
     NEARBY_LOT_MARGIN_METERS: ClassVar[float] = 5000.0
     NEARBY_AREA_RADII_METERS: ClassVar[tuple[float, ...]] = (1000.0, 5000.0)
+    DEFAULT_MAX_DISTANCE_METERS: ClassVar[float] = 1000.0
 
     def __init__(self, database: AddressDatabase, cache: DatabaseCache | None = None) -> None:
         self._database: AddressDatabase = database
@@ -211,7 +212,7 @@ class AddressCodec:
             remainder=self._normalizer.find_original_suffix(address, address_match.remainder),
         )
         if is_lot_verified:
-            self._verify_lot(address_match.code)
+            self.verify_lot(address_match.code)
         return address_match
 
     def _parse_area(self, within: AddressCode | str | None) -> AddressCode | None:
@@ -275,11 +276,31 @@ class AddressCodec:
         group_match = self._group_matcher.match(addresses)
         if is_lot_verified:
             for address_match in group_match.matches:
-                self._verify_lot(address_match.code)
+                self.verify_lot(address_match.code)
         return group_match
 
-    def _verify_lot(self, code: AddressCode) -> None:
-        if code.machiaza_id is None or not code.lot.numbers:
+    def verify_lot(self, code: AddressCode) -> None:
+        """
+        Fail unless the lot numbers of a code are registered.
+
+        Codes without lot numbers always pass, as in ``match`` with verification.
+
+        Parameters
+        ----------
+        code : AddressCode
+            Code to verify, such as the code of an unverified ``match``.
+
+        Raises
+        ------
+        AddressNotFoundError
+            If no lot of the town is imported or its lot numbers are not registered.
+        DatasetNotImportedError
+            If no block, residence, or parcel master has been imported.
+        RegistryDownloadError
+            If the lots of the area have to be added to ``cache`` and a registry file
+            cannot be downloaded.
+        """
+        if code.machiaza_id is None or not code.is_lot:
             return
         self._ensure_lots(code)
         positions = self._database.positions
@@ -612,14 +633,14 @@ class AddressCodec:
         return self._locator.locate(address_code, crs)
 
     def _ensure_lots(self, code: AddressCode) -> None:
-        if self._cache is not None and code.machiaza_id is not None and code.lot.numbers:
+        if self._cache is not None and code.is_lot:
             self._cache.ensure_lots([code.lg_code])
 
     def find_nearest(
         self,
         coordinate: GeoCoordinate,
         crs: GeodeticCrs = GeodeticCrs.JGD2011,
-        max_distance_meters: float = 1000.0,
+        max_distance_meters: float = DEFAULT_MAX_DISTANCE_METERS,
     ) -> NearestAddress:
         """
         Find the address whose representative point is nearest to a coordinate.
@@ -667,7 +688,7 @@ class AddressCodec:
         self,
         coordinate: GeoCoordinate,
         crs: GeodeticCrs = GeodeticCrs.JGD2011,
-        max_distance_meters: float = 1000.0,
+        max_distance_meters: float = DEFAULT_MAX_DISTANCE_METERS,
     ) -> set[str]:
         """
         List the municipalities whose lots ``find_nearest`` may return.

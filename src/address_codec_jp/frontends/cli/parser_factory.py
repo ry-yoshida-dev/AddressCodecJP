@@ -1,12 +1,17 @@
 import argparse
+from collections.abc import Sequence
 
 from geo_coordinate import GeodeticCrs
 
+from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.datasets.download import RegistryDownloader
 from address_codec_jp.frontends.cli.cache_action import CacheAction
-from address_codec_jp.frontends.cli.command import Command
 from address_codec_jp.frontends.cli.enum_argument import EnumArgument
+from address_codec_jp.frontends.cli.maintenance_command import MaintenanceCommand
 from address_codec_jp.frontends.cli.output_format import OutputFormat
+from address_codec_jp.frontends.cli.query_input import QueryInput
+from address_codec_jp.frontends.cli.subcommand_registry import SubcommandRegistry
+from address_codec_jp.frontends.query import QueryOperation
 from address_codec_jp.text.formatting import DigitWidth, LotStyle, NumeralStyle
 
 
@@ -34,7 +39,7 @@ class ParserFactory:
             help="SQLite address database path. By default, a database of all towns is "
             + "downloaded and built once in the user cache directory.",
         )
-        subparsers = parser.add_subparsers(dest="command", required=True)
+        subparsers = parser.add_subparsers(dest=argparse.SUPPRESS, metavar="command", required=True)
 
         query_parser = argparse.ArgumentParser(add_help=False)
         output_argument = EnumArgument(OutputFormat)
@@ -58,17 +63,19 @@ class ParserFactory:
         format_parser = argparse.ArgumentParser(add_help=False)
         self._add_format_arguments(format_parser)
 
-        import_parser = subparsers.add_parser(
-            Command.IMPORT.value,
-            help="Import registry files of any dataset; the town master is imported first.",
+        import_parser = self._add_command(
+            subparsers,
+            MaintenanceCommand.IMPORT,
+            help_text="Import registry files of any dataset; the town master is imported first.",
         )
         _ = import_parser.add_argument(
             "sources", nargs="+", help="Registry CSV files or their ZIP archives."
         )
 
-        import_area_parser = subparsers.add_parser(
-            Command.IMPORT_AREA.value,
-            help="Import census boundary or registry map files of one municipality.",
+        import_area_parser = self._add_command(
+            subparsers,
+            MaintenanceCommand.IMPORT_AREA,
+            help_text="Import census boundary or registry map files of one municipality.",
         )
         _ = import_area_parser.add_argument(
             "sources", nargs="+", help="Census boundary ZIP archives or registry map archives."
@@ -80,9 +87,10 @@ class ParserFactory:
             help="Six-digit local government code of the municipality the files cover.",
         )
 
-        cache_parser = subparsers.add_parser(
-            Command.CACHE.value,
-            help="Show, clear, or refresh the default database in the user cache directory.",
+        cache_parser = self._add_command(
+            subparsers,
+            MaintenanceCommand.CACHE,
+            help_text="Show, clear, or refresh the default database in the user cache directory.",
         )
         cache_action_argument = EnumArgument(CacheAction)
         _ = cache_parser.add_argument(
@@ -122,22 +130,25 @@ class ParserFactory:
             help="prepare: also add the registry maps of land parcels.",
         )
 
-        download_parser = subparsers.add_parser(
-            Command.DOWNLOAD.value,
-            help="Download the town master, nationwide points, and files of chosen areas.",
+        download_parser = self._add_command(
+            subparsers,
+            MaintenanceCommand.DOWNLOAD,
+            help_text="Download the town master, nationwide points, and files of chosen areas.",
         )
         self._add_download_arguments(download_parser)
 
-        _ = subparsers.add_parser(
-            Command.INFO.value,
-            help="List imported registry files: time, dataset, rows, file name, and SHA-256.",
+        _ = self._add_command(
+            subparsers,
+            MaintenanceCommand.INFO,
+            help_text="List imported registry files: time, dataset, rows, file name, and SHA-256.",
         )
 
-        encode_parser = subparsers.add_parser(
-            Command.ENCODE.value, parents=[query_parser], help="Address to code."
-        )
-        _ = encode_parser.add_argument(
-            "inputs", nargs="*", metavar="address", help="Addresses; standard input if none."
+        encode_parser = self._add_query_command(
+            subparsers,
+            QueryOperation.ENCODE,
+            QueryInput.ADDRESS,
+            parents=[query_parser],
+            help_text="Address to code.",
         )
         _ = encode_parser.add_argument(
             "--verify-lot",
@@ -147,82 +158,65 @@ class ParserFactory:
             + "masters.",
         )
 
-        decode_parser = subparsers.add_parser(
-            Command.DECODE.value, parents=[query_parser, format_parser], help="Code to address."
-        )
-        _ = decode_parser.add_argument(
-            "inputs", nargs="*", metavar="code", help="Address codes; standard input if none."
-        )
-
-        locate_parser = subparsers.add_parser(
-            Command.LOCATE.value,
-            parents=[query_parser, crs_parser],
-            help="Address to representative point.",
-        )
-        _ = locate_parser.add_argument(
-            "inputs", nargs="*", metavar="address", help="Addresses; standard input if none."
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.DECODE,
+            QueryInput.CODE,
+            parents=[query_parser, format_parser],
+            help_text="Code to address.",
         )
 
-        locate_code_parser = subparsers.add_parser(
-            Command.LOCATE_CODE.value,
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.LOCATE,
+            QueryInput.ADDRESS,
             parents=[query_parser, crs_parser],
-            help="Code to representative point.",
-        )
-        _ = locate_code_parser.add_argument(
-            "inputs", nargs="*", metavar="code", help="Address codes; standard input if none."
+            help_text="Address to representative point.",
         )
 
-        nearest_parser = subparsers.add_parser(
-            Command.NEAREST.value,
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.LOCATE_CODE,
+            QueryInput.CODE,
             parents=[query_parser, crs_parser],
-            help="Coordinate to the address with the nearest representative point.",
+            help_text="Code to representative point.",
         )
-        _ = nearest_parser.add_argument(
-            "inputs",
-            nargs="*",
-            metavar="latitude,longitude",
-            help="Coordinates in decimal degrees; standard input if none.",
+
+        nearest_parser = self._add_query_command(
+            subparsers,
+            QueryOperation.NEAREST,
+            QueryInput.COORDINATE,
+            parents=[query_parser, crs_parser],
+            help_text="Coordinate to the address with the nearest representative point.",
         )
         _ = nearest_parser.add_argument(
             "--max-distance",
             dest="max_distance",
             type=float,
-            default=1000.0,
+            default=AddressCodec.DEFAULT_MAX_DISTANCE_METERS,
             help="Largest accepted distance in meters.",
         )
 
-        postal_parser = subparsers.add_parser(
-            Command.POSTAL.value,
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.POSTAL,
+            QueryInput.POSTAL_CODE,
             parents=[query_parser, format_parser],
-            help="Postal code to the towns registered with it.",
+            help_text="Postal code to the towns registered with it.",
         )
-        _ = postal_parser.add_argument(
-            "inputs",
-            nargs="*",
-            metavar="postal_code",
-            help="Postal codes such as 100-0005; standard input if none.",
-        )
-        children_parser = subparsers.add_parser(
-            Command.CHILDREN.value,
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.CHILDREN,
+            QueryInput.PARENT_CODE,
             parents=[query_parser, format_parser],
-            help="Code to the registered areas directly under it.",
+            help_text="Code to the registered areas directly under it.",
         )
-        _ = children_parser.add_argument(
-            "inputs",
-            nargs="*",
-            metavar="code",
-            help="Prefecture, municipality, or town codes; standard input if none.",
-        )
-        name_parser = subparsers.add_parser(
-            Command.NAME.value,
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.NAME,
+            QueryInput.NAME,
             parents=[query_parser, format_parser],
-            help="Name to every registered area that bears it.",
-        )
-        _ = name_parser.add_argument(
-            "inputs",
-            nargs="*",
-            metavar="name",
-            help="Names such as 府中市 or 自由が丘; standard input if none.",
+            help_text="Name to every registered area that bears it.",
         )
 
         area_geometry_parser = argparse.ArgumentParser(add_help=False)
@@ -232,34 +226,29 @@ class ParserFactory:
             action="store_false",
             help="Omit the GeoJSON geometry.",
         )
-        area_parser = subparsers.add_parser(
-            Command.AREA.value,
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.AREA,
+            QueryInput.ADDRESS,
             parents=[query_parser, area_geometry_parser],
-            help="Address to the shape of its town or land parcel as GeoJSON on JGD2011.",
-        )
-        _ = area_parser.add_argument(
-            "inputs", nargs="*", metavar="address", help="Addresses; standard input if none."
+            help_text="Address to the shape of its town or land parcel as GeoJSON on JGD2011.",
         )
 
-        area_code_parser = subparsers.add_parser(
-            Command.AREA_CODE.value,
+        _ = self._add_query_command(
+            subparsers,
+            QueryOperation.AREA_CODE,
+            QueryInput.CODE,
             parents=[query_parser, area_geometry_parser],
-            help="Code to the shape of its town or land parcel as GeoJSON on JGD2011.",
-        )
-        _ = area_code_parser.add_argument(
-            "inputs", nargs="*", metavar="code", help="Address codes; standard input if none."
+            help_text="Code to the shape of its town or land parcel as GeoJSON on JGD2011.",
         )
 
-        areas_at_parser = subparsers.add_parser(
-            Command.AREAS_AT.value,
+        areas_at_parser = self._add_query_command(
+            subparsers,
+            QueryOperation.AREAS_AT,
+            QueryInput.COORDINATE,
             parents=[query_parser, crs_parser],
-            help="Coordinate to the towns, and optionally land parcels, whose shapes contain it.",
-        )
-        _ = areas_at_parser.add_argument(
-            "inputs",
-            nargs="*",
-            metavar="latitude,longitude",
-            help="Coordinates in decimal degrees; standard input if none.",
+            help_text="Coordinate to the towns, and optionally land parcels, whose shapes "
+            + "contain it.",
         )
         _ = areas_at_parser.add_argument(
             "--parcels",
@@ -274,6 +263,35 @@ class ParserFactory:
             help="Add the GeoJSON geometries on JGD2011.",
         )
         return parser
+
+    def _add_command(
+        self,
+        subparsers: SubcommandRegistry,
+        command: MaintenanceCommand | QueryOperation,
+        *,
+        help_text: str,
+        parents: Sequence[argparse.ArgumentParser] = (),
+    ) -> argparse.ArgumentParser:
+        command_parser = subparsers.add_parser(command.value, parents=list(parents), help=help_text)
+        command_parser.set_defaults(command=command)
+        return command_parser
+
+    def _add_query_command(
+        self,
+        subparsers: SubcommandRegistry,
+        operation: QueryOperation,
+        query_input: QueryInput,
+        *,
+        help_text: str,
+        parents: Sequence[argparse.ArgumentParser],
+    ) -> argparse.ArgumentParser:
+        command_parser = self._add_command(
+            subparsers, operation, help_text=help_text, parents=parents
+        )
+        _ = command_parser.add_argument(
+            "inputs", nargs="*", metavar=query_input.metavar, help=query_input.help_text
+        )
+        return command_parser
 
     def _add_format_arguments(self, parser: argparse.ArgumentParser) -> None:
         numeral_argument = EnumArgument(NumeralStyle)

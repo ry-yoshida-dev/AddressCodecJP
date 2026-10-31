@@ -18,7 +18,8 @@ the API. The library is installed from git, so a version is a tagged commit
 - `AddressCodec.list_children` lists the registered areas directly under a prefecture,
   municipality, or oaza, also as the `children` command, `GET /v1/codes/{code}/children`,
   and the `children` batch operation. `AddressCode.is_oaza` tells
-  whether a code is an oaza-level town.
+  whether a code is an oaza-level town, and `AddressCode.is_lot` whether it has lot
+  numbers.
 - `AddressCodec.match` and `encode` take `within`, a prefecture, municipality, or town
   code the address must lie in.
 - `AddressCodec.match_group` matches addresses that lie in one common area and returns a
@@ -90,6 +91,36 @@ the API. The library is installed from git, so a version is a tagged commit
   registry maps of their municipality.
 - GeoJSON output follows the RFC 7946 ring orientation: exteriors counterclockwise,
   holes clockwise.
+- **Breaking:** `frontends.api.FileSignature` is removed; `CodecPool` and
+  `OpenedCodec` use `database.cache.DatabaseFileSignature`.
+- **Breaking:** the command line and the web API answer queries through one
+  `frontends.query.QueryRunner`, so they read the same datasets and give the same
+  fields. `QueryOperation` and `QueryOptions` moved from `frontends.api` to
+  `frontends.query`. Each front end plugs in a `TextInterpreter`, which reports
+  malformed inputs, and a `QueryGuard`, which decides the datasets a query may read: the
+  command line uses `DirectInterpreter` and `PassThroughGuard`, and the web API
+  `InputInterpreter` with `CoverageGuard` when coverage is required. A `QueryRecord`
+  holds the fields, the tab-separated rows, built only when written, and the lot and
+  shapes the answer used.
+  `frontends.cli.QueryAnswerer`, `frontends.api.QueryResult`, and the duplicated
+  dispatch of `QueryHandler` are removed, and `RecordWriter.write` takes a
+  `QueryRecord`.
+- The JSON Lines of `children` and `name` include the `code` and `name` fields, as in
+  the web API, and `postal`, `name`, and `areas-at` report nothing found with the same
+  message in both.
+- **Breaking:** `frontends.cli.Command` is replaced by `MaintenanceCommand`, which holds
+  `import`, `import-area`, `download`, `info`, and `cache`; `CommandArguments.command`
+  is a `MaintenanceCommand` or a `QueryOperation`, set by every sub-command parser.
+- **Breaking:** `ResultSerializer.towns`, `listed_areas`, and `areas` return the entries
+  of a listing instead of a field named after it. `ResultSerializer.render` and
+  `render_all` render addresses once as `RenderedAddress`, which `decoded`, `towns`, and
+  `listed_areas` take, and `nearest` takes the rendered address. `children` and `named`
+  are removed. `ResultRows` writes the tab-separated rows of the command line from the
+  same results.
+- `AddressCodec.verify_lot` checks the lot numbers of a code, as `match` does with
+  verification, so the web API verifies a match without matching it twice.
+- `AddressCodec.DEFAULT_MAX_DISTANCE_METERS` is the default largest distance of a
+  nearest address in the library, the command line, and the web API.
 
 ### Fixed
 

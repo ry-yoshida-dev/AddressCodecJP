@@ -1,10 +1,12 @@
 from collections.abc import Callable
+from typing import override
 
 from address_codec_jp.errors import AddressCodecError
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
+from address_codec_jp.frontends.query import TextInterpreter
 
 
-class InputInterpreter:
+class InputInterpreter(TextInterpreter):
     """
     Parser of request inputs that reports malformed ones as ``InvalidRequestError``.
 
@@ -14,6 +16,7 @@ class InputInterpreter:
     any ``ValueError`` raised outside an interpretation.
     """
 
+    @override
     def interpret[ValueType](self, parse: Callable[[str], ValueType], text: str) -> ValueType:
         """
         Interpret a request value.

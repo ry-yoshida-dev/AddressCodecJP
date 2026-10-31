@@ -1,10 +1,9 @@
 import re
-from collections import defaultdict
 from collections.abc import Container
 from dataclasses import replace
 from typing import ClassVar
 
-from address_codec_jp.address import Address, AddressCode, Municipality, Prefecture, Town
+from address_codec_jp.address import Address, AddressCode, Municipality, Prefecture
 from address_codec_jp.errors import (
     AddressNotFoundError,
     AmbiguousAddressError,
@@ -15,6 +14,7 @@ from address_codec_jp.text.matching.municipality_match import MunicipalityMatch
 from address_codec_jp.text.matching.municipality_name_index import MunicipalityNameIndex
 from address_codec_jp.text.matching.name_index import NameIndex
 from address_codec_jp.text.matching.town_interpretation import TownInterpretation
+from address_codec_jp.text.matching.town_name_index import TownNameIndex
 from address_codec_jp.text.matching.town_source import TownSource
 from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
 
@@ -76,10 +76,7 @@ class AreaMatcher:
         self._normalizer: TextNormalizer = normalizer
         self._lot_parser: LotNumberParser = lot_parser
         self._name_index: MunicipalityNameIndex = MunicipalityNameIndex(repository, normalizer)
-        self._oaza_municipality_index: dict[str, set[str]] | None = None
-        self._municipalities_by_code: dict[str, Municipality] | None = None
-        self._oaza_indexes: dict[str, NameIndex] = {}
-        self._koaza_indexes: dict[tuple[tuple[str, str], ...], NameIndex] = {}
+        self._town_names: TownNameIndex = TownNameIndex(repository, normalizer)
 
     @property
     def municipality_names(self) -> MunicipalityNameIndex:
@@ -262,9 +259,9 @@ class AreaMatcher:
         prefecture: Prefecture | None,
         within: AddressCode | None,
     ) -> MatchOutcome | None:
-        index = self._get_oaza_municipality_index()
-        municipalities_by_code = self._get_municipalities_by_code()
-        comparable_text = self._fold_town_text(text)
+        index = self._town_names.oaza_municipality_codes
+        municipalities_by_code = self._town_names.municipalities_by_code
+        comparable_text = self._town_names.fold(text)
         skipped_length = len(text) - len(comparable_text)
         candidates: dict[str, Municipality] = {}
         for key in self._matching_prefixes(comparable_text, index):
@@ -502,7 +499,7 @@ class AreaMatcher:
     def _interpret_all(self, municipality: Municipality, text: str) -> list[TownInterpretation]:
         return [
             interpretation
-            for oaza_candidates in self._get_oaza_index(municipality.lg_code).match_all(text)
+            for oaza_candidates in self._town_names.oazas(municipality.lg_code).match_all(text)
             for chome_candidates in self._chome_options(oaza_candidates)
             for town_candidates in self._koaza_options(chome_candidates)
             if (interpretation := self._interpret(town_candidates, len(text))) is not None
@@ -544,7 +541,7 @@ class AreaMatcher:
         return options
 
     def _koaza_options(self, candidates: CandidateSet) -> list[CandidateSet]:
-        koaza_index = self._get_koaza_index(candidates.towns)
+        koaza_index = self._town_names.koazas(candidates.towns)
         options = [
             CandidateSet(
                 towns=koaza_candidates.towns,
@@ -591,49 +588,6 @@ class AreaMatcher:
             penalty=candidates.penalty,
             loosest_tier=candidates.loosest_tier,
         )
-
-    def _get_oaza_municipality_index(self) -> dict[str, set[str]]:
-        if self._oaza_municipality_index is None:
-            index: dict[str, set[str]] = defaultdict(set)
-            for oaza_name, lg_codes in self._repository.map_oaza_names().items():
-                for normalized_name in self._normalizer.normalize_name(oaza_name):
-                    key = self._fold_town_text(normalized_name)
-                    if key:
-                        index[key].update(lg_codes)
-            self._oaza_municipality_index = dict(index)
-        return self._oaza_municipality_index
-
-    def _get_municipalities_by_code(self) -> dict[str, Municipality]:
-        if self._municipalities_by_code is None:
-            self._municipalities_by_code = {
-                municipality.lg_code: municipality
-                for municipality in self._repository.list_municipalities()
-            }
-        return self._municipalities_by_code
-
-    def _get_oaza_index(self, lg_code: str) -> NameIndex:
-        if lg_code not in self._oaza_indexes:
-            index = NameIndex(self._normalizer)
-            for town in self._repository.list_towns(lg_code):
-                index.add(self._oaza_key_name(town), town)
-            self._oaza_indexes[lg_code] = index
-        return self._oaza_indexes[lg_code]
-
-    def _get_koaza_index(self, towns: list[Town]) -> NameIndex:
-        key = tuple((town.lg_code, town.machiaza_id) for town in towns)
-        if key not in self._koaza_indexes:
-            index = NameIndex(self._normalizer)
-            for town in towns:
-                if town.koaza_name:
-                    index.add(town.koaza_name, town)
-            self._koaza_indexes[key] = index
-        return self._koaza_indexes[key]
-
-    def _oaza_key_name(self, town: Town) -> str:
-        return town.oaza_name + (town.chome_name if town.chome_number is None else "")
-
-    def _fold_town_text(self, normalized_text: str) -> str:
-        return self._normalizer.fold(NameIndex.strip_prefix(normalized_text))
 
     def _matching_prefixes(self, text: str, keys: Container[str]) -> list[str]:
         return [text[:length] for length in range(len(text), 0, -1) if text[:length] in keys]

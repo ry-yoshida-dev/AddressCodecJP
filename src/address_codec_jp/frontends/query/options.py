@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 from geo_coordinate import GeodeticCrs
 
+from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.text.formatting import AddressFormat
 
 
@@ -29,6 +30,6 @@ class QueryOptions:
     address_format: AddressFormat = field(default_factory=AddressFormat)
     is_lot_verified: bool = False
     crs: GeodeticCrs = GeodeticCrs.JGD2011
-    max_distance_meters: float = 1000.0
+    max_distance_meters: float = AddressCodec.DEFAULT_MAX_DISTANCE_METERS
     is_parcel_included: bool = False
     is_geometry_included: bool = True

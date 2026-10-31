@@ -1,6 +1,7 @@
 from address_codec_jp.address import Address, AddressCode
 from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.frontends.serialization.json_value import JsonValue
+from address_codec_jp.frontends.serialization.rendered_address import RenderedAddress
 from address_codec_jp.results import (
     AddressArea,
     AddressLocation,
@@ -22,7 +23,7 @@ class ResultSerializer:
     Parameters
     ----------
     codec : AddressCodec
-        Codec that renders the addresses of nearest points and listed areas.
+        Codec that renders the addresses of codes and areas.
     """
 
     def __init__(self, codec: AddressCodec) -> None:
@@ -50,36 +51,74 @@ class ResultSerializer:
             "town_name_tier": None if tier is None else tier.name,
         }
 
-    def decoded(self, code: str, address_format: AddressFormat) -> dict[str, JsonValue]:
+    def render(
+        self, code: AddressCode, address_format: AddressFormat = AddressCodec.DEFAULT_FORMAT
+    ) -> RenderedAddress:
         """
-        Describe the address of a code.
+        Render the address of a code.
 
         Parameters
         ----------
-        code : str
+        code : AddressCode
             Address code.
         address_format : AddressFormat
             Output format of the address.
 
         Returns
         -------
-        dict[str, JsonValue]
-            ``code`` in canonical form and ``address``.
+        RenderedAddress
+            The code with its address.
 
         Raises
         ------
-        ValueError
-            If the code is malformed.
         AddressNotFoundError
             If the area of the code is not registered.
         ReadingNotFoundError
             If katakana is requested and the registry has no reading of a name.
         """
-        address_code = AddressCode.parse(code)
-        return {
-            "code": str(address_code),
-            "address": self._codec.decode(address_code, address_format),
-        }
+        return RenderedAddress(code, self._codec.decode(code, address_format))
+
+    def render_all(
+        self, addresses: list[Address], address_format: AddressFormat
+    ) -> list[RenderedAddress]:
+        """
+        Render the addresses of a listing.
+
+        Parameters
+        ----------
+        addresses : list[Address]
+            Result of ``AddressCodec.list_by_postal_code``, ``list_children``, or
+            ``list_by_name``.
+        address_format : AddressFormat
+            Output format of the addresses.
+
+        Returns
+        -------
+        list[RenderedAddress]
+            Each code with its address, in the order of ``addresses``.
+
+        Raises
+        ------
+        ReadingNotFoundError
+            If katakana is requested and the registry has no reading of a name.
+        """
+        return [self.render(address.code, address_format) for address in addresses]
+
+    def decoded(self, rendered: RenderedAddress) -> dict[str, JsonValue]:
+        """
+        Describe the address of a code.
+
+        Parameters
+        ----------
+        rendered : RenderedAddress
+            Result of ``render``.
+
+        Returns
+        -------
+        dict[str, JsonValue]
+            ``code`` in canonical form and ``address``.
+        """
+        return {"code": str(rendered.code), "address": rendered.address}
 
     def location(self, location: AddressLocation) -> dict[str, JsonValue]:
         """
@@ -106,7 +145,7 @@ class ResultSerializer:
             "crs": str(location.crs),
         }
 
-    def nearest(self, nearest: NearestAddress) -> dict[str, JsonValue]:
+    def nearest(self, nearest: NearestAddress, address: str) -> dict[str, JsonValue]:
         """
         Describe the nearest address.
 
@@ -114,6 +153,8 @@ class ResultSerializer:
         ----------
         nearest : NearestAddress
             Result of ``AddressCodec.find_nearest``.
+        address : str
+            Address rendered from ``nearest.code``.
 
         Returns
         -------
@@ -124,7 +165,7 @@ class ResultSerializer:
         location = nearest.location
         return {
             "code": str(nearest.code),
-            "address": self._codec.decode(nearest.code),
+            "address": address,
             "level": location.level.name,
             "latitude": location.latitude_degrees,
             "longitude": location.longitude_degrees,
@@ -132,98 +173,39 @@ class ResultSerializer:
             "crs": str(location.crs),
         }
 
-    def towns(
-        self, addresses: list[Address], address_format: AddressFormat
-    ) -> dict[str, JsonValue]:
+    def towns(self, towns: list[RenderedAddress]) -> list[JsonValue]:
         """
-        Describe the towns of a postal code.
+        Describe each town of a postal code by its code and address.
 
         Parameters
         ----------
-        addresses : list[Address]
-            Result of ``AddressCodec.list_by_postal_code``.
-        address_format : AddressFormat
-            Output format of the addresses.
+        towns : list[RenderedAddress]
+            Towns of the postal code, from ``render_all``.
 
         Returns
         -------
-        dict[str, JsonValue]
-            ``towns``, each with its ``code`` and ``address``.
-
-        Raises
-        ------
-        ReadingNotFoundError
-            If katakana is requested and the registry has no reading of a name.
+        list[JsonValue]
+            ``code`` and ``address`` of each town.
         """
-        towns: list[JsonValue] = [
-            {
-                "code": str(address.code),
-                "address": self._codec.decode(address.code, address_format),
-            }
-            for address in addresses
-        ]
-        return {"towns": towns}
+        return [{"code": str(town.code), "address": town.address} for town in towns]
 
-    def children(
-        self, addresses: list[Address], address_format: AddressFormat
-    ) -> dict[str, JsonValue]:
+    def listed_areas(self, areas: list[RenderedAddress]) -> list[JsonValue]:
         """
-        Describe the areas directly under an area.
+        Describe each listed area by its code, address, and level.
 
         Parameters
         ----------
-        addresses : list[Address]
-            Result of ``AddressCodec.list_children``.
-        address_format : AddressFormat
-            Output format of the addresses.
+        areas : list[RenderedAddress]
+            Children or named areas, from ``render_all``.
 
         Returns
         -------
-        dict[str, JsonValue]
-            ``children``, each with its ``code``, ``address``, and ``level``.
-
-        Raises
-        ------
-        ReadingNotFoundError
-            If katakana is requested and the registry has no reading of a name.
+        list[JsonValue]
+            ``code``, ``address``, and ``level`` of each area.
         """
-        return {"children": self._describe_levels(addresses, address_format)}
-
-    def named(
-        self, addresses: list[Address], address_format: AddressFormat
-    ) -> dict[str, JsonValue]:
-        """
-        Describe the areas that bear a name.
-
-        Parameters
-        ----------
-        addresses : list[Address]
-            Result of ``AddressCodec.list_by_name``.
-        address_format : AddressFormat
-            Output format of the addresses.
-
-        Returns
-        -------
-        dict[str, JsonValue]
-            ``areas``, each with its ``code``, ``address``, and ``level``.
-
-        Raises
-        ------
-        ReadingNotFoundError
-            If katakana is requested and the registry has no reading of a name.
-        """
-        return {"areas": self._describe_levels(addresses, address_format)}
-
-    def _describe_levels(
-        self, addresses: list[Address], address_format: AddressFormat
-    ) -> list[JsonValue]:
         return [
-            {
-                "code": str(address.code),
-                "address": self._codec.decode(address.code, address_format),
-                "level": address.code.level.name,
-            }
-            for address in addresses
+            {"code": str(area.code), "address": area.address, "level": area.code.level.name}
+            for area in areas
         ]
 
     def area(self, area: AddressArea, *, is_geometry_included: bool) -> dict[str, JsonValue]:
@@ -254,9 +236,7 @@ class ResultSerializer:
             fields["geometry"] = area.shape.to_geojson_geometry()
         return fields
 
-    def areas(
-        self, areas: list[AddressArea], *, is_geometry_included: bool
-    ) -> dict[str, JsonValue]:
+    def areas(self, areas: list[AddressArea], *, is_geometry_included: bool) -> list[JsonValue]:
         """
         Describe the shapes that contain a coordinate.
 
@@ -269,9 +249,9 @@ class ResultSerializer:
 
         Returns
         -------
-        dict[str, JsonValue]
-            ``areas``, each with its ``code``, ``address``, ``level``, ``sources``, and
-            optionally ``geometry``.
+        list[JsonValue]
+            ``code``, ``address``, ``level``, ``sources``, and optionally ``geometry`` of
+            each area.
         """
         values: list[JsonValue] = []
         for area in areas:
@@ -284,7 +264,7 @@ class ResultSerializer:
             if is_geometry_included:
                 fields["geometry"] = area.shape.to_geojson_geometry()
             values.append(fields)
-        return {"areas": values}
+        return values
 
     def area_address(self, area: AddressArea) -> str:
         """

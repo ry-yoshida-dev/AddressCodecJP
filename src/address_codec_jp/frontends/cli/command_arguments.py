@@ -2,9 +2,18 @@ import argparse
 
 from geo_coordinate import GeodeticCrs
 
+from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.frontends.cli.cache_action import CacheAction
+from address_codec_jp.frontends.cli.maintenance_command import MaintenanceCommand
 from address_codec_jp.frontends.cli.output_format import OutputFormat
-from address_codec_jp.text.formatting import DigitWidth, LotStyle, NumeralStyle
+from address_codec_jp.frontends.query import QueryOperation, QueryOptions
+from address_codec_jp.text.formatting import (
+    AddressFormat,
+    DigitWidth,
+    LotStyle,
+    NameScript,
+    NumeralStyle,
+)
 
 
 class CommandArguments(argparse.Namespace):
@@ -20,7 +29,7 @@ class CommandArguments(argparse.Namespace):
     def __init__(self) -> None:
         super().__init__()
         self.database: str | None = None
-        self.command: str = ""
+        self.command: MaintenanceCommand | QueryOperation = MaintenanceCommand.INFO
         self.cache_action: CacheAction = CacheAction.INFO
         self.sources: list[str] = []
         self.lg_code: str = ""
@@ -37,7 +46,7 @@ class CommandArguments(argparse.Namespace):
         self.is_parcel_included: bool = False
         self.is_geometry_included: bool = True
         self.crs: GeodeticCrs = GeodeticCrs.JGD2011
-        self.max_distance: float = 0.0
+        self.max_distance: float = AddressCodec.DEFAULT_MAX_DISTANCE_METERS
         self.directory: str = ""
         self.prefectures: list[str] = []
         self.municipalities: list[str] = []
@@ -45,3 +54,29 @@ class CommandArguments(argparse.Namespace):
         self.is_existing_kept: bool = False
         self.is_area_excluded: bool = False
         self.base_url: str = ""
+
+    def to_query_options(self) -> QueryOptions:
+        """
+        Build the options of a query command.
+
+        Returns
+        -------
+        QueryOptions
+            Format, datum, distance, parcel, and geometry options parsed for the command.
+        """
+        return QueryOptions(
+            address_format=AddressFormat(
+                numeral_style=self.numeral,
+                lot_style=self.lot,
+                digit_width=self.width,
+                is_prefecture_included=not self.is_prefecture_excluded,
+                is_county_included=not self.is_county_excluded,
+                name_script=NameScript.KATAKANA if self.is_kana else NameScript.KANJI,
+                is_postal_code_included=self.is_postal_code_included,
+            ),
+            is_lot_verified=self.is_lot_verified,
+            crs=self.crs,
+            max_distance_meters=self.max_distance,
+            is_parcel_included=self.is_parcel_included,
+            is_geometry_included=self.is_geometry_included,
+        )

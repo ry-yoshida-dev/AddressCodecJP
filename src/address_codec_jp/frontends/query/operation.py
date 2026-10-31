@@ -3,7 +3,7 @@ from enum import Enum
 
 class QueryOperation(Enum):
     """
-    Query of the web API, applied to one text input.
+    Query applied to one text input, shared by the command line and the web API.
 
     Values are the names of the batch operations, which are also the names of the
     command line sub-commands.

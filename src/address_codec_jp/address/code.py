@@ -197,6 +197,18 @@ class AddressCode:
                 return AddressLevel.RESIDENCE
 
     @property
+    def is_lot(self) -> bool:
+        """
+        Tell whether the code denotes a block or residence lot of a town.
+
+        Returns
+        -------
+        bool
+            ``True`` when the code has lot numbers, which require a ``machiaza_id``.
+        """
+        return bool(self.lot.numbers)
+
+    @property
     def is_oaza(self) -> bool:
         """
         Tell whether the code denotes an oaza-level town.

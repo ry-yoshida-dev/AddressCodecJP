@@ -13,9 +13,8 @@ from address_codec_jp.frontends.api.input_interpreter import InputInterpreter
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
 from address_codec_jp.frontends.api.query.answer import QueryAnswer
 from address_codec_jp.frontends.api.query.handler import QueryHandler
-from address_codec_jp.frontends.api.query.operation import QueryOperation
-from address_codec_jp.frontends.api.query.options import QueryOptions
 from address_codec_jp.frontends.api.service_settings import ServiceSettings
+from address_codec_jp.frontends.query import QueryOperation, QueryOptions
 from address_codec_jp.frontends.serialization import EnumName, JsonValue
 
 type CrsName = Annotated[str, Query(description="tokyo, jgd2000, jgd2011, or wgs84.")]
@@ -189,7 +188,9 @@ class AddressRoutes:
         *,
         coordinate: CoordinateQuery,
         crs: CrsName = "jgd2011",
-        max_distance_meters: Annotated[float, Query(alias="max_distance", gt=0)] = 1000.0,
+        max_distance_meters: Annotated[
+            float, Query(alias="max_distance", gt=0)
+        ] = AddressCodec.DEFAULT_MAX_DISTANCE_METERS,
     ) -> JSONResponse:
         """
         Find the address nearest to a coordinate.

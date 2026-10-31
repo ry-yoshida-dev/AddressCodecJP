@@ -8,16 +8,13 @@ from address_codec_jp.frontends.api.data_source import DataSource
 from address_codec_jp.frontends.api.database_busy_error import DatabaseBusyError
 from address_codec_jp.frontends.api.dataset_coverage import DatasetCoverage
 from address_codec_jp.frontends.api.error_status import ErrorStatus
-from address_codec_jp.frontends.api.file_signature import FileSignature
 from address_codec_jp.frontends.api.format_parameters import FormatParameters
 from address_codec_jp.frontends.api.input_interpreter import InputInterpreter
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
 from address_codec_jp.frontends.api.opened_codec import OpenedCodec
 from address_codec_jp.frontends.api.query.answer import QueryAnswer
+from address_codec_jp.frontends.api.query.coverage_guard import CoverageGuard
 from address_codec_jp.frontends.api.query.handler import QueryHandler
-from address_codec_jp.frontends.api.query.operation import QueryOperation
-from address_codec_jp.frontends.api.query.options import QueryOptions
-from address_codec_jp.frontends.api.query.result import QueryResult
 from address_codec_jp.frontends.api.service_settings import ServiceSettings
 from address_codec_jp.frontends.api.validation_issue import ValidationIssue
 
@@ -26,22 +23,19 @@ __all__ = [
     "ApplicationFactory",
     "BatchRequest",
     "CodecPool",
+    "CoverageGuard",
     "CreditWriter",
     "DataAttribution",
     "DataSource",
     "DatabaseBusyError",
     "DatasetCoverage",
     "ErrorStatus",
-    "FileSignature",
     "FormatParameters",
     "InputInterpreter",
     "InvalidRequestError",
     "OpenedCodec",
     "QueryAnswer",
     "QueryHandler",
-    "QueryOperation",
-    "QueryOptions",
-    "QueryResult",
     "ServiceSettings",
     "ValidationIssue",
 ]

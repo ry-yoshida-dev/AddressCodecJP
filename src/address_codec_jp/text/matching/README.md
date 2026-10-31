@@ -22,6 +22,7 @@ and koaza whose whole name it is is listed.
 | [group_matcher.py](group_matcher.py) | `GroupMatcher`: finds the narrowest common area of a group of addresses and matches the ambiguous ones within it |
 | [name_searcher.py](name_searcher.py) | `NameSearcher`: lists every prefecture, municipality, oaza, and koaza that bears a name |
 | [municipality_name_index.py](municipality_name_index.py) | `MunicipalityNameIndex`: prefecture and municipality names with their abbreviations, built on first use; one instance is shared by `AreaMatcher` and `NameSearcher` |
+| [town_name_index.py](town_name_index.py) | `TownNameIndex`: oaza names nationwide and per municipality, and koaza names per oaza reading, each built on first use |
 | [name_index.py](name_index.py) | `NameIndex`: tiered prefix index of oaza or koaza names |
 | [candidate_set.py](candidate_set.py) | `CandidateSet`: towns compatible with a partial reading and the loosest `MatchTier` used |
 | [town_interpretation.py](town_interpretation.py) | `TownInterpretation`: a complete reading and its ranking key |
