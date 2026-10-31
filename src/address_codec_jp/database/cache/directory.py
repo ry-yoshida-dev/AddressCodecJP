@@ -17,11 +17,13 @@ class CacheDirectory:
     Layout of the files in the directory of a cache.
 
     The database of the current schema version is ``towns-v{version}.sqlite3``. Builds
-    run in ``build-*`` working directories, and writes are serialized across processes
-    by the lock file ``cache.lock``. Databases of older schema versions and working
-    directories untouched for ``STALE_WORKING_SECONDS`` are obsolete. Databases of newer
-    versions are kept, so that an older and a newer library sharing the directory do not
-    delete each other's database and rebuild their own again and again.
+    run in ``build-*`` working directories marked by a ``.address-codec-jp-build`` file,
+    and writes are serialized across processes by the lock file ``cache.lock``. Databases
+    of older schema versions and marked working directories untouched for
+    ``STALE_WORKING_SECONDS`` are obsolete. Databases of newer versions are kept, so that
+    an older and a newer library sharing the directory do not delete each other's
+    database and rebuild their own again and again. Other files, including unmarked
+    ``build-*`` directories, are never deleted, so the cache may share a directory.
 
     Parameters
     ----------
@@ -34,6 +36,7 @@ class CacheDirectory:
         r"towns-v(?P<version>\d+)\.sqlite3(?:-journal|-wal|-shm)?"
     )
     _WORKING_PREFIX: ClassVar[str] = "build-"
+    _WORKING_MARKER_NAME: ClassVar[str] = ".address-codec-jp-build"
     _LOCK_NAME: ClassVar[str] = "cache.lock"
 
     def __init__(self, root: Path) -> None:
@@ -80,7 +83,7 @@ class CacheDirectory:
 
     def make_working_directory(self) -> Path:
         """
-        Create an empty working directory for a build.
+        Create a working directory for a build, holding only its marker file.
 
         Returns
         -------
@@ -88,11 +91,13 @@ class CacheDirectory:
             New ``build-*`` directory in the cache directory.
         """
         self._root.mkdir(parents=True, exist_ok=True)
-        return Path(tempfile.mkdtemp(prefix=self._WORKING_PREFIX, dir=self._root))
+        working_directory = Path(tempfile.mkdtemp(prefix=self._WORKING_PREFIX, dir=self._root))
+        (working_directory / self._WORKING_MARKER_NAME).touch()
+        return working_directory
 
     def list_obsolete(self) -> list[Path]:
         """
-        List databases of older schema versions and stale working directories.
+        List databases of older schema versions and stale marked working directories.
 
         Returns
         -------
@@ -111,7 +116,9 @@ class CacheDirectory:
         working_directories = [
             path
             for path in self._root.glob(self._WORKING_PREFIX + "*")
-            if path.is_dir() and path.stat().st_mtime < threshold
+            if path.is_dir()
+            and (path / self._WORKING_MARKER_NAME).is_file()
+            and path.stat().st_mtime < threshold
         ]
         return sorted([*databases, *working_directories])
 
@@ -134,7 +141,7 @@ class CacheDirectory:
 
     def remove_database(self) -> list[Path]:
         """
-        Delete the database of the current schema version and its journal.
+        Delete the database of the current schema version and its journal files.
 
         Returns
         -------
@@ -143,7 +150,11 @@ class CacheDirectory:
         """
         if not self._root.is_dir():
             return []
-        removed = sorted(self._root.glob(self.database_path.name + "*"))
+        removed = sorted(
+            path
+            for path in self._root.iterdir()
+            if self._schema_version(path) == AddressDatabase.SCHEMA_VERSION
+        )
         for path in removed:
             path.unlink()
         return removed

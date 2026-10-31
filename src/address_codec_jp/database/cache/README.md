@@ -9,6 +9,8 @@ area shapes of each municipality are added when a lookup needs them or ahead of 
 area datasets that the sites do not publish are remembered, so that they are not
 requested again after every addition. Databases of older schema versions are removed
 when a new one is built; those of newer versions are kept for the library that uses them.
+Only the cache's own databases and marked working directories are ever deleted, so the
+cache directory may hold other files.
 Progress is logged at INFO level to the `address_codec_jp.database.cache` loggers.
 
 The registry maps of a municipality, one archive per registry office, are imported

@@ -142,6 +142,10 @@ the API. The library is installed from git, so a version is a tagged commit
 
 ### Fixed
 
+- A cache directory shared with other files no longer loses them: only working
+  directories that the cache marked are removed as stale, not any `build-*` directory,
+  and `clear` deletes only the database and its journal files, not every file named
+  after it, such as a `.bak` copy.
 - Whitespace between a number and a following kanji numeral no longer joins them
   (`一番町5 一番館` was read without its lot number, `丸の内1-2 三号` as `1-23`).
 - Opening a database after a writer was killed rolls back its interrupted write instead

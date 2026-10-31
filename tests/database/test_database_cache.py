@@ -227,6 +227,7 @@ def test_build_removes_obsolete_files(cache: DatabaseCache) -> None:
     _ = old_database.write_bytes(b"old")
     stale = directory / "build-stale"
     stale.mkdir()
+    (stale / ".address-codec-jp-build").touch()
     old_time = time.time() - 2 * CacheDirectory.STALE_WORKING_SECONDS
     os.utime(stale, (old_time, old_time))
     running = directory / "build-running"
@@ -243,6 +244,22 @@ def test_clear_deletes_the_database(cache: DatabaseCache) -> None:
     assert cache.clear() == [path]
     assert not cache.is_built
     assert cache.clear() == []
+
+
+def test_files_of_others_in_the_directory_are_kept(cache: DatabaseCache) -> None:
+    directory = cache.path.parent
+    directory.mkdir(parents=True)
+    unrelated_build = directory / "build-output"
+    unrelated_build.mkdir()
+    old_time = time.time() - 2 * CacheDirectory.STALE_WORKING_SECONDS
+    os.utime(unrelated_build, (old_time, old_time))
+    backup = directory / f"{cache.path.name}.bak"
+    _ = backup.write_bytes(b"backup")
+    assert cache.describe().obsolete_paths == ()
+    path = cache.ensure()
+    assert cache.clear() == [path]
+    assert unrelated_build.is_dir()
+    assert backup.is_file()
 
 
 def test_refresh_downloads_the_same_files_again(cache: DatabaseCache) -> None:
