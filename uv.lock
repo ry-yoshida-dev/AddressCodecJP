@@ -39,7 +39,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=4.2.4" },
     { name = "geo-coordinate", git = "https://github.com/ry-yoshida-dev/GeoCoordinate.git?rev=main" },
     { name = "numpy", specifier = ">=2" },
-    { name = "platformdirs", specifier = ">=4.14.0" },
+    { name = "platformdirs", specifier = ">=4.13" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.30" },
 ]
 provides-extras = ["api"]

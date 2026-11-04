@@ -9,7 +9,7 @@ dependencies = [
     "filelock>=4.2.4",
     "geo-coordinate @ git+https://github.com/ry-yoshida-dev/GeoCoordinate.git@main",
     "numpy>=2",
-    "platformdirs>=4.14.0",
+    "platformdirs>=4.13",
 ]
 
 [project.scripts]
