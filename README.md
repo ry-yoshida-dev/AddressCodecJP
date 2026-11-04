@@ -11,7 +11,8 @@ census boundaries and land parcel polygons from the registry office maps. A coor
 is mapped back to the nearest address and to the towns and parcels that contain it.
 
 Requires Python 3.12+. Runtime dependencies are
-[GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate), NumPy, platformdirs, and
+[GeoCoordinate](https://github.com/ry-yoshida-dev/GeoCoordinate),
+[ProgressBar](https://github.com/ry-yoshida-dev/ProgressBar), NumPy, platformdirs, and
 filelock; the optional [web API](#web-api) adds FastAPI and uvicorn (`api` extra).
 
 ### Address code format
@@ -92,6 +93,7 @@ with AddressCodec.open(cache=DatabaseCache.default(max_age=timedelta(days=30))) 
 | Follow new releases | `max_age=timedelta(...)` refreshes on first use when older, keeping the current data with a warning if downloading, reading, or writing fails; `refresh()` on demand |
 | Inspect or delete | `describe()` returns a `CacheStatus`; `clear()` |
 | See what it downloads | INFO records of the `address_codec_jp.database.cache` loggers |
+| Show progress bars | `progress=ProgressBarGroup()` from [ProgressBar](https://github.com/ry-yoshida-dev/ProgressBar), open while the cache downloads |
 | Mirror the download site | `ADDRESS_CODEC_JP_BASE_URL` |
 
 Writes are serialized across processes by a lock file in the cache directory, so the
@@ -104,7 +106,8 @@ time the database is opened. Building a database removes those of older schema v
 ones, so different versions of the library can share a directory.
 
 The command line offers the same: `address-codec-jp cache [info|prepare|refresh|clear]`,
-e.g. `address-codec-jp cache prepare --prefecture 13`. `--database PATH` works on a
+e.g. `address-codec-jp cache prepare --prefecture 13`, and shows the progress of its
+downloads and imports on standard error. `--database PATH` works on a
 database file of your own, filled by `download`, `import`, and `import-area`.
 
 ### Data sources

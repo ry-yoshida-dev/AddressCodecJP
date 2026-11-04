@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import ClassVar, Self
 
 import platformdirs
+from progress_bar import ProgressBarSource
 
 from address_codec_jp.address import AddressCode, Prefecture
 from address_codec_jp.database.cache.area_target import AreaTarget
@@ -55,7 +56,8 @@ class DatabaseCache:
     into place when complete, so an interrupted build never leaves a partial database.
     Writes are serialized across processes by a lock file in the directory, so that the
     workers of a server can share one cache. Progress is logged to the
-    ``address_codec_jp.database.cache`` loggers at INFO level.
+    ``address_codec_jp.database.cache`` loggers at INFO level, and shown as bars on a
+    display when one is given.
 
     A codec opens its database with ``open_database``, which remembers the file for the
     thread. When that file has been replaced or removed since, ``ensure_lots`` and
@@ -80,6 +82,10 @@ class DatabaseCache:
         cache, or ``None`` to keep it until ``refresh`` is called. A refresh that fails
         to download, read, or write the data is logged as a warning and the current
         database stays in use.
+    progress : ProgressBarSource | None
+        Display that gets a bar for each download and import step, such as a
+        ``progress_bar.ProgressBarGroup`` open for the run of a command, or ``None`` to
+        show none.
 
     Raises
     ------
@@ -110,6 +116,7 @@ class DatabaseCache:
         *,
         is_download_allowed: bool = True,
         max_age: timedelta | None = None,
+        progress: ProgressBarSource | None = None,
     ) -> None:
         if max_age is not None and max_age <= timedelta(0):
             raise ValueError(f"max_age must be positive, got {max_age}.")
@@ -119,7 +126,9 @@ class DatabaseCache:
                 + "cache where downloads are allowed instead."
             )
         self._directory: CacheDirectory = CacheDirectory(directory)
-        self._loader: CacheLoader = CacheLoader(self._directory, downloader, boundary_downloader)
+        self._loader: CacheLoader = CacheLoader(
+            self._directory, downloader, boundary_downloader, progress
+        )
         self._is_download_allowed: bool = is_download_allowed
         self._max_age: timedelta | None = max_age
         self._is_age_checked: bool = False
@@ -133,6 +142,7 @@ class DatabaseCache:
         directory: Path | None = None,
         is_download_allowed: bool = True,
         max_age: timedelta | None = None,
+        progress: ProgressBarSource | None = None,
     ) -> Self:
         """
         Create the cache in the configured directory, downloading from the official sites.
@@ -151,6 +161,8 @@ class DatabaseCache:
             Whether data may be downloaded on use.
         max_age : timedelta | None
             Age after which the database is refreshed on first use, or ``None``.
+        progress : ProgressBarSource | None
+            Display that gets the bars of downloads and imports, or ``None``.
 
         Returns
         -------
@@ -184,6 +196,7 @@ class DatabaseCache:
             BoundaryDownloader(census_url, catalog_url),
             is_download_allowed=is_download_allowed,
             max_age=max_age,
+            progress=progress,
         )
 
     @property

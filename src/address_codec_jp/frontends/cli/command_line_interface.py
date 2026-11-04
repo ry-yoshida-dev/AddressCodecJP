@@ -5,6 +5,8 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import ClassVar, assert_never
 
+from progress_bar import ProgressBarGroup
+
 from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.database.cache import DatabaseCache
 from address_codec_jp.errors import AddressCodecError
@@ -62,7 +64,8 @@ class CommandLineInterface:
         """
         namespace = self._parser.parse_args(arguments, namespace=CommandArguments())
         try:
-            return int(self._execute(namespace))
+            with ProgressBarGroup() as progress:
+                return int(self._execute(namespace, progress))
         except (
             AddressCodecError,
             LookupError,
@@ -74,14 +77,14 @@ class CommandLineInterface:
             print(f"ERROR: {error}", file=sys.stderr)
             return int(ExitStatus.FATAL_ERROR)
 
-    def _execute(self, namespace: CommandArguments) -> ExitStatus:
+    def _execute(self, namespace: CommandArguments, progress: ProgressBarGroup) -> ExitStatus:
         command = namespace.command
         if command is MaintenanceCommand.CACHE:
             if namespace.database is not None:
                 raise ValueError("cache manages the default database; omit --database.")
-            self._maintainer.manage_cache(DatabaseCache.default(), namespace)
+            self._maintainer.manage_cache(DatabaseCache.default(progress=progress), namespace)
             return ExitStatus.SUCCESS
-        database_path = self._resolve_database(namespace)
+        database_path = self._resolve_database(namespace, progress)
         match command:
             case MaintenanceCommand.IMPORT:
                 self._maintainer.import_registry_files(
@@ -106,10 +109,10 @@ class CommandLineInterface:
             case _:
                 assert_never(command)
 
-    def _resolve_database(self, namespace: CommandArguments) -> Path:
+    def _resolve_database(self, namespace: CommandArguments, progress: ProgressBarGroup) -> Path:
         if namespace.database is not None:
             return Path(namespace.database)
-        cache = DatabaseCache.default()
+        cache = DatabaseCache.default(progress=progress)
         if not cache.is_built:
             print(
                 f"Building the address database in {cache.path}; this runs only once.",

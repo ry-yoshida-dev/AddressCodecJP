@@ -11,7 +11,9 @@ requested again after every addition. Databases of older schema versions are rem
 when a new one is built; those of newer versions are kept for the library that uses them.
 Only the cache's own databases and marked working directories are ever deleted, so the
 cache directory may hold other files.
-Progress is logged at INFO level to the `address_codec_jp.database.cache` loggers.
+Progress is logged at INFO level to the `address_codec_jp.database.cache` loggers, and
+shown as one bar per download and import step when a `progress_bar.ProgressBarSource`,
+such as a `ProgressBarGroup`, is passed as `progress`; the command line passes one.
 
 The registry maps of a municipality, one archive per registry office, are imported
 together, so a failed archive leaves the municipality to be added again in full. The

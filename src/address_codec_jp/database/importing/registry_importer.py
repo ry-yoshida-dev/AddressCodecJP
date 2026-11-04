@@ -1,9 +1,12 @@
 import hashlib
 from collections.abc import Sequence
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
+
+from progress_bar import ProgressBarSource
 
 from address_codec_jp.database.storage import AddressDatabase, DatasetImport
 from address_codec_jp.datasets.address_base_registry import (
@@ -96,7 +99,9 @@ class RegistryImporter:
         """Close the underlying database."""
         self._database.close()
 
-    def import_files(self, paths: Sequence[Path]) -> list[ImportSummary]:
+    def import_files(
+        self, paths: Sequence[Path], progress: ProgressBarSource | None = None
+    ) -> list[ImportSummary]:
         """
         Import several registry files, the town master first.
 
@@ -109,6 +114,8 @@ class RegistryImporter:
         paths : Sequence[Path]
             Registry CSV files or their ZIP archives, in any order. A path given twice
             is imported once.
+        progress : ProgressBarSource | None
+            Display that gets a bar advanced once per imported file, or ``None``.
 
         Returns
         -------
@@ -126,7 +133,12 @@ class RegistryImporter:
         """
         datasets = {path: AbrCsvFile(path).detect_dataset() for path in paths}
         ordered_paths = sorted(datasets, key=lambda path: datasets[path].is_position_related)
-        return [self._import(path, datasets[path]) for path in ordered_paths]
+        if progress is None:
+            return [self._import(path, datasets[path]) for path in ordered_paths]
+        with closing(
+            progress.report(ordered_paths, description="Importing registry files", unit="file")
+        ) as reported_paths:
+            return [self._import(path, datasets[path]) for path in reported_paths]
 
     def import_file(self, path: Path) -> ImportSummary:
         """

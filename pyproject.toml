@@ -10,6 +10,7 @@ dependencies = [
     "geo-coordinate @ git+https://github.com/ry-yoshida-dev/GeoCoordinate.git@main",
     "numpy>=2",
     "platformdirs>=4.13",
+    "progress-bar @ git+https://github.com/ry-yoshida-dev/ProgressBar.git@main",
 ]
 
 [project.scripts]

@@ -5,10 +5,12 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from io import StringIO
 from pathlib import Path
 
 import pytest
 from geo_coordinate import GeoCoordinate
+from progress_bar import ProgressBarBackend, ProgressBarGroup, RenderEnvironment
 
 from address_codec_jp import (
     AbrDataset,
@@ -270,6 +272,24 @@ def test_refresh_downloads_the_same_files_again(cache: DatabaseCache) -> None:
     assert cache_files(cache) == [cache.path.name]
     with AddressCodec(AddressDatabase.open_read_only(cache.path), cache) as codec:
         assert codec.locate("三芳町竹間沢123-4").is_exact
+
+
+def test_refresh_shows_its_steps_on_a_display(mirror: Path, tmp_path: Path) -> None:
+    stream = StringIO()
+    with ProgressBarGroup(
+        backend=ProgressBarBackend.PLAIN, environment=RenderEnvironment(stream)
+    ) as progress:
+        cache = DatabaseCache(
+            tmp_path / "cache",
+            RegistryDownloader(mirror.as_uri()),
+            BoundaryDownloader(),
+            progress=progress,
+        )
+        cache.ensure_lots(["113247"])
+        cache.refresh()
+    output = stream.getvalue()
+    assert "Downloading registry files" in output
+    assert "Importing registry files" in output
 
 
 def test_failed_refresh_keeps_the_database(cache: DatabaseCache, mirror: Path) -> None:

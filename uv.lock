@@ -15,6 +15,7 @@ dependencies = [
     { name = "geo-coordinate" },
     { name = "numpy" },
     { name = "platformdirs" },
+    { name = "progress-bar" },
 ]
 
 [package.optional-dependencies]
@@ -40,6 +41,7 @@ requires-dist = [
     { name = "geo-coordinate", git = "https://github.com/ry-yoshida-dev/GeoCoordinate.git?rev=main" },
     { name = "numpy", specifier = ">=2" },
     { name = "platformdirs", specifier = ">=4.13" },
+    { name = "progress-bar", git = "https://github.com/ry-yoshida-dev/ProgressBar.git?rev=main" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.30" },
 ]
 provides-extras = ["api"]
@@ -671,6 +673,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/bf/db/7fc19e6f2dc92a966
 wheels = [
     { url = "https://files.pythonhosted.org/packages/40/9e/2b38731e0fc536806f16490e1a12d7f0dc2a1235aa8cc07bcc75416a7daa/pluggy-1.7.0-py3-none-any.whl", hash = "sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec", size = 27082, upload-time = "2026-10-15T09:50:56.808Z" },
 ]
+
+[[package]]
+name = "progress-bar"
+version = "0.1.0"
+source = { git = "https://github.com/ry-yoshida-dev/ProgressBar.git?rev=main#16da528b8c3bd0589251c518ce06c35ee92e1106" }
 
 [[package]]
 name = "pydantic"

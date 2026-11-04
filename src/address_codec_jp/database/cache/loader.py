@@ -1,7 +1,10 @@
 import logging
 import shutil
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable, Iterator
+from contextlib import closing, contextmanager
 from pathlib import Path
+
+from progress_bar import ProgressBarSource
 
 from address_codec_jp.address import AddressCode, Prefecture
 from address_codec_jp.database.cache.area_target import AreaTarget
@@ -31,7 +34,8 @@ class CacheLoader:
     imported in one transaction, so that it is logged as imported only when all of them
     are. Additions on behalf of a codec name the file the codec opened, and are refused
     when the database has been replaced or removed since. Progress is logged at INFO
-    level.
+    level and, when a display is given, shown as one bar per step: the downloads, the
+    imports of registry files, and the area datasets.
 
     Parameters
     ----------
@@ -41,6 +45,8 @@ class CacheLoader:
         Downloader of the registry files.
     boundary_downloader : BoundaryDownloader
         Downloader of the census boundaries and registry maps.
+    progress : ProgressBarSource | None
+        Display that gets the bars, or ``None`` to show none.
     """
 
     def __init__(
@@ -48,10 +54,12 @@ class CacheLoader:
         directory: CacheDirectory,
         downloader: RegistryDownloader,
         boundary_downloader: BoundaryDownloader,
+        progress: ProgressBarSource | None = None,
     ) -> None:
         self._directory: CacheDirectory = directory
         self._downloader: RegistryDownloader = downloader
         self._boundary_downloader: BoundaryDownloader = boundary_downloader
+        self._progress: ProgressBarSource | None = progress
         self._ledger: ImportLedger = ImportLedger()
 
     @property
@@ -68,7 +76,7 @@ class CacheLoader:
 
     def with_directory(self, directory: CacheDirectory) -> "CacheLoader":
         """
-        Create a loader of another directory with the same downloaders.
+        Create a loader of another directory with the same downloaders and display.
 
         Parameters
         ----------
@@ -80,7 +88,7 @@ class CacheLoader:
         CacheLoader
             Loader with an empty ledger.
         """
-        return CacheLoader(directory, self._downloader, self._boundary_downloader)
+        return CacheLoader(directory, self._downloader, self._boundary_downloader, self._progress)
 
     def build(self) -> None:
         """
@@ -98,14 +106,18 @@ class CacheLoader:
             _LOGGER.info("Building the address database in %s.", database_path)
             working_directory = self._directory.make_working_directory()
             try:
-                paths = [
-                    self._downloader.download(target, working_directory)
+                targets = [
+                    target
                     for target in self._downloader.plan(Prefecture.list_codes())
                     if self.is_town_level(target)
                 ]
+                with self._report(targets, "Downloading registry files", "file") as reported:
+                    paths = [
+                        self._downloader.download(target, working_directory) for target in reported
+                    ]
                 working_path = working_directory / database_path.name
                 with RegistryImporter.open(working_path) as importer:
-                    _ = importer.import_files(paths)
+                    _ = importer.import_files(paths, self._progress)
                 _ = working_path.replace(database_path)
             finally:
                 shutil.rmtree(working_directory, ignore_errors=True)
@@ -151,14 +163,15 @@ class CacheLoader:
             _LOGGER.info("Adding %d registry files to %s.", len(pending), database_path)
             working_directory = self._directory.make_working_directory()
             try:
-                downloaded = [
-                    self._downloader.download_if_distributed(target, working_directory)
-                    for target in pending
-                ]
+                with self._report(pending, "Downloading registry files", "file") as reported:
+                    downloaded = [
+                        self._downloader.download_if_distributed(target, working_directory)
+                        for target in reported
+                    ]
                 paths = [path for path in downloaded if path is not None]
                 if paths:
                     with RegistryImporter.open(database_path) as importer:
-                        _ = importer.import_files(paths)
+                        _ = importer.import_files(paths, self._progress)
                 for target, path in zip(pending, downloaded, strict=True):
                     self._ledger.settle_registry_file(
                         target.file_name, is_published=path is not None
@@ -206,8 +219,11 @@ class CacheLoader:
             _LOGGER.info("Adding %d area datasets to %s.", len(pending), database_path)
             working_directory = self._directory.make_working_directory()
             try:
-                with AreaImporter.open(database_path) as importer:
-                    for target in pending:
+                with (
+                    AreaImporter.open(database_path) as importer,
+                    self._report(pending, "Adding area datasets", "dataset") as reported,
+                ):
+                    for target in reported:
                         paths = self._download_areas(target, working_directory)
                         if paths:
                             _ = importer.import_files(paths, target.lg_code)
@@ -299,6 +315,16 @@ class CacheLoader:
                 + "removed after the codec opened it, such as by DatabaseCache.refresh or "
                 + "clear; close the codec and open it again."
             )
+
+    @contextmanager
+    def _report[ItemT](
+        self, items: list[ItemT], description: str, unit: str
+    ) -> Generator[Iterator[ItemT]]:
+        if self._progress is None:
+            yield iter(items)
+            return
+        with closing(self._progress.report(items, description=description, unit=unit)) as reported:
+            yield reported
 
     def _download_areas(self, target: AreaTarget, directory: Path) -> list[Path]:
         match target.source:
