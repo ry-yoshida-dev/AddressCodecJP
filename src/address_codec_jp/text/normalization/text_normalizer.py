@@ -3,6 +3,7 @@ import unicodedata
 from typing import ClassVar
 
 from address_codec_jp.text.normalization.kanji_numeral import KanjiNumeral
+from address_codec_jp.text.normalization.kanji_variants import KanjiVariants
 
 
 class TextNormalizer:
@@ -23,25 +24,6 @@ class TextNormalizer:
 
     _KANJI: ClassVar[str] = "㐀-鿿豈-﫿々"
     _NUMERALS: ClassVar[str] = "0-9" + KanjiNumeral.CHARACTERS
-    _VARIANT_TABLE: ClassVar[dict[int, str]] = str.maketrans(
-        {
-            "舘": "館",
-            "澤": "沢",
-            "冨": "富",
-            "嶋": "島",
-            "嶌": "島",
-            "﨑": "崎",
-            "髙": "高",
-            "邊": "辺",
-            "邉": "辺",
-            "槇": "槙",
-            "渕": "淵",
-            "廣": "広",
-            "濱": "浜",
-            "檜": "桧",
-            "驒": "騨",
-        }
-    )
     _POSTAL_CODE: ClassVar[re.Pattern[str]] = re.compile(
         r"^〒?(?P<head>[0-9]{3})-?(?P<tail>[0-9]{4})"
     )
@@ -230,7 +212,7 @@ class TextNormalizer:
         str
             Folded text of the same length.
         """
-        folded = normalized_text.translate(self._VARIANT_TABLE)
+        folded = normalized_text.translate(KanjiVariants.TABLE)
         folded = self._KE_VARIANTS.sub("ケ", folded)
         return self._NO_VARIANTS.sub("の", folded)
 

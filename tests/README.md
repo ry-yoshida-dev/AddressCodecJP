@@ -23,6 +23,7 @@ tests of the `AddressCodec` facade stay at the top level.
 | [datasets/](datasets/) | Tests of downloading the registry datasets |
 | [frontends/](frontends/) | Tests of the command line, the web API, and their shared query runner |
 | [fixtures/mt_town_sample.csv](fixtures/mt_town_sample.csv) | Sample town master in ABR format |
+| [fixtures/mt_town_census_names.csv](fixtures/mt_town_census_names.csv) | Towns that the census names differently from the registry, with their ABR codes |
 | [fixtures/areas/](fixtures/areas/) | Census boundary of Chiyoda and registry map sheets of Miyoshi on public and local coordinates |
 | [fixtures/positions/](fixtures/positions/) | Sample position extensions and block, residence, and parcel masters with illustrative points |
 | [test_address_codec.py](test_address_codec.py) | Encoding, decoding, formats including the automatic lot notation, and error cases |

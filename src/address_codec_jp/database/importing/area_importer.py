@@ -8,6 +8,7 @@ from types import TracebackType
 from typing import ClassVar, Self
 
 from address_codec_jp.address import AddressCode, LotNumber
+from address_codec_jp.database.importing.census_area_matcher import CensusAreaMatcher
 from address_codec_jp.database.storage import AddressDatabase, AreaBatch, AreaImport, AreaRecord
 from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
 from address_codec_jp.errors import BoundaryFormatError
@@ -22,8 +23,7 @@ class AreaImporter:
     Importer of area shapes into an address database with an imported town master.
 
     Shapes carry names, not registry codes, so each is matched to a registered town by
-    its address text. A census area whose name continues past a registered oaza, such
-    as a group of koaza, becomes part of the shape of that oaza; areas that fit no town
+    its address text, census areas through ``CensusAreaMatcher``; areas that fit no town
     or several equally well are skipped and counted. A land parcel is stored under the
     code of its town and its parcel number.
 
@@ -40,8 +40,6 @@ class AreaImporter:
 
     _HASH_CHUNK_SIZE: ClassVar[int] = 1 << 20
     _LOT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"(\d+)(?:-(\d+))?")
-    _MINIMUM_KOAZA_LENGTH: ClassVar[int] = 2
-    _SEPARATORS: ClassVar[str] = ",、，・"
 
     def __init__(self, database: AddressDatabase) -> None:
         if not database.is_writable:
@@ -50,6 +48,9 @@ class AreaImporter:
         self._normalizer: TextNormalizer = TextNormalizer()
         self._matcher: AreaMatcher = AreaMatcher(
             database.towns, self._normalizer, LotNumberParser()
+        )
+        self._census_matcher: CensusAreaMatcher = CensusAreaMatcher(
+            database.towns, self._normalizer, self._matcher
         )
 
     @classmethod
@@ -192,7 +193,7 @@ class AreaImporter:
         source = self.detect(path)
         match source:
             case AreaSource.CENSUS_BOUNDARY:
-                batch = self._read_census_boundary(path)
+                batch = self._read_census_boundary(path, area_code.lg_code)
             case AreaSource.REGISTRY_MAP:
                 batch = self._read_registry_map(path, area_code)
         area_import = AreaImport(
@@ -207,11 +208,11 @@ class AreaImporter:
         self._database.areas.add_import(area_import)
         return area_import
 
-    def _read_census_boundary(self, path: Path) -> AreaBatch:
+    def _read_census_boundary(self, path: Path, lg_code: str) -> AreaBatch:
         shapes: dict[AddressCode, AreaShape] = {}
         unmatched_count = 0
         for area in CensusBoundaryReader().read(path):
-            code = self._match_census_area(area.address)
+            code = self._census_matcher.match(area, lg_code)
             if code is None:
                 unmatched_count += 1
                 continue
@@ -222,23 +223,6 @@ class AreaImporter:
             for code, shape in shapes.items()
         ]
         return AreaBatch(records=records, unmatched_count=unmatched_count)
-
-    def _match_census_area(self, address: str) -> AddressCode | None:
-        matched = self._match(address)
-        if matched is None:
-            return None
-        code = matched.code
-        remainder = matched.remainder
-        if code.machiaza_id is None or code.lot.numbers:
-            return None
-        if not remainder:
-            return code
-        is_koaza_of_oaza = (
-            code.machiaza_id.endswith("000")
-            and len(remainder) >= self._MINIMUM_KOAZA_LENGTH
-            and remainder[0] not in self._SEPARATORS
-        )
-        return code if is_koaza_of_oaza else None
 
     def _read_registry_map(self, path: Path, area_code: AddressCode) -> AreaBatch:
         municipality = self._database.towns.get_municipality(area_code.lg_code)

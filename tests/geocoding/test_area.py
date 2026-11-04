@@ -104,6 +104,7 @@ def test_census_boundary_reader_reads_named_land_areas() -> None:
     areas = CensusBoundaryReader().read(CENSUS_BOUNDARY)
     addresses = {area.address for area in areas}
     assert "東京都千代田区丸の内一丁目" in addresses
+    assert all(area.address.endswith(area.town_name) for area in areas)
     assert len(areas) == len({area.key_code for area in areas})
 
 

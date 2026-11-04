@@ -63,6 +63,7 @@ class CensusBoundaryReader:
             areas[key_code] = CensusArea(
                 key_code=key_code,
                 address=attributes["PREF_NAME"] + attributes["CITY_NAME"] + attributes["S_NAME"],
+                town_name=attributes["S_NAME"],
                 shape=shape if existing is None else existing.shape.merge(shape),
             )
         return list(areas.values())

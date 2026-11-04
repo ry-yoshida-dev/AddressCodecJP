@@ -53,6 +53,11 @@ def test_normalize(text: str, expected: str) -> None:
         ("3ノ輪", "3の輪"),
         ("2ノ3", "2の3"),
         ("澤", "沢"),
+        ("大薮町", "大藪町"),
+        ("大石龍門", "大石竜門"),
+        ("焰魔堂町", "焔魔堂町"),
+        ("鍜治屋町", "鍛治屋町"),
+        ("𠮟", "叱"),
     ],
 )
 def test_fold(text: str, expected: str) -> None:

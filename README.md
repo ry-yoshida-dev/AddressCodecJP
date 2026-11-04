@@ -361,9 +361,12 @@ Every error derives from `AddressCodecError` and from a built-in exception.
   directions the registry lists; one that is not listed is skipped and only decides
   between towns of the same name. The same direction and town in two wards is
   ambiguous without the ward.
-- Town polygons are the census boundaries of October 2020. About 3% of them match no
-  current town (renamed towns, merged areas, river beds) and are skipped; koaza without
-  their own polygon fall back to their oaza.
+- Town polygons are the census boundaries of October 2020. Their names are matched to
+  the registry also when written with variant kanji (`大薮町` for `大藪町`), without the
+  leading part several oaza share (`三大寺` for `水口町三大寺`), or without a trailing
+  `町`. Areas that still match no single town (lakes, river beds, bases, renamed towns,
+  areas named after several towns) are skipped; koaza without their own polygon fall
+  back to their oaza.
 - Blocks and residences of the residence indication have no published polygons and fall
   back to their town. Parcel polygons exist only for parcel-numbered towns and only for
   map sheets on public coordinates; many urban sheets are on arbitrary local
@@ -382,6 +385,5 @@ uv run mypy src tests
 uv run basedpyright
 ```
 
-CI runs these on Python 3.12 to 3.14. Record user-visible changes in
-[CHANGELOG.md](CHANGELOG.md), and tag a release as `v{version}` after bumping `version`
-in `pyproject.toml`.
+CI runs these on Python 3.12 to 3.14. Tag a release as `v{version}` after bumping
+`version` in `pyproject.toml`.
