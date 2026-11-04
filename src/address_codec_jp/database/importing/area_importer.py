@@ -9,10 +9,15 @@ from typing import ClassVar, Self
 
 from address_codec_jp.address import AddressCode, LotNumber
 from address_codec_jp.database.importing.census_area_matcher import CensusAreaMatcher
-from address_codec_jp.database.storage import AddressDatabase, AreaBatch, AreaImport, AreaRecord
+from address_codec_jp.database.storage import (
+    AddressDatabase,
+    AreaBatch,
+    AreaImport,
+    AreaRecord,
+    CensusAreaRecord,
+)
 from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
 from address_codec_jp.errors import BoundaryFormatError
-from address_codec_jp.geometry import AreaShape
 from address_codec_jp.results import AddressMatch, AreaSource
 from address_codec_jp.text.matching import AreaMatcher
 from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
@@ -23,9 +28,11 @@ class AreaImporter:
     Importer of area shapes into an address database with an imported town master.
 
     Shapes carry names, not registry codes, so each is matched to a registered town by
-    its address text, census areas through ``CensusAreaMatcher``; areas that fit no town
-    or several equally well are skipped and counted. A land parcel is stored under the
-    code of its town and its parcel number.
+    its address text, census areas through ``CensusAreaMatcher``. Every census area is
+    stored under its census code, those that fit no town or several equally well without
+    one and counted, so that a municipality is whole however its names were matched. A
+    land parcel is stored under the code of its town and its parcel number; parcels that
+    fit no town are skipped and counted.
 
     Parameters
     ----------
@@ -193,36 +200,48 @@ class AreaImporter:
         source = self.detect(path)
         match source:
             case AreaSource.CENSUS_BOUNDARY:
-                batch = self._read_census_boundary(path, area_code.lg_code)
+                census_areas = self._read_census_boundary(path, area_code.lg_code)
+                stored_count = self._database.areas.save_census_areas(census_areas)
+                unmatched_count = sum(
+                    1 for area in census_areas if area.is_land and area.name and not area.towns
+                )
             case AreaSource.REGISTRY_MAP:
                 batch = self._read_registry_map(path, area_code)
+                stored_count = self._database.areas.save_parcels(batch.records)
+                unmatched_count = batch.unmatched_count
         area_import = AreaImport(
             source=source,
             lg_code=area_code.lg_code,
             source_name=path.name,
             source_sha256=self._digest(path),
             imported_at=datetime.now(UTC),
-            stored_count=self._database.areas.save_all(batch.records),
-            unmatched_count=batch.unmatched_count,
+            stored_count=stored_count,
+            unmatched_count=unmatched_count,
         )
         self._database.areas.add_import(area_import)
         return area_import
 
-    def _read_census_boundary(self, path: Path, lg_code: str) -> AreaBatch:
-        shapes: dict[AddressCode, AreaShape] = {}
-        unmatched_count = 0
+    def _read_census_boundary(self, path: Path, lg_code: str) -> list[CensusAreaRecord]:
+        records: list[CensusAreaRecord] = []
         for area in CensusBoundaryReader().read(path):
-            code = self._census_matcher.match(area, lg_code)
-            if code is None:
-                unmatched_count += 1
-                continue
-            existing = shapes.get(code)
-            shapes[code] = area.shape if existing is None else existing.merge(area.shape)
-        records = [
-            AreaRecord(code=code, source=AreaSource.CENSUS_BOUNDARY, shape=shape)
-            for code, shape in shapes.items()
-        ]
-        return AreaBatch(records=records, unmatched_count=unmatched_count)
+            area_lg_code = AddressCode.with_check_digit(area.key_code[:5])
+            is_matched = area.is_land and bool(area.town_name)
+            code = self._census_matcher.match(area, lg_code) if is_matched else None
+            records.append(
+                CensusAreaRecord(
+                    key_code=area.key_code,
+                    lg_code=area_lg_code,
+                    name=area.town_name,
+                    shape=area.shape,
+                    is_land=area.is_land,
+                    towns=(
+                        frozenset({code})
+                        if code is not None and code.lg_code == area_lg_code
+                        else frozenset()
+                    ),
+                )
+            )
+        return records
 
     def _read_registry_map(self, path: Path, area_code: AddressCode) -> AreaBatch:
         municipality = self._database.towns.get_municipality(area_code.lg_code)

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import ClassVar
 
 from address_codec_jp.address import AddressCode
+from address_codec_jp.database.storage.area.census_record import CensusAreaRecord
 from address_codec_jp.database.storage.area.imported_file import AreaImport
 from address_codec_jp.database.storage.area.record import AreaRecord
 from address_codec_jp.geometry import AreaShape
@@ -14,9 +15,11 @@ class AreaRepository:
     """
     SQLite-backed store of area shapes and the log of the area files imported.
 
-    Shapes are serialized by ``AreaShape.to_bytes`` and indexed by their bounding boxes
-    in an R*Tree, so that the shapes around a position are found without reading the
-    others.
+    Census small areas are stored under their own census codes, each with the towns it
+    is matched to, so that a municipality is made of all its areas however their names
+    were matched; land parcels are stored under their address codes. Shapes are
+    serialized by ``AreaShape.to_bytes`` and indexed by their bounding boxes in R*Trees,
+    so that the shapes around a position are found without reading the others.
 
     Parameters
     ----------
@@ -26,16 +29,39 @@ class AreaRepository:
 
     _SCHEMA: ClassVar[tuple[str, ...]] = (
         """
-        CREATE TABLE area_shapes (
+        CREATE TABLE census_areas (
             id INTEGER PRIMARY KEY,
-            code TEXT NOT NULL,
-            source TEXT NOT NULL,
-            shape BLOB NOT NULL,
-            UNIQUE (code, source)
+            key_code TEXT NOT NULL UNIQUE,
+            lg_code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            is_land INTEGER NOT NULL,
+            shape BLOB NOT NULL
+        )
+        """,
+        "CREATE INDEX census_areas_by_municipality ON census_areas (lg_code)",
+        """
+        CREATE TABLE census_area_towns (
+            census_area_id INTEGER NOT NULL,
+            lg_code TEXT NOT NULL,
+            machiaza_id TEXT NOT NULL,
+            PRIMARY KEY (census_area_id, lg_code, machiaza_id)
+        ) WITHOUT ROWID
+        """,
+        "CREATE INDEX census_area_towns_by_town ON census_area_towns (lg_code, machiaza_id)",
+        """
+        CREATE VIRTUAL TABLE census_area_bounds USING rtree(
+            id, west_degrees, east_degrees, south_degrees, north_degrees
         )
         """,
         """
-        CREATE VIRTUAL TABLE area_shape_bounds USING rtree(
+        CREATE TABLE parcel_shapes (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,
+            shape BLOB NOT NULL
+        )
+        """,
+        """
+        CREATE VIRTUAL TABLE parcel_shape_bounds USING rtree(
             id, west_degrees, east_degrees, south_degrees, north_degrees
         )
         """,
@@ -52,6 +78,7 @@ class AreaRepository:
         )
         """,
     )
+    _OAZA_ID_LENGTH: ClassVar[int] = 4
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection: sqlite3.Connection = connection
@@ -72,56 +99,91 @@ class AreaRepository:
             ``True`` when shapes can be looked up.
         """
         rows: list[tuple[object, ...]] = self._connection.execute(
-            "SELECT EXISTS (SELECT 1 FROM area_shapes)"
+            "SELECT EXISTS (SELECT 1 FROM census_areas) OR EXISTS (SELECT 1 FROM parcel_shapes)"
         ).fetchall()
         return rows[0][0] == 1
 
-    def save_all(self, records: Iterable[AreaRecord]) -> int:
+    def save_census_areas(self, records: Iterable[CensusAreaRecord]) -> int:
         """
-        Store shapes within the caller's transaction, replacing those of the same code.
+        Store census areas within the caller's transaction, replacing those of the same code.
+
+        Parameters
+        ----------
+        records : Iterable[CensusAreaRecord]
+            Areas to store.
+
+        Returns
+        -------
+        int
+            Number of stored areas.
+        """
+        stored_count = 0
+        for record in records:
+            rows: list[tuple[object, ...]] = self._connection.execute(
+                "INSERT INTO census_areas (key_code, lg_code, name, is_land, shape) "
+                + "VALUES (?, ?, ?, ?, ?) ON CONFLICT (key_code) DO UPDATE SET "
+                + "lg_code = excluded.lg_code, name = excluded.name, "
+                + "is_land = excluded.is_land, shape = excluded.shape RETURNING id",
+                (
+                    record.key_code,
+                    record.lg_code,
+                    record.name,
+                    int(record.is_land),
+                    record.shape.to_bytes(),
+                ),
+            ).fetchall()
+            area_id = rows[0][0]
+            _ = self._connection.execute(
+                "DELETE FROM census_area_towns WHERE census_area_id = ?", (area_id,)
+            )
+            _ = self._connection.executemany(
+                "INSERT INTO census_area_towns VALUES (?, ?, ?)",
+                [(area_id, town.lg_code, town.machiaza_id) for town in record.towns],
+            )
+            self._index_bounds("census_area_bounds", area_id, record.shape)
+            stored_count += 1
+        return stored_count
+
+    def save_parcels(self, records: Iterable[AreaRecord]) -> int:
+        """
+        Store parcel shapes within the caller's transaction, replacing those of the same code.
 
         Parameters
         ----------
         records : Iterable[AreaRecord]
-            Shapes to store.
+            Shapes from the registry maps, coded with their parcel numbers.
 
         Returns
         -------
         int
             Number of stored shapes.
+
+        Raises
+        ------
+        ValueError
+            If a record is not a parcel of the registry maps.
         """
         stored_count = 0
         for record in records:
-            box = record.shape.bounds
+            if record.source is not AreaSource.REGISTRY_MAP or not record.code.lot.numbers:
+                raise ValueError(f"{record.code} from {record.source.value} is not a parcel.")
             rows: list[tuple[object, ...]] = self._connection.execute(
-                "INSERT INTO area_shapes (code, source, shape) VALUES (?, ?, ?) "
-                + "ON CONFLICT (code, source) DO UPDATE SET shape = excluded.shape "
-                + "RETURNING id",
-                (str(record.code), record.source.value, record.shape.to_bytes()),
+                "INSERT INTO parcel_shapes (code, shape) VALUES (?, ?) "
+                + "ON CONFLICT (code) DO UPDATE SET shape = excluded.shape RETURNING id",
+                (str(record.code), record.shape.to_bytes()),
             ).fetchall()
-            _ = self._connection.execute(
-                "INSERT OR REPLACE INTO area_shape_bounds VALUES (?, ?, ?, ?, ?)",
-                (
-                    rows[0][0],
-                    box.west_degrees,
-                    box.east_degrees,
-                    box.south_degrees,
-                    box.north_degrees,
-                ),
-            )
+            self._index_bounds("parcel_shape_bounds", rows[0][0], record.shape)
             stored_count += 1
         return stored_count
 
-    def find(self, code: AddressCode, source: AreaSource) -> AreaShape | None:
+    def find_parcel(self, code: AddressCode) -> AreaShape | None:
         """
-        Fetch the shape of a code.
+        Fetch the shape of a parcel.
 
         Parameters
         ----------
         code : AddressCode
-            Code of the shape.
-        source : AreaSource
-            Dataset of the shape.
+            Code with parcel numbers.
 
         Returns
         -------
@@ -129,40 +191,95 @@ class AreaRepository:
             Stored shape, or ``None`` when none is stored.
         """
         rows: list[tuple[object, ...]] = self._connection.execute(
-            "SELECT shape FROM area_shapes WHERE code = ? AND source = ?",
-            (str(code), source.value),
+            "SELECT shape FROM parcel_shapes WHERE code = ?", (str(code),)
         ).fetchall()
         return None if not rows else self._to_shape(rows[0][0])
 
-    def list_by_prefix(self, code_prefix: str, source: AreaSource) -> list[AreaRecord]:
+    def find_town(self, code: AddressCode) -> AreaShape | None:
         """
-        List the shapes whose codes start with a prefix.
+        Combine the census areas matched to a town.
 
         Parameters
         ----------
-        code_prefix : str
-            Start of the codes, such as ``131016-`` for a municipality or
-            ``131016-0011`` for an oaza.
-        source : AreaSource
-            Dataset of the shapes.
+        code : AddressCode
+            Town code.
 
         Returns
         -------
-        list[AreaRecord]
-            Shapes ordered by code.
+        AreaShape | None
+            Shapes of the areas, or ``None`` when none is matched to the town.
+
+        Raises
+        ------
+        ValueError
+            If ``code`` is not a town code.
         """
-        rows: list[tuple[object, ...]] = self._connection.execute(
-            "SELECT code, source, shape FROM area_shapes "
-            + "WHERE code >= ? AND code < ? AND source = ? ORDER BY code",
-            (code_prefix, code_prefix + "\uffff", source.value),
-        ).fetchall()
-        return [self._to_record(row) for row in rows]
+        if code.machiaza_id is None or code.lot.numbers:
+            raise ValueError(f"{code} is not a town code.")
+        return self._combine(
+            "SELECT census_areas.shape FROM census_area_towns JOIN census_areas "
+            + "ON census_areas.id = census_area_towns.census_area_id "
+            + "WHERE census_area_towns.lg_code = ? AND census_area_towns.machiaza_id = ? "
+            + "ORDER BY census_areas.key_code",
+            (code.lg_code, code.machiaza_id),
+        )
+
+    def find_oaza(self, code: AddressCode) -> AreaShape | None:
+        """
+        Combine the census areas matched to any town of the oaza of a town.
+
+        Parameters
+        ----------
+        code : AddressCode
+            Town code whose first four digits of ``machiaza_id`` name the oaza.
+
+        Returns
+        -------
+        AreaShape | None
+            Shapes of the areas, or ``None`` when none is matched to the oaza.
+
+        Raises
+        ------
+        ValueError
+            If ``code`` is not a town code.
+        """
+        if code.machiaza_id is None or code.lot.numbers:
+            raise ValueError(f"{code} is not a town code.")
+        oaza_id = code.machiaza_id[: self._OAZA_ID_LENGTH]
+        return self._combine(
+            "SELECT shape FROM census_areas WHERE id IN (SELECT census_area_id "
+            + "FROM census_area_towns WHERE lg_code = ? AND machiaza_id >= ? "
+            + "AND machiaza_id < ?) ORDER BY key_code",
+            (code.lg_code, oaza_id, oaza_id + "\uffff"),
+        )
+
+    def find_municipality(self, lg_code: str) -> AreaShape | None:
+        """
+        Combine every census area of a municipality, matched to a town or not.
+
+        Parameters
+        ----------
+        lg_code : str
+            Six-digit local government code.
+
+        Returns
+        -------
+        AreaShape | None
+            Shapes of the areas, or ``None`` when none is stored.
+        """
+        return self._combine(
+            "SELECT shape FROM census_areas WHERE lg_code = ? ORDER BY key_code", (lg_code,)
+        )
 
     def list_containing(
         self, longitude_degrees: float, latitude_degrees: float
     ) -> list[AreaRecord]:
         """
-        List the shapes that contain a position.
+        List the towns and parcels whose shapes contain a position.
+
+        A town is listed with the shape of all its census areas, as ``find_town`` gives
+        it, when one of them contains the position; areas matched to no town are left
+        out.
 
         Parameters
         ----------
@@ -176,19 +293,45 @@ class AreaRepository:
         list[AreaRecord]
             Containing shapes ordered by code.
         """
-        rows: list[tuple[object, ...]] = self._connection.execute(
-            "SELECT area_shapes.code, area_shapes.source, area_shapes.shape "
-            + "FROM area_shape_bounds JOIN area_shapes USING (id) "
-            + "WHERE west_degrees <= ? AND east_degrees >= ? "
-            + "AND south_degrees <= ? AND north_degrees >= ? ORDER BY area_shapes.code",
-            (longitude_degrees, longitude_degrees, latitude_degrees, latitude_degrees),
+        position = (longitude_degrees, longitude_degrees, latitude_degrees, latitude_degrees)
+        bounds_filter = (
+            "WHERE west_degrees <= ? AND east_degrees >= ? "
+            + "AND south_degrees <= ? AND north_degrees >= ?"
+        )
+        census_rows: list[tuple[object, ...]] = self._connection.execute(
+            "SELECT census_area_towns.lg_code, census_area_towns.machiaza_id, "
+            + "census_areas.shape FROM census_area_bounds "
+            + "JOIN census_areas ON census_areas.id = census_area_bounds.id "
+            + "JOIN census_area_towns ON census_area_towns.census_area_id = census_areas.id "
+            + bounds_filter,
+            position,
         ).fetchall()
-        records = [self._to_record(row) for row in rows]
-        return [
-            record
-            for record in records
-            if record.shape.contains(longitude_degrees, latitude_degrees)
+        towns = {
+            AddressCode(lg_code=str(lg_code), machiaza_id=str(machiaza_id))
+            for lg_code, machiaza_id, shape in census_rows
+            if self._to_shape(shape).contains(longitude_degrees, latitude_degrees)
+        }
+        town_records = [
+            AreaRecord(code=town, source=AreaSource.CENSUS_BOUNDARY, shape=shape)
+            for town in towns
+            if (shape := self.find_town(town)) is not None
         ]
+        parcel_rows: list[tuple[object, ...]] = self._connection.execute(
+            "SELECT parcel_shapes.code, parcel_shapes.shape FROM parcel_shape_bounds "
+            + "JOIN parcel_shapes ON parcel_shapes.id = parcel_shape_bounds.id "
+            + bounds_filter,
+            position,
+        ).fetchall()
+        parcel_records = [
+            AreaRecord(
+                code=AddressCode.parse(str(code)),
+                source=AreaSource.REGISTRY_MAP,
+                shape=parcel_shape,
+            )
+            for code, shape in parcel_rows
+            if (parcel_shape := self._to_shape(shape)).contains(longitude_degrees, latitude_degrees)
+        ]
+        return sorted(town_records + parcel_records, key=lambda record: str(record.code))
 
     def add_import(self, area_import: AreaImport) -> None:
         """
@@ -228,12 +371,19 @@ class AreaRepository:
         ).fetchall()
         return [self._to_import(row) for row in rows]
 
-    def _to_record(self, row: tuple[object, ...]) -> AreaRecord:
-        code, source, shape = row
-        if not (isinstance(code, str) and isinstance(source, str)):
-            raise RuntimeError(f"Malformed area row: {code!r}, {source!r}.")
-        return AreaRecord(
-            code=AddressCode.parse(code), source=AreaSource(source), shape=self._to_shape(shape)
+    def _index_bounds(self, table: str, row_id: object, shape: AreaShape) -> None:
+        box = shape.bounds
+        _ = self._connection.execute(
+            f"INSERT OR REPLACE INTO {table} VALUES (?, ?, ?, ?, ?)",
+            (row_id, box.west_degrees, box.east_degrees, box.south_degrees, box.north_degrees),
+        )
+
+    def _combine(self, query: str, parameters: tuple[str, ...]) -> AreaShape | None:
+        rows: list[tuple[object, ...]] = self._connection.execute(query, parameters).fetchall()
+        if not rows:
+            return None
+        return AreaShape(
+            tuple(polygon for row in rows for polygon in self._to_shape(row[0]).polygons)
         )
 
     def _to_shape(self, value: object) -> AreaShape:

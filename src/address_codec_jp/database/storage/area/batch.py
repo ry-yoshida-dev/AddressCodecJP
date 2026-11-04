@@ -6,14 +6,14 @@ from address_codec_jp.database.storage.area.record import AreaRecord
 @dataclass(frozen=True, slots=True)
 class AreaBatch:
     """
-    Shapes of one area file matched to address codes, ready to be stored.
+    Parcel shapes of one registry map file matched to address codes, ready to be stored.
 
     Parameters
     ----------
     records : list[AreaRecord]
-        Shapes matched to a code.
+        Parcels matched to a code.
     unmatched_count : int
-        Shapes skipped because they fit no address or several equally well.
+        Parcels skipped because they fit no address or several equally well.
     """
 
     records: list[AreaRecord]

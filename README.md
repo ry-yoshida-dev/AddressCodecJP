@@ -368,8 +368,9 @@ Every error derives from `AddressCodecError` and from a built-in exception.
   the registry also when written with variant kanji (`大薮町` for `大藪町`), without the
   leading part several oaza share (`三大寺` for `水口町三大寺`), or without a trailing
   `町`. Areas that still match no single town (lakes, river beds, bases, renamed towns,
-  areas named after several towns) are skipped; koaza without their own polygon fall
-  back to their oaza.
+  areas named after several towns) belong to no town but are kept, so a municipality's
+  polygon is always all of its census areas; koaza without their own polygon fall back
+  to their oaza.
 - Blocks and residences of the residence indication have no published polygons and fall
   back to their town. Parcel polygons exist only for parcel-numbered towns and only for
   map sheets on public coordinates; many urban sheets are on arbitrary local

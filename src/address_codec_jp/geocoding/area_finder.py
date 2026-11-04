@@ -19,7 +19,8 @@ class AreaFinder:
     parcels, or whose numbering is unknown, because block and residence numbers of the
     residence indication have no published shapes. A town without a shape falls back to
     its oaza, an oaza without a shape of its own is made of the shapes of its chome or
-    koaza, and a municipality of the shapes of all its towns. Prefectures have no shape.
+    koaza, and a municipality of all its census areas, including those matched to no
+    town. Prefectures have no shape.
 
     Parameters
     ----------
@@ -123,33 +124,20 @@ class AreaFinder:
         if code.machiaza_id is None:
             if AddressCode.is_prefecture_code(code.lg_code):
                 return None
-            return self._combine(code, f"{code.lg_code}-")
+            return self._to_record(code, self._areas.find_municipality(code.lg_code))
         if code.lot.numbers:
             if not self._is_parcel_numbered(code.lg_code, code.machiaza_id):
                 return None
-            return self._find_stored(code, AreaSource.REGISTRY_MAP)
-        stored = self._find_stored(code, AreaSource.CENSUS_BOUNDARY)
-        if stored is not None:
-            return stored
-        if code.machiaza_id.endswith("000"):
-            return self._combine(code, f"{code.lg_code}-{code.machiaza_id[:4]}")
-        return None
+            shape = self._areas.find_parcel(code)
+            return None if shape is None else AreaRecord(code, AreaSource.REGISTRY_MAP, shape)
+        shape = self._areas.find_town(code)
+        if shape is None and code.is_oaza:
+            shape = self._areas.find_oaza(code)
+        return self._to_record(code, shape)
 
-    def _find_stored(self, code: AddressCode, source: AreaSource) -> AreaRecord | None:
-        shape = self._areas.find(code, source)
-        return None if shape is None else AreaRecord(code=code, source=source, shape=shape)
-
-    def _combine(self, code: AddressCode, code_prefix: str) -> AreaRecord | None:
-        records = self._areas.list_by_prefix(code_prefix, AreaSource.CENSUS_BOUNDARY)
-        if not records:
-            return None
-        return AreaRecord(
-            code=code,
-            source=AreaSource.CENSUS_BOUNDARY,
-            shape=AreaShape(
-                tuple(polygon for record in records for polygon in record.shape.polygons)
-            ),
-        )
+    @staticmethod
+    def _to_record(code: AddressCode, shape: AreaShape | None) -> AreaRecord | None:
+        return None if shape is None else AreaRecord(code, AreaSource.CENSUS_BOUNDARY, shape)
 
     def has_parcel_shape(self, code: AddressCode) -> bool:
         """

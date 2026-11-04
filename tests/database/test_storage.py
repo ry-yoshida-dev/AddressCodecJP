@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from address_codec_jp import (
+    AddressCode,
     AddressCodec,
     AddressDatabase,
     AddressLevel,
@@ -16,7 +17,9 @@ from address_codec_jp import (
     RegistryImporter,
     UnsupportedDatabaseError,
 )
+from address_codec_jp.database.storage import CensusAreaRecord
 from address_codec_jp.datasets.address_base_registry import AbrTownCsvReader
+from address_codec_jp.geometry import AreaShape, Polygon
 from tests.fixture_paths import FIXTURE_DIRECTORY
 
 HEADER: str = (
@@ -292,3 +295,27 @@ def test_locked_database_is_not_reported_as_foreign(
             _ = AddressDatabase.open_writable(database)
     finally:
         writer.close()
+
+
+def test_town_containing_a_position_has_the_shape_of_all_its_census_areas() -> None:
+    town = AddressCode(lg_code="131016", machiaza_id="0011001")
+    squares = [
+        AreaShape((Polygon(((x, 0.0), (x + 1.0, 0.0), (x + 1.0, 1.0), (x, 1.0), (x, 0.0))),))
+        for x in (0.0, 2.0)
+    ]
+    with RegistryImporter.open(":memory:") as importer:
+        areas = importer.database.areas
+        _ = areas.save_census_areas(
+            CensusAreaRecord(
+                key_code=f"1310100{index}",
+                lg_code="131016",
+                name="丸の内一丁目",
+                shape=shape,
+                is_land=True,
+                towns=frozenset({town}),
+            )
+            for index, shape in enumerate(squares)
+        )
+        records = areas.list_containing(0.5, 0.5)
+    assert [record.code for record in records] == [town]
+    assert len(records[0].shape.polygons) == len(squares)

@@ -100,7 +100,7 @@ def test_census_boundaries_are_written_counterclockwise() -> None:
             assert all(Polygon.is_clockwise(ring) for ring in rings[1:])
 
 
-def test_census_boundary_reader_reads_named_land_areas() -> None:
+def test_census_boundary_reader_reads_every_area() -> None:
     areas = CensusBoundaryReader().read(CENSUS_BOUNDARY)
     addresses = {area.address for area in areas}
     assert "東京都千代田区丸の内一丁目" in addresses
@@ -153,8 +153,8 @@ def test_import_of_several_files_is_atomic(
 def test_import_matches_areas_to_registered_towns(area_importer: AreaImporter) -> None:
     census_import = area_importer.import_file(CENSUS_BOUNDARY, "131016")
     assert census_import.source is AreaSource.CENSUS_BOUNDARY
-    assert census_import.stored_count == 5
-    assert census_import.unmatched_count > 0
+    assert census_import.stored_count == len(CensusBoundaryReader().read(CENSUS_BOUNDARY))
+    assert census_import.stored_count - census_import.unmatched_count == 5
     map_import = area_importer.import_file(REGISTRY_MAP, "113247")
     assert (map_import.source, map_import.stored_count, map_import.unmatched_count) == (
         AreaSource.REGISTRY_MAP,
@@ -183,7 +183,20 @@ def test_find_area_combines_the_towns_of_an_oaza_and_a_municipality(
     assert oaza.is_exact
     assert len(oaza.shape.polygons) == 3
     municipality = area_codec.find_area_code("131016")
-    assert len(municipality.shape.polygons) >= 5
+    census_polygon_count = sum(
+        len(area.shape.polygons) for area in CensusBoundaryReader().read(CENSUS_BOUNDARY)
+    )
+    assert len(municipality.shape.polygons) == census_polygon_count
+
+
+def test_municipality_keeps_the_census_areas_matched_to_no_town(
+    area_codec: AddressCodec,
+) -> None:
+    unmatched = next(
+        area for area in CensusBoundaryReader().read(CENSUS_BOUNDARY) if area.town_name == "六番町"
+    )
+    municipality = area_codec.find_area_code("131016")
+    assert all(polygon in municipality.shape.polygons for polygon in unmatched.shape.polygons)
 
 
 def test_find_area_of_a_parcel(area_codec: AddressCodec) -> None:

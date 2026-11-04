@@ -29,7 +29,11 @@ def matcher() -> Iterator[CensusAreaMatcher]:
 
 def _area(municipality: str, town_name: str) -> CensusArea:
     return CensusArea(
-        key_code="0", address=municipality + town_name, town_name=town_name, shape=SQUARE
+        key_code="0",
+        address=municipality + town_name,
+        town_name=town_name,
+        shape=SQUARE,
+        is_land=True,
     )
 
 
@@ -65,6 +69,8 @@ def test_census_names_without_a_single_town_are_skipped(
 
 
 def test_address_must_end_with_the_town_name(matcher: CensusAreaMatcher) -> None:
-    area = CensusArea(key_code="0", address="滋賀県彦根市", town_name="大薮町", shape=SQUARE)
+    area = CensusArea(
+        key_code="0", address="滋賀県彦根市", town_name="大薮町", shape=SQUARE, is_land=True
+    )
     with pytest.raises(ValueError, match="does not end with"):
         _ = matcher.match(area, "252026")

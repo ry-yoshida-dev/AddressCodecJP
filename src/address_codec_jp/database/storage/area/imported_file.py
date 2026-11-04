@@ -22,9 +22,10 @@ class AreaImport:
     imported_at : datetime
         Time of the import in UTC.
     stored_count : int
-        Shapes stored by the import.
+        Census areas or parcel shapes stored by the import.
     unmatched_count : int
-        Shapes skipped because no registered address fits them.
+        Named land areas of the census stored without a town, as no registered town fits
+        them or several do; parcels skipped because no registered address fits them.
 
     Raises
     ------
