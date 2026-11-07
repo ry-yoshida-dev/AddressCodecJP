@@ -2,11 +2,9 @@
 
 ## Overview
 
-Conversion of `AddressCodec` results and errors to JSON-compatible fields, and of results
-to the tab-separated rows of the command line. The command line (JSON Lines) and the web
-API write through these classes, so both give the same fields. Points and shapes carry
-`is_exact`, which tells whether they stand for the requested address itself or for an
-enclosing area.
+Conversion of `AddressCodec` results and errors to the JSON fields shared by the
+command line and the web API, and of results to the tab-separated rows of the command
+line.
 
 ## Components
 

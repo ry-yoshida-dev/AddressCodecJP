@@ -2,22 +2,8 @@
 
 ## Overview
 
-Downloads Address Base Registry files from the registry download site
-(`https://data.address-br.digital.go.jp`). A plan lists the nationwide town master and
-prefecture and municipality points, the town, block, and residence files of chosen
-prefectures, and the parcel files of chosen municipalities, in import order, using the
-distribution scope of each `AbrDataset`. A lot plan lists the block, residence, and
-parcel files of municipalities, and files the site does not distribute can be skipped.
-Files are written atomically under their distributed names. Census boundaries
-(e-Stat) and registry maps (G-Spatial Information Center) are downloaded per
-municipality for area shapes. e-Stat tells a municipality without boundaries by an
-empty ZIP archive; any other response that is not a ZIP archive, such as a maintenance
-page, raises `RegistryDownloadError` instead of being taken as unpublished.
-
-Remote requests of a downloader start at least one second apart and send a
-`User-Agent` naming the library, its version, and its repository, so that bulk
-preparation does not burden the government sites. `file://` mirrors are read without
-waiting.
+Downloaders of Address Base Registry files, census boundaries, and registry maps. See
+[docs/data-sources.md](../../../../docs/data-sources.md) for the sources and their terms.
 
 ## Components
 

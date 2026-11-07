@@ -3,31 +3,9 @@
 ## Overview
 
 Optional web API built with FastAPI, installed with the `api` extra. It serves a cache
-prepared beforehand and never downloads while handling requests. Queries run on a
-fixed set of worker threads, each with its own `AddressCodec`, because a codec must be
-used in the thread that opened it. When the database file is replaced, e.g. by
-`address-codec-jp cache refresh` from another process, each thread reopens its codec
-before its next query; when it is extended in place by `cache prepare`, the coverage is
-read again.
-
-With `is_coverage_required` (the default), a query that needs the blocks, residences,
-town boundaries, or registry maps of a municipality that the cache does not hold fails
-with HTTP 503 instead of silently falling back to an enclosing area. A nearest address
-requires the lots of every municipality that might hold a nearer lot, and parcel shapes
-require the registry maps of their municipality. A deleted database, e.g. after
-`cache clear`, is answered with 503, `/health` included; a database locked by another
-process with 503 and `Retry-After`. Every successful response
-carries `attribution`, the credits that the terms of use of its datasets require: the
-source, that the data was processed, and the publisher who processed it.
-
-Only a failure to interpret the request is answered with 400 and its message, as
-`InvalidRequestError`: a malformed input or option, an input longer than
-`max_input_length`, a number too large to look up, and a parameter or body that fails
-validation. A library error about malformed data, such as `RegistryFormatError`, and any
-unexpected exception are logged and answered with a generic 500 body. A batch reports
-failures caused by an input, including data not prepared for it, in place of its
-result; a fault of the server fails the request. Batch options default as for the GET
-endpoint of the operation.
+prepared beforehand from worker threads that each hold their own `AddressCodec`. See
+[docs/web-api.md](../../../../docs/web-api.md) for the endpoints, errors, and
+settings.
 
 ## Components
 

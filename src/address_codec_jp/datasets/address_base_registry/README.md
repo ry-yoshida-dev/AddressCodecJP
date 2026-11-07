@@ -2,9 +2,8 @@
 
 ## Overview
 
-Reads Address Base Registry files, plain `.csv` or `.zip`. The dataset is identified by
-the CSV header, so files may be renamed. The town master is read as `Town` records, and
-the position-related datasets as `PositionRecord`s that `storage` persists.
+Readers of Address Base Registry files, plain `.csv` or `.zip`, identified by their CSV
+header, into the town and position records that the database stores.
 
 ## Components
 

@@ -2,11 +2,8 @@
 
 ## Overview
 
-Storage of area shapes. `AreaRepository` stores census small areas as
-`CensusAreaRecord`s under their census codes, each with the towns it is matched to, and
-the parcels of an `AreaBatch` as `AreaRecord`s, both with R*Tree indexes of their bounds,
-and logs each imported file as an `AreaImport`. A municipality is made of all its census
-areas, so names that match no town leave no hole in it.
+Storage of census areas and parcel shapes with a spatial index of their bounds, and the
+log of imported area files.
 
 ## Components
 

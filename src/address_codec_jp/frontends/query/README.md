@@ -2,13 +2,10 @@
 
 ## Overview
 
-Queries shared by the command line and the web API. Both name a query by its
-`QueryOperation`, take its options as `QueryOptions`, and answer it through
-`QueryRunner`, so a query reads the same datasets and gives the same fields in both. Each
-front end plugs in two independent parts: a `TextInterpreter` that reports malformed input,
-and a `QueryGuard` that decides which datasets a query may read. The command line uses
-`DirectInterpreter` and `PassThroughGuard`; the web API blames malformed input on the
-request and, when coverage is required, rejects municipalities its cache does not hold.
+Queries shared by the command line and the web API: each names a query by its
+`QueryOperation`, takes its options as `QueryOptions`, and answers it through
+`QueryRunner`, plugging in its own `TextInterpreter` for malformed input and
+`QueryGuard` for the datasets a query may read.
 
 ## Components
 

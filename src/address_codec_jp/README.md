@@ -2,12 +2,10 @@
 
 ## Overview
 
-Public package of AddressCodecJP. `RegistryImporter` imports registry datasets into a
-database, and `AddressCodec` is the read-only facade that combines normalization, town
-matching, lot number parsing, formatting, and geocoding on that database.
-`DatabaseCache` builds a nationwide town-level database in the user cache directory on
-first use and adds the blocks, residences, and land parcels of each municipality and its
-area shapes when needed; `AddressCodec.open()` uses it when no path is given.
+Public package of AddressCodecJP. `AddressCodec` is the read-only facade that
+normalizes, matches, encodes, decodes, and geocodes addresses on an address database;
+`RegistryImporter` imports registry datasets into a database, and `DatabaseCache`
+provides the default database, built on first use.
 
 ## Components
 

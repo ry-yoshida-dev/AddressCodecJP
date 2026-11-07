@@ -3,8 +3,7 @@
 ## Overview
 
 Points and polygons: published representative points, the points of towns and lots, and
-area shapes on JGD2011. GeoJSON output follows RFC 7946: exterior rings run
-counterclockwise and holes clockwise, whatever the orientation of the source data.
+area shapes on JGD2011 with GeoJSON output.
 
 ## Components
 

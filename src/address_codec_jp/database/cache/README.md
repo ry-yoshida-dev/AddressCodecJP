@@ -2,28 +2,10 @@
 
 ## Overview
 
-`DatabaseCache` keeps the default address database in the user cache directory. It is
-built on first use with the nationwide town master and town points, and the points and
-area shapes of each municipality are added when a lookup needs them or ahead of time with
-`prepare`. Writes are serialized across processes by a lock file. Registry files and
-area datasets that the sites do not publish are remembered, so that they are not
-requested again after every addition. Databases of older schema versions are removed
-when a new one is built; those of newer versions are kept for the library that uses them.
-Only the cache's own databases and marked working directories are ever deleted, so the
-cache directory may hold other files.
-Progress is logged at INFO level to the `address_codec_jp.database.cache` loggers, and
-shown as one bar per download and import step when a `progress_bar.ProgressBarSource`,
-such as a `ProgressBarGroup`, is passed as `progress`; the command line passes one.
-
-The registry maps of a municipality, one archive per registry office, are imported
-together, so a failed archive leaves the municipality to be added again in full. The
-import ledger is read again whenever the database file changes. A codec opens its
-database with `DatabaseCache.open_database`; once that file has been replaced or removed,
-such as by `refresh` or `clear` in any process, additions for the codec raise
-`DatabaseReplacedError` (a `DatasetNotImportedError`) instead of going to a file the
-codec does not read, and the codec has to be opened again. Without downloads, the codec
-keeps reading the file it opened. `max_age` requires downloads, and a refresh on first
-use that fails to download, read, or write keeps the current database with a warning.
+`DatabaseCache` keeps the default address database in the user cache directory, built
+on first use and extended per municipality when a lookup needs it or ahead of time with
+`prepare`, optionally showing download and import progress bars. See
+[docs/cache.md](../../../../docs/cache.md) for its location and environment variables.
 
 ## Components
 

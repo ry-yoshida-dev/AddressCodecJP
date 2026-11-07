@@ -2,9 +2,7 @@
 
 ## Overview
 
-Writes downloaded datasets into an `AddressDatabase`. Registry files are identified by
-their header and imported atomically, the town master first. Area shapes carry names,
-which are matched to address codes before they are stored.
+Writes downloaded registry files and area shapes into an `AddressDatabase`.
 
 ## Components
 

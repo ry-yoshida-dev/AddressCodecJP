@@ -2,12 +2,8 @@
 
 ## Overview
 
-Persists imported registry datasets in one versioned SQLite database for lookup by
-code, municipality, postal code, or coordinate. Repositories never commit on their own;
-`AddressDatabase.transaction` groups their writes, so that each import is stored
-completely or not at all. A write interrupted by a killed process is rolled back when the
-database is next opened, also read-only, and a database that stays locked raises
-`sqlite3.OperationalError` rather than being taken for a foreign file.
+Persists imported registry datasets and area shapes in one versioned SQLite database
+for lookup by code, municipality, postal code, or coordinate.
 
 ## Components
 

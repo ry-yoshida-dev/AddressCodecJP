@@ -2,11 +2,9 @@
 
 ## Overview
 
-Queries of the web API. `QueryHandler` answers a `QueryOperation` with its `QueryOptions`
-through the shared `QueryRunner` of the [query](../../query/) package on a thread's codec.
-Malformed inputs are reported as invalid by `InputInterpreter`, and with coverage required,
-`CoverageGuard` rejects municipalities the cache does not hold. The records of the inputs
-become a `QueryAnswer` with the credits of the datasets used.
+Queries of the web API, answered through the shared `QueryRunner` of the
+[query](../../query/) package on a thread's codec, checked against the cache's coverage,
+and credited with the datasets used.
 
 ## Components
 

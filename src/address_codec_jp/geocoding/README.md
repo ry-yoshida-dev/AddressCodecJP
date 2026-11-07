@@ -2,10 +2,9 @@
 
 ## Overview
 
-Finds the representative point of an address code from the imported registry points,
-falling back to the nearest enclosing area that has one, and expresses it on the
-requested datum. Also finds the address whose point is nearest to a coordinate, the
-shape of an address code, and the shapes that contain a coordinate.
+Finds the representative point or shape of an address code, falling back to the
+nearest enclosing area that has one, the address nearest to a coordinate, and the
+shapes that contain a coordinate.
 
 ## Components
 
