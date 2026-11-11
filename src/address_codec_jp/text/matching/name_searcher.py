@@ -1,8 +1,8 @@
 from collections import defaultdict
 
 from address_codec_jp.address import Address, AddressCode, Municipality, Town
-from address_codec_jp.text.matching.municipality_name_index import MunicipalityNameIndex
-from address_codec_jp.text.matching.name_index import NameIndex
+from address_codec_jp.text.matching.index.municipality_name_index import MunicipalityNameIndex
+from address_codec_jp.text.matching.index.name_index import NameIndex
 from address_codec_jp.text.matching.town_source import TownSource
 from address_codec_jp.text.normalization import TextNormalizer
 

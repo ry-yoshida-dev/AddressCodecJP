@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from address_codec_jp.address import Town
 from address_codec_jp.results import MatchTier
-from address_codec_jp.text.matching.candidate_set import CandidateSet
+from address_codec_jp.text.matching.index.candidate_set import CandidateSet
 from address_codec_jp.text.normalization import KanjiNumeral, TextNormalizer
 
 

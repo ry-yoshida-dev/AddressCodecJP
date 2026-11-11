@@ -3,9 +3,9 @@ from dataclasses import replace
 
 from address_codec_jp.address import Address, AddressCode
 from address_codec_jp.results import AddressMatch, GroupMatch
-from address_codec_jp.text.matching.area_matcher import AreaMatcher
 from address_codec_jp.text.matching.group_matcher import GroupMatcher
 from address_codec_jp.text.matching.name_searcher import NameSearcher
+from address_codec_jp.text.matching.reading.area_matcher import AreaMatcher
 from address_codec_jp.text.matching.town_source import TownSource
 from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
 

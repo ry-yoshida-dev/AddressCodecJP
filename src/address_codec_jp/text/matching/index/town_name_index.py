@@ -3,7 +3,7 @@ from collections.abc import Mapping, Set
 from typing import ClassVar
 
 from address_codec_jp.address import Municipality, Town
-from address_codec_jp.text.matching.name_index import NameIndex
+from address_codec_jp.text.matching.index.name_index import NameIndex
 from address_codec_jp.text.matching.town_source import TownSource
 from address_codec_jp.text.normalization import TextNormalizer
 

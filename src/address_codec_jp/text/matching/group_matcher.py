@@ -5,7 +5,7 @@ from typing import ClassVar, assert_never
 from address_codec_jp.address import AddressCode, AddressLevel
 from address_codec_jp.errors import AddressNotFoundError, AmbiguousAddressError
 from address_codec_jp.results import AddressMatch, GroupMatch
-from address_codec_jp.text.matching.area_matcher import AreaMatcher
+from address_codec_jp.text.matching.reading.area_matcher import AreaMatcher
 from address_codec_jp.text.normalization import TextNormalizer
 
 
