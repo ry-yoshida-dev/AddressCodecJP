@@ -12,7 +12,7 @@ class MatchTier(Enum):
     EXACT
         Strictly normalized names must be equal.
     UNPREFIXED
-        A leading ``大字`` or ``字`` is ignored.
+        ``大字``, ``小字``, and ``字`` markers in a name are ignored.
     FOLDED
         Prefixes are ignored and notation variants such as ``ノ``/``の`` are folded.
     """

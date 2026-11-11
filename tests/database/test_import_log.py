@@ -55,5 +55,5 @@ def test_info_command_lists_imports(tmp_path: Path, capsys: pytest.CaptureFixtur
     _ = capsys.readouterr()
     assert CommandLineInterface().run(["--database", database, "info"]) == 0
     columns = capsys.readouterr().out.strip().split("\t")
-    assert columns[1:4] == ["mt_town", "58", "mt_town_sample.csv"]
+    assert columns[1:4] == ["mt_town", "62", "mt_town_sample.csv"]
     assert len(columns[4]) == 64

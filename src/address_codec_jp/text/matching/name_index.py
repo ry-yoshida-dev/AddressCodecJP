@@ -5,7 +5,7 @@ from typing import ClassVar
 from address_codec_jp.address import Town
 from address_codec_jp.results import MatchTier
 from address_codec_jp.text.matching.candidate_set import CandidateSet
-from address_codec_jp.text.normalization import TextNormalizer
+from address_codec_jp.text.normalization import KanjiNumeral, TextNormalizer
 
 
 class NameIndex:
@@ -13,7 +13,11 @@ class NameIndex:
     Tiered prefix index from registry names to towns.
 
     The registry sometimes registers names that differ only by a ``大字``/``字`` prefix or
-    by ``の``/``ノ`` (e.g. ``大曲`` and ``字大曲``) as different towns. Each name is therefore
+    by ``の``/``ノ`` (e.g. ``大曲`` and ``字大曲``) as different towns. Addresses also add or
+    leave out these markers inside a name (``哲多町大字大野`` for ``哲多町大野``,
+    ``第10地割羅賀`` for ``第10地割字羅賀``), and at the folded tier a ``ノ`` or ``ケ``
+    between kanji (``鷹ノ巣`` for ``鷹巣``) or a trailing ``町`` of a name
+    (``薄倉`` for ``薄倉町``). Each name is therefore
     indexed at every ``MatchTier``, and every prefix match is reported with the penalty of
     its tier so that the caller can rank complete readings. A match that ends in the middle
     of a number (koaza ``１`` before ``2番``) or right before a hyphenated number (koaza
@@ -29,6 +33,16 @@ class NameIndex:
 
     _NAME_PREFIXES: ClassVar[tuple[str, ...]] = ("大字", "字")
     _NUMBER_CONTINUATION: ClassVar[re.Pattern[str]] = re.compile("-?[0-9]")
+    # A 字 right after a numeral is part of a koaza name such as 1字 or 十字.
+    _NAME_MARKERS: ClassVar[re.Pattern[str]] = re.compile(
+        f"^字|[大小]字|(?<![0-9{KanjiNumeral.CHARACTERS}])字(?=.)"
+    )
+
+    _FOLDED_CONNECTIVES: ClassVar[re.Pattern[str]] = re.compile(
+        f"(?<=[{TextNormalizer.KANJI_CHARACTERS}])[のケ](?=[{TextNormalizer.KANJI_CHARACTERS}])"
+    )
+    _OPTIONAL_NAME_SUFFIX: ClassVar[str] = "町"
+    _MIN_STEM_LENGTH: ClassVar[int] = 2
 
     def __init__(self, normalizer: TextNormalizer) -> None:
         self._normalizer: TextNormalizer = normalizer
@@ -54,7 +68,14 @@ class NameIndex:
             self._unnamed_towns.append(town)
             return
         for tier in MatchTier:
-            for key in {self._to_comparable_text(item, tier) for item in normalized_names}:
+            keys = {self._to_comparable_text(item, tier)[0] for item in normalized_names}
+            if tier is MatchTier.FOLDED:
+                keys |= {
+                    key.removesuffix(self._OPTIONAL_NAME_SUFFIX)
+                    for key in keys
+                    if len(key) - len(self._OPTIONAL_NAME_SUFFIX) >= self._MIN_STEM_LENGTH
+                }
+            for key in keys:
                 if key:
                     self._towns[tier][key].append(town)
                     self._longest_key_length = max(self._longest_key_length, len(key))
@@ -75,15 +96,14 @@ class NameIndex:
         """
         candidate_sets: list[CandidateSet] = []
         for tier in MatchTier:
-            comparable_text = self._to_comparable_text(normalized_text, tier)
-            skipped_length = len(normalized_text) - len(comparable_text)
+            comparable_text, positions = self._to_comparable_text(normalized_text, tier)
             towns_by_key = self._towns[tier]
             for length in range(1, min(len(comparable_text), self._longest_key_length) + 1):
                 key = comparable_text[:length]
                 towns = towns_by_key.get(key)
                 if towns is None:
                     continue
-                remainder = normalized_text[skipped_length + len(key) :]
+                remainder = normalized_text[positions[length - 1] + 1 :]
                 candidate_sets.append(
                     CandidateSet(
                         towns=towns,
@@ -129,11 +149,27 @@ class NameIndex:
             return 0
         return len(key) - len(key.rstrip("0123456789"))
 
-    def _to_comparable_text(self, normalized_text: str, tier: MatchTier) -> str:
-        match tier:
-            case MatchTier.EXACT:
-                return normalized_text
-            case MatchTier.UNPREFIXED:
-                return self.strip_prefix(normalized_text)
-            case MatchTier.FOLDED:
-                return self._normalizer.fold(self.strip_prefix(normalized_text))
+    def _to_comparable_text(self, normalized_text: str, tier: MatchTier) -> tuple[str, list[int]]:
+        """Build the comparable text of a tier with the index of each character in the input."""
+        positions = list(range(len(normalized_text)))
+        if tier is MatchTier.EXACT:
+            return normalized_text, positions
+        comparable_text, positions = self._remove(normalized_text, positions, self._NAME_MARKERS)
+        if tier is MatchTier.FOLDED:
+            comparable_text, positions = self._remove(
+                self._normalizer.fold(comparable_text), positions, self._FOLDED_CONNECTIVES
+            )
+        return comparable_text, positions
+
+    @staticmethod
+    def _remove(text: str, positions: list[int], pattern: re.Pattern[str]) -> tuple[str, list[int]]:
+        kept_text: list[str] = []
+        kept_positions: list[int] = []
+        start = 0
+        for matched in pattern.finditer(text):
+            kept_text.append(text[start : matched.start()])
+            kept_positions.extend(positions[start : matched.start()])
+            start = matched.end()
+        kept_text.append(text[start:])
+        kept_positions.extend(positions[start:])
+        return "".join(kept_text), kept_positions

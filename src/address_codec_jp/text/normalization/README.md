@@ -9,8 +9,8 @@ and parses lot numbers from the normalized text.
 
 | Component | Responsibility |
 | --- | --- |
-| [text_normalizer.py](text_normalizer.py) | `TextNormalizer`: width, dash, kanji numeral, and variant character normalization, extraction of a leading postal code, recovery of the raw text behind a normalized suffix, and the reason an input normalizes to nothing |
-| [kanji_variants.py](kanji_variants.py) | `KanjiVariants`: variant kanji of place names (`藪`/`薮`, `竜`/`龍`, `焔`/`焰`) and the form each folds to |
+| [text_normalizer.py](text_normalizer.py) | `TextNormalizer`: removal of invisible characters and quotes, width, dash, kanji numeral, Sapporo grid abbreviation, and variant character normalization, extraction of a leading postal code, recovery of the raw text behind a normalized suffix, and the reason an input normalizes to nothing |
+| [kanji_variants.py](kanji_variants.py) | `KanjiVariants`: variant kanji of place names (`藪`/`薮`, `竜`/`龍`, `塩竈`/`塩釜`) and the form each folds to |
 | [kanji_numeral.py](kanji_numeral.py) | `KanjiNumeral`: conversion between integers and kanji numerals |
 | [lot_number_parser.py](lot_number_parser.py) | `LotNumberParser`: parses `2番3号`, `2番地の3`, `2-3` and similar, leaving floor and building numbers such as `3階` or `2号館` unread |
 | [lot_parse_result.py](lot_parse_result.py) | `LotParseResult`: parsed lot numbers and remaining text |

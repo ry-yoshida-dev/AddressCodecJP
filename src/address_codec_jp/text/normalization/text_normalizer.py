@@ -10,44 +10,56 @@ class TextNormalizer:
     """
     Canonical text forms used to compare addresses with registry names.
 
-    ``normalize`` produces the strict form: width, whitespace, postal code, dash, and
+    ``normalize`` produces the strict form: invisible characters such as variation
+    selectors and quotes are removed, width, whitespace, postal code, dash, and
     kanji numeral variants are unified, and a dash after katakana becomes the long vowel
     ``ー`` (``流通センタ－`` equals ``流通センター``). A kanji numeral run that is valid only
     without its leading ``一`` keeps that ``一`` as part of the preceding name
     (``九ノ一十二番`` becomes ``9ノ一12番``). Whitespace between a digit and a following
     digit or kanji numeral becomes a dash, so separate numbers are not joined
     (``5 一番館`` becomes ``5-1番館``). Characters that the registry uses to
-    tell towns apart are kept. ``fold`` additionally unifies ``ヶ``/``ケ``/``が``,
+    tell towns apart are kept. Sapporo-style abbreviations such as ``北3西1`` are expanded to
+    ``北3条西1丁目``. ``fold`` additionally unifies ``ヶ``/``ケ``/``が``/``ガ``,
     ``の``/``ノ``/``之`` and old-style kanji for a loose comparison. Folding keeps the
     text length, so positions in the strict and folded forms correspond.
     """
 
-    _KANJI: ClassVar[str] = "㐀-鿿豈-﫿々"
+    KANJI_CHARACTERS: ClassVar[str] = "㐀-鿿豈-﫿々"
     _NUMERALS: ClassVar[str] = "0-9" + KanjiNumeral.CHARACTERS
     _POSTAL_CODE: ClassVar[re.Pattern[str]] = re.compile(
         r"^〒?(?P<head>[0-9]{3})-?(?P<tail>[0-9]{4})"
     )
+    # Zero-width characters, the soft hyphen, and variation selectors (including IVS)
+    # carry no address content but stop names from matching.
+    _INVISIBLE: ClassVar[re.Pattern[str]] = re.compile("[­​-‏⁠﻿︀-️\U000e0100-\U000e01ef]")
+    _QUOTES: ClassVar[re.Pattern[str]] = re.compile("[\"'`“”‘’]")
     _WHITESPACE: ClassVar[re.Pattern[str]] = re.compile(r"\s+")
     _WHITESPACE_BETWEEN_NUMBERS: ClassVar[re.Pattern[str]] = re.compile(
         f"(?<=[0-9])\\s+(?=[{_NUMERALS}])"
     )
     _KE_VARIANTS: ClassVar[re.Pattern[str]] = re.compile(
-        f"(?<=[{_KANJI}0-9])[ヶヵケが](?=[{_KANJI}0-9])"
+        f"(?<=[{KANJI_CHARACTERS}0-9])[ヶヵケがガ](?=[{KANJI_CHARACTERS}0-9])"
     )
     _NO_VARIANTS: ClassVar[re.Pattern[str]] = re.compile(
-        f"(?<=[{_KANJI}0-9])[のノ之](?=[{_KANJI}0-9])"
+        f"(?<=[{KANJI_CHARACTERS}0-9])[のノ之](?=[{KANJI_CHARACTERS}0-9])"
     )
-    _DASH_VARIANTS: ClassVar[re.Pattern[str]] = re.compile("[‐‑‒–—―−﹣－⁃]")
+    _DASH_VARIANTS: ClassVar[re.Pattern[str]] = re.compile("[‐‑‒–—―−﹣－⁃─━➖]")
     _LONG_VOWEL_DASH: ClassVar[re.Pattern[str]] = re.compile(
         f"(?<=[{_NUMERALS}])[ーｰ](?=[{_NUMERALS}])"
     )
     _KANJI_ONE_DASH: ClassVar[re.Pattern[str]] = re.compile("(?<=[0-9])一(?=[0-9])")
-    _KATAKANA_LONG_VOWEL: ClassVar[re.Pattern[str]] = re.compile("(?<=[ァ-ヴ])-")
+    # A single katakana before a dash is an iroha koaza or lot prefix (ノ-14), not a word.
+    _KATAKANA_LONG_VOWEL: ClassVar[re.Pattern[str]] = re.compile("(?<=[ァ-ヴ]{2})-")
     _KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(
         f"[{KanjiNumeral.CHARACTERS}]+(?=丁目|丁|番|号|条|線|地割|の|ノ|-)"
     )
     _TRAILING_KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(f"[{KanjiNumeral.CHARACTERS}]+$")
     _NAME_ENDING_NUMERAL: ClassVar[str] = "一"
+    # Sapporo-style grid addresses abbreviate 北3条西1丁目 as 北3西1.
+    _GRID_ABBREVIATION: ClassVar[re.Pattern[str]] = re.compile(
+        f"(?<![{_NUMERALS}])(?P<row>[北南][{_NUMERALS}]+)(?P<column>[東西][{_NUMERALS}]+)"
+        + f"(?![{_NUMERALS}条丁])"
+    )
     _REPEATED_DASH: ClassVar[re.Pattern[str]] = re.compile("-{2,}")
     _SUFFIX_SEARCH_SLACK: ClassVar[int] = 8
 
@@ -81,7 +93,7 @@ class TextNormalizer:
         str | None
             Seven-digit postal code, or ``None`` when the address does not start with one.
         """
-        prepared = unicodedata.normalize("NFKC", text)
+        prepared = self._prepare(text)
         prepared = self._WHITESPACE_BETWEEN_NUMBERS.sub("-", prepared)
         prepared = self._normalize_dashes(self._WHITESPACE.sub("", prepared))
         matched = self._POSTAL_CODE.match(prepared)
@@ -108,9 +120,7 @@ class TextNormalizer:
         ValueError
             If the text is not a postal code.
         """
-        prepared = self._normalize_dashes(
-            self._WHITESPACE.sub("", unicodedata.normalize("NFKC", text))
-        )
+        prepared = self._normalize_dashes(self._WHITESPACE.sub("", self._prepare(text)))
         matched = self._POSTAL_CODE.fullmatch(prepared)
         if matched is None:
             raise ValueError(f"Invalid postal code: {text!r}.")
@@ -186,12 +196,17 @@ class TextNormalizer:
                 break
         return normalized_suffix
 
+    def _prepare(self, text: str) -> str:
+        normalized = unicodedata.normalize("NFKC", self._INVISIBLE.sub("", text))
+        return self._QUOTES.sub("", normalized)
+
     def _normalize(self, text: str, *, is_trailing_number_converted: bool) -> str:
-        normalized = unicodedata.normalize("NFKC", text)
+        normalized = self._prepare(text)
         normalized = self._WHITESPACE_BETWEEN_NUMBERS.sub("-", normalized)
         normalized = self._WHITESPACE.sub("", normalized)
         normalized = self._normalize_dashes(normalized)
         normalized = self._POSTAL_CODE.sub("", normalized)
+        normalized = self._GRID_ABBREVIATION.sub(r"\g<row>条\g<column>丁目", normalized)
         normalized = self._convert_kanji_numbers(
             normalized, is_trailing_number_converted=is_trailing_number_converted
         )

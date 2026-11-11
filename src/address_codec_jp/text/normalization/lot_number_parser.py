@@ -10,6 +10,8 @@ class LotNumberParser:
     Parser for block and residence numbers in normalized text.
 
     Accepted notations include ``2番3号``, ``2番地3``, ``2番地の3``, ``2-3`` and ``2の3``.
+    A leading dash, or ``の`` or ``字`` before a number, separates the lot numbers from
+    the town name (``八方谷1の16``, ``林町字148-1``).
     A number followed by a floor, building, or room marker such as ``3階``, ``2F``,
     ``2号館``, or ``101号室`` belongs to the building and is not read as a lot number.
     """
@@ -19,6 +21,7 @@ class LotNumberParser:
         rf"(?P<block>[1-9][0-9]*)(?![0-9丁]|{_BUILDING_MARKER})(?:番地|番)?"
         + rf"(?:[-のノ之]?(?P<residence>[1-9][0-9]*)(?![0-9丁]|{_BUILDING_MARKER})(?:号|番地|番)?)?"
     )
+    _LEADING_SEPARATOR: ClassVar[re.Pattern[str]] = re.compile("^(?:-+|[のノ之字](?=[1-9]))")
     _BUILDING_NUMBER: ClassVar[re.Pattern[str]] = re.compile(rf"[0-9]+{_BUILDING_MARKER}")
 
     def parse(self, normalized_text: str) -> LotParseResult:
@@ -35,7 +38,7 @@ class LotNumberParser:
         LotParseResult
             Parsed lot numbers and the remaining text.
         """
-        normalized_text = normalized_text.lstrip("-")
+        normalized_text = self._LEADING_SEPARATOR.sub("", normalized_text)
         matched = self._LOT.match(normalized_text)
         if matched is None:
             return LotParseResult(lot=LotNumber(), remainder=normalized_text)
