@@ -104,6 +104,7 @@ class AddressRoutes:
         *,
         address: AddressQuery,
         is_lot_verified: Annotated[bool, Query(alias="verify_lot")] = False,
+        is_partial_match_allowed: Annotated[bool, Query(alias="partial")] = False,
     ) -> JSONResponse:
         """
         Encode an address.
@@ -114,13 +115,18 @@ class AddressRoutes:
             Address in any notation.
         is_lot_verified : bool
             Whether the lot numbers must be registered.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture.
 
         Returns
         -------
         JSONResponse
             ``code``, ``level``, ``remainder``, and ``town_name_tier``.
         """
-        options = QueryOptions(is_lot_verified=is_lot_verified)
+        options = QueryOptions(
+            is_lot_verified=is_lot_verified, is_partial_match_allowed=is_partial_match_allowed
+        )
         return await self._respond(QueryOperation.ENCODE, address, options)
 
     async def decode(
@@ -144,7 +150,13 @@ class AddressRoutes:
         options = QueryOptions(address_format=address_format.to_address_format())
         return await self._respond(QueryOperation.DECODE, code, options)
 
-    async def locate(self, *, address: AddressQuery, crs: CrsName = "jgd2011") -> JSONResponse:
+    async def locate(
+        self,
+        *,
+        address: AddressQuery,
+        crs: CrsName = "jgd2011",
+        is_partial_match_allowed: Annotated[bool, Query(alias="partial")] = False,
+    ) -> JSONResponse:
         """
         Find the representative point of an address.
 
@@ -154,6 +166,9 @@ class AddressRoutes:
             Address in any notation.
         crs : CrsName
             Datum of the point.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture.
 
         Returns
         -------
@@ -161,7 +176,9 @@ class AddressRoutes:
             ``code``, ``located_code``, ``level``, ``is_exact``, ``latitude``,
             ``longitude``, and ``crs``.
         """
-        options = QueryOptions(crs=self._parse_crs(crs))
+        options = QueryOptions(
+            crs=self._parse_crs(crs), is_partial_match_allowed=is_partial_match_allowed
+        )
         return await self._respond(QueryOperation.LOCATE, address, options)
 
     async def locate_code(self, *, code: CodePath, crs: CrsName = "jgd2011") -> JSONResponse:
@@ -289,6 +306,7 @@ class AddressRoutes:
         *,
         address: AddressQuery,
         is_geometry_included: Annotated[bool, Query(alias="geometry")] = True,
+        is_partial_match_allowed: Annotated[bool, Query(alias="partial")] = False,
     ) -> JSONResponse:
         """
         Find the shape of an address.
@@ -299,6 +317,9 @@ class AddressRoutes:
             Address in any notation.
         is_geometry_included : bool
             Whether the GeoJSON geometry is written.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture.
 
         Returns
         -------
@@ -306,7 +327,10 @@ class AddressRoutes:
             ``code``, ``located_code``, ``level``, ``is_exact``, ``sources``, and
             ``geometry``.
         """
-        options = QueryOptions(is_geometry_included=is_geometry_included)
+        options = QueryOptions(
+            is_geometry_included=is_geometry_included,
+            is_partial_match_allowed=is_partial_match_allowed,
+        )
         return await self._respond(QueryOperation.AREA, address, options)
 
     async def find_area_code(
@@ -398,6 +422,7 @@ class AddressRoutes:
         options = QueryOptions(
             address_format=request.address_format.to_address_format(),
             is_lot_verified=request.is_lot_verified,
+            is_partial_match_allowed=request.is_partial_match_allowed,
             crs=self._parse_crs(request.crs),
             max_distance_meters=request.max_distance_meters,
             is_parcel_included=request.is_parcel_included,

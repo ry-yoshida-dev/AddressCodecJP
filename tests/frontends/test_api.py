@@ -162,6 +162,15 @@ def test_encode_returns_the_code_and_the_credit(client: TestClient) -> None:
     }
 
 
+def test_encode_allows_partial_match(client: TestClient) -> None:
+    address = "千代田区存在しない町1-2"
+    assert client.get("/v1/codes", params={"address": address}).status_code == 404
+    response = client.get("/v1/codes", params={"address": address, "partial": "true"})
+    assert response.status_code == 200
+    assert body_of(response)["code"] == "131016"
+    assert body_of(response)["remainder"] == "存在しない町1-2"
+
+
 def test_decode_takes_format_options(client: TestClient) -> None:
     response = client.get(
         "/v1/codes/131016-0011001-2-3", params={"numeral": "kanji", "prefecture": "false"}

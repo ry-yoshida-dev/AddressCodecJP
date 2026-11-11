@@ -17,6 +17,8 @@ class QueryOptions:
         Format of decoded addresses.
     is_lot_verified : bool
         Whether encoded lot numbers must be registered.
+    is_partial_match_allowed : bool
+        Whether an address whose town is not found matches its municipality or prefecture.
     crs : GeodeticCrs
         Datum of input and output coordinates.
     max_distance_meters : float
@@ -29,6 +31,7 @@ class QueryOptions:
 
     address_format: AddressFormat = field(default_factory=AddressFormat)
     is_lot_verified: bool = False
+    is_partial_match_allowed: bool = False
     crs: GeodeticCrs = GeodeticCrs.JGD2011
     max_distance_meters: float = AddressCodec.DEFAULT_MAX_DISTANCE_METERS
     is_parcel_included: bool = False

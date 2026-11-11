@@ -22,6 +22,12 @@ class BatchRequest(BaseModel):
     )
     inputs: list[str] = Field(description="Addresses, codes, postal codes, or coordinates.")
     is_lot_verified: bool = Field(default=False, alias="verify_lot")
+    is_partial_match_allowed: bool = Field(
+        default=False,
+        alias="partial",
+        description="Whether an address whose town is not found matches its municipality "
+        + "or prefecture; for encode, locate, and area.",
+    )
     crs: str = Field(default="jgd2011", description="tokyo, jgd2000, jgd2011, or wgs84.")
     max_distance_meters: float = Field(
         default=AddressCodec.DEFAULT_MAX_DISTANCE_METERS, gt=0, alias="max_distance"

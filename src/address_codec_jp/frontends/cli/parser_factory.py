@@ -62,6 +62,14 @@ class ParserFactory:
         )
         format_parser = argparse.ArgumentParser(add_help=False)
         self._add_format_arguments(format_parser)
+        partial_parser = argparse.ArgumentParser(add_help=False)
+        _ = partial_parser.add_argument(
+            "--partial",
+            dest="is_partial_match_allowed",
+            action="store_true",
+            help="Match an address whose town is not found to its municipality or "
+            + "prefecture, keeping the unread text as the remainder.",
+        )
 
         import_parser = self._add_command(
             subparsers,
@@ -147,7 +155,7 @@ class ParserFactory:
             subparsers,
             QueryOperation.ENCODE,
             QueryInput.ADDRESS,
-            parents=[query_parser],
+            parents=[query_parser, partial_parser],
             help_text="Address to code.",
         )
         _ = encode_parser.add_argument(
@@ -170,7 +178,7 @@ class ParserFactory:
             subparsers,
             QueryOperation.LOCATE,
             QueryInput.ADDRESS,
-            parents=[query_parser, crs_parser],
+            parents=[query_parser, crs_parser, partial_parser],
             help_text="Address to representative point.",
         )
 
@@ -230,7 +238,7 @@ class ParserFactory:
             subparsers,
             QueryOperation.AREA,
             QueryInput.ADDRESS,
-            parents=[query_parser, area_geometry_parser],
+            parents=[query_parser, area_geometry_parser, partial_parser],
             help_text="Address to the shape of its town or land parcel as GeoJSON on JGD2011.",
         )
 

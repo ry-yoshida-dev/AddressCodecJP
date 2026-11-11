@@ -32,7 +32,9 @@ class AddressReader:
             towns, self._normalizer, self._matcher.municipality_names
         )
 
-    def match(self, address: str, within: AddressCode | None) -> AddressMatch:
+    def match(
+        self, address: str, within: AddressCode | None, *, is_partial_match_allowed: bool = False
+    ) -> AddressMatch:
         """
         Interpret a free-form address.
 
@@ -42,6 +44,9 @@ class AddressReader:
             Address in any common notation.
         within : AddressCode | None
             Area the address must lie in, or ``None`` to search everywhere.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture.
 
         Returns
         -------
@@ -57,7 +62,10 @@ class AddressReader:
         if not normalized_address:
             raise ValueError(self._normalizer.describe_empty(address))
         address_match = self._matcher.match(
-            normalized_address, self._normalizer.extract_postal_code(address), within=within
+            normalized_address,
+            self._normalizer.extract_postal_code(address),
+            within=within,
+            is_partial_match_allowed=is_partial_match_allowed,
         )
         return replace(
             address_match,

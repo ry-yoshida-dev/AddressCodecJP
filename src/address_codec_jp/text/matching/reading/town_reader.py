@@ -2,7 +2,7 @@ import re
 from dataclasses import replace
 from typing import ClassVar
 
-from address_codec_jp.address import AddressCode, Municipality, Town
+from address_codec_jp.address import AddressCode, LotNumber, Municipality, Town
 from address_codec_jp.results import MatchTier
 from address_codec_jp.text.matching.index.candidate_set import CandidateSet
 from address_codec_jp.text.matching.index.name_index import NameIndex
@@ -21,7 +21,9 @@ class TownReader:
     reading becomes a ``TownInterpretation``. A reading is discarded when it reads no lot
     numbers but leaves digits unread (``浅草`` + ``橋6-1-1``) other than a floor or
     building number (``一番町`` + ``3階`` is kept), leaves a chome number unread, or puts
-    lot numbers on an oaza-level town that the registry divides into chome.
+    lot numbers on an oaza-level town that the registry divides into chome. A partial
+    reading keeps such a reading as its town without lot numbers, with the text after
+    the town name as the remainder (``勝浦`` + ``字家六2094番地1``).
 
     A street direction of Kyoto (``Town.is_street_direction``) is read both after the
     oaza name, as the registry orders them, and before it, as addresses in Kyoto are
@@ -66,6 +68,7 @@ class TownReader:
         within: AddressCode | None,
         *,
         is_town_required: bool,
+        is_partial: bool = False,
     ) -> list[TownInterpretation]:
         """
         Read the text after a municipality in every way that the registry allows.
@@ -78,6 +81,9 @@ class TownReader:
             Area the towns must lie in, or ``None`` to keep every town.
         is_town_required : bool
             Whether a reading must include a town name.
+        is_partial : bool
+            Whether a reading that would be discarded is kept as its town with the text
+            after the town name as the remainder. Partial readings include a town name.
 
         Returns
         -------
@@ -87,8 +93,10 @@ class TownReader:
         return [
             narrowed
             for municipality in municipality_match.municipalities
-            for interpretation in self._interpret_all(municipality, municipality_match.remainder)
-            if not is_town_required or interpretation.name_length > 0
+            for interpretation in self._interpret_all(
+                municipality, municipality_match.remainder, is_partial=is_partial
+            )
+            if not (is_town_required or is_partial) or interpretation.name_length > 0
             if (narrowed := self._narrow_by_area(interpretation, within)).towns
         ]
 
@@ -128,7 +136,9 @@ class TownReader:
             ],
         )
 
-    def _interpret_all(self, municipality: Municipality, text: str) -> list[TownInterpretation]:
+    def _interpret_all(
+        self, municipality: Municipality, text: str, *, is_partial: bool
+    ) -> list[TownInterpretation]:
         oaza_index = self._town_names.oazas(municipality.lg_code)
         readings = [
             town_candidates
@@ -144,7 +154,10 @@ class TownReader:
         return [
             interpretation
             for town_candidates in readings
-            if (interpretation := self._interpret(town_candidates, len(text))) is not None
+            if (
+                interpretation := self._interpret(town_candidates, len(text), is_partial=is_partial)
+            )
+            is not None
         ]
 
     def _street_first_options(
@@ -239,16 +252,16 @@ class TownReader:
             options.append(replace(candidates, towns=without_koaza))
         return options
 
-    def _interpret(self, candidates: CandidateSet, text_length: int) -> TownInterpretation | None:
+    def _interpret(
+        self, candidates: CandidateSet, text_length: int, *, is_partial: bool
+    ) -> TownInterpretation | None:
         lot_result = self._lot_parser.parse(candidates.remainder)
-        if self._UNREAD_CHOME.match(lot_result.remainder):
-            return None
-        if (
+        if self._UNREAD_CHOME.match(lot_result.remainder) or (
             not lot_result.lot.numbers
             and not self._ASCII_DIGITS.isdisjoint(lot_result.remainder)
             and not self._lot_parser.is_building_number(lot_result.remainder)
         ):
-            return None
+            return self._interpret_partially(candidates, text_length) if is_partial else None
         towns = self._lot_towns(candidates.towns) if lot_result.lot.numbers else candidates.towns
         towns = [town for town in towns if town.is_registered or not lot_result.lot.numbers]
         if not towns:
@@ -257,6 +270,18 @@ class TownReader:
             towns=towns,
             lot=lot_result.lot,
             remainder=lot_result.remainder,
+            name_length=text_length - len(candidates.remainder) - candidates.split_digit_count,
+            penalty=candidates.penalty,
+            loosest_tier=candidates.loosest_tier,
+        )
+
+    def _interpret_partially(
+        self, candidates: CandidateSet, text_length: int
+    ) -> TownInterpretation:
+        return TownInterpretation(
+            towns=candidates.towns,
+            lot=LotNumber(),
+            remainder=candidates.remainder,
             name_length=text_length - len(candidates.remainder) - candidates.split_digit_count,
             penalty=candidates.penalty,
             loosest_tier=candidates.loosest_tier,

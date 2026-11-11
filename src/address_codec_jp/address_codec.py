@@ -154,6 +154,7 @@ class AddressCodec:
         *,
         is_lot_verified: bool = False,
         within: AddressCode | str | None = None,
+        is_partial_match_allowed: bool = False,
     ) -> AddressMatch:
         """
         Interpret a free-form address.
@@ -168,6 +169,10 @@ class AddressCodec:
         within : AddressCode | str | None
             Prefecture, municipality, or town code the address must lie in, such as
             ``340006`` to read ``府中市`` as 広島県府中市, or ``None`` to search everywhere.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture, with the unread text as the remainder (``萩市麻生`` gives 萩市
+            and ``麻生``), instead of raising ``AddressNotFoundError``.
 
         Returns
         -------
@@ -194,7 +199,11 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        address_match = self._reader.match(address, self._parse_area(within))
+        address_match = self._reader.match(
+            address,
+            self._parse_area(within),
+            is_partial_match_allowed=is_partial_match_allowed,
+        )
         if is_lot_verified:
             self._geocoder.verify_lot(address_match.code)
         return address_match
@@ -295,6 +304,7 @@ class AddressCodec:
         *,
         is_lot_verified: bool = False,
         within: AddressCode | str | None = None,
+        is_partial_match_allowed: bool = False,
     ) -> AddressCode:
         """
         Convert an address to its address code.
@@ -309,6 +319,9 @@ class AddressCodec:
         within : AddressCode | str | None
             Prefecture, municipality, or town code the address must lie in, or ``None``
             to search everywhere.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture, as in ``match``.
 
         Returns
         -------
@@ -333,7 +346,12 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
-        return self.match(address, is_lot_verified=is_lot_verified, within=within).code
+        return self.match(
+            address,
+            is_lot_verified=is_lot_verified,
+            within=within,
+            is_partial_match_allowed=is_partial_match_allowed,
+        ).code
 
     def resolve(self, code: AddressCode | str) -> Address:
         """
@@ -494,6 +512,7 @@ class AddressCodec:
         *,
         is_lot_verified: bool = False,
         within: AddressCode | str | None = None,
+        is_partial_match_allowed: bool = False,
     ) -> AddressLocation:
         """
         Find the representative point of a free-form address.
@@ -510,6 +529,9 @@ class AddressCodec:
         within : AddressCode | str | None
             Prefecture, municipality, or town code the address must lie in, or ``None``
             to search everywhere.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture, as in ``match``.
 
         Returns
         -------
@@ -538,7 +560,13 @@ class AddressCodec:
             cannot be downloaded.
         """
         return self.locate_code(
-            self.encode(address, is_lot_verified=is_lot_verified, within=within), crs
+            self.encode(
+                address,
+                is_lot_verified=is_lot_verified,
+                within=within,
+                is_partial_match_allowed=is_partial_match_allowed,
+            ),
+            crs,
         )
 
     def locate_code(
@@ -684,6 +712,7 @@ class AddressCodec:
         *,
         is_lot_verified: bool = False,
         within: AddressCode | str | None = None,
+        is_partial_match_allowed: bool = False,
     ) -> AddressArea:
         """
         Find the shape of a free-form address.
@@ -698,6 +727,9 @@ class AddressCodec:
         within : AddressCode | str | None
             Prefecture, municipality, or town code the address must lie in, or ``None``
             to search everywhere.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture, as in ``match``.
 
         Returns
         -------
@@ -723,7 +755,12 @@ class AddressCodec:
             cannot be downloaded.
         """
         return self.find_area_code(
-            self.encode(address, is_lot_verified=is_lot_verified, within=within)
+            self.encode(
+                address,
+                is_lot_verified=is_lot_verified,
+                within=within,
+                is_partial_match_allowed=is_partial_match_allowed,
+            )
         )
 
     def find_area_code(self, code: AddressCode | str) -> AddressArea:

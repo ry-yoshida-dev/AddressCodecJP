@@ -17,14 +17,14 @@ OpenAPI documentation is served at `/docs`.
 
 | Endpoint | Query |
 | --- | --- |
-| `GET /v1/codes?address=` | Encode; `verify_lot=true` checks the lot numbers |
+| `GET /v1/codes?address=` | Encode; `verify_lot=true` checks the lot numbers, `partial=true` returns the municipality or prefecture with the unread text as `remainder` when no town matches |
 | `GET /v1/codes/{code}` | Decode; `numeral`, `lot`, `width`, `prefecture`, `county`, `kana`, `postal_code` |
-| `GET /v1/locations?address=`, `GET /v1/codes/{code}/location` | Representative point; `crs` |
+| `GET /v1/locations?address=`, `GET /v1/codes/{code}/location` | Representative point; `crs`, `partial` for an address |
 | `GET /v1/nearest?coordinate=lat,lon` | Nearest address; `crs`, `max_distance` |
 | `GET /v1/postal-codes/{postal_code}` | Towns of a postal code; decode format options |
 | `GET /v1/codes/{code}/children` | Areas directly under a prefecture, municipality, or oaza; decode format options |
 | `GET /v1/names/{name}` | Every area that bears a name; decode format options |
-| `GET /v1/areas?address=`, `GET /v1/codes/{code}/area` | Shape; `geometry=false` omits the GeoJSON |
+| `GET /v1/areas?address=`, `GET /v1/codes/{code}/area` | Shape; `geometry=false` omits the GeoJSON, `partial` for an address |
 | `GET /v1/areas-at?coordinate=lat,lon` | Containing towns; `parcels=true` adds parcels, `geometry=true` adds GeoJSON |
 | `POST /v1/batch` | `{"operation": "locate", "inputs": [...]}`, options as for the GET endpoint; operations named like the commands (`locate-code`, `area-code`, `areas-at`, ...); per-input `status` on failure |
 | `GET /health` | Readiness and the number of prepared municipalities |

@@ -77,7 +77,12 @@ class QueryRunner:
         address_format = options.address_format
         match operation:
             case QueryOperation.ENCODE:
-                address_match = interpreter.interpret(codec.match, input_text)
+                address_match = interpreter.interpret(
+                    lambda text: codec.match(
+                        text, is_partial_match_allowed=options.is_partial_match_allowed
+                    ),
+                    input_text,
+                )
                 lot_code: AddressCode | None = None
                 if options.is_lot_verified:
                     lot_code = address_match.code
@@ -92,7 +97,7 @@ class QueryRunner:
                 decoded = serializer.render(self._parse_code(input_text), address_format)
                 return QueryRecord(serializer.decoded(decoded), lambda: rows.address(decoded))
             case QueryOperation.LOCATE:
-                return self._locate(self._encode(input_text), options)
+                return self._locate(self._encode(input_text, options), options)
             case QueryOperation.LOCATE_CODE:
                 return self._locate(self._parse_code(input_text), options)
             case QueryOperation.NEAREST:
@@ -124,7 +129,7 @@ class QueryRunner:
                     lambda: rows.listed_areas(named_areas),
                 )
             case QueryOperation.AREA:
-                return self._find_area(self._encode(input_text), options)
+                return self._find_area(self._encode(input_text, options), options)
             case QueryOperation.AREA_CODE:
                 return self._find_area(self._parse_code(input_text), options)
             case QueryOperation.AREAS_AT:
@@ -151,8 +156,13 @@ class QueryRunner:
     def _parse_coordinate(self, input_text: str) -> GeoCoordinate:
         return self._interpreter.interpret(self._coordinate_text.parse, input_text)
 
-    def _encode(self, input_text: str) -> AddressCode:
-        return self._interpreter.interpret(self._codec.encode, input_text)
+    def _encode(self, input_text: str, options: QueryOptions) -> AddressCode:
+        return self._interpreter.interpret(
+            lambda text: self._codec.encode(
+                text, is_partial_match_allowed=options.is_partial_match_allowed
+            ),
+            input_text,
+        )
 
     def _locate(self, code: AddressCode, options: QueryOptions) -> QueryRecord:
         self._guard.require_lots(code)

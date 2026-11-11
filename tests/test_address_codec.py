@@ -176,6 +176,34 @@ def test_encode_rejects_unmatched(codec: AddressCodec, address: str) -> None:
         _ = codec.encode(address)
 
 
+@pytest.mark.parametrize(
+    ("address", "expected_code", "expected_remainder"),
+    [
+        ("千代田区存在しない町1-2", "131016", "存在しない町1-2"),
+        ("東京都 存在しない市 1-2", "130001", "存在しない市 1-2"),
+        ("台東区浅草橋9丁目", "131067-0004000", "9丁目"),
+        ("千代田区丸の内存在しない字1-2", "131016-0011000", "存在しない字1-2"),
+        ("千代田区丸の内1-2-3", "131016-0011001-2-3", ""),
+    ],
+)
+def test_match_allows_partial_match(
+    codec: AddressCodec, address: str, expected_code: str, expected_remainder: str
+) -> None:
+    address_match = codec.match(address, is_partial_match_allowed=True)
+    assert str(address_match.code) == expected_code
+    assert address_match.remainder == expected_remainder
+
+
+def test_partial_match_keeps_municipality_that_needs_a_town(codec: AddressCodec) -> None:
+    with pytest.raises(AmbiguousAddressError):
+        _ = codec.match("横浜市存在しない町1-2", is_partial_match_allowed=True)
+
+
+def test_partial_match_needs_a_municipality_or_prefecture(codec: AddressCodec) -> None:
+    with pytest.raises(AddressNotFoundError):
+        _ = codec.match("存在しない町1-2", is_partial_match_allowed=True)
+
+
 def test_encode_rejects_blank(codec: AddressCodec) -> None:
     with pytest.raises(ValueError, match="blank"):
         _ = codec.encode("　")

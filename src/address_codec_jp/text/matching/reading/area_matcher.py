@@ -46,6 +46,13 @@ class AreaMatcher:
     written without its ward still needs a town name when the postal code or ``within``
     leaves only one of its wards.
 
+    A partial match, when allowed, ends at the deepest town, municipality, or prefecture
+    whose name was read and keeps the rest as the remainder, where the address would
+    otherwise not be found (``萩市`` with the remainder ``麻生``). Partial town readings are
+    tried only for the longest municipality name, and when they point to several towns
+    the match ends at the municipality. A municipality name that needs a town to decide
+    stays ambiguous.
+
     Parameters
     ----------
     repository : TownSource
@@ -77,6 +84,7 @@ class AreaMatcher:
         postal_code: str | None,
         *,
         within: AddressCode | None = None,
+        is_partial_match_allowed: bool = False,
     ) -> AddressMatch:
         """
         Identify the most specific area at the start of a normalized address.
@@ -90,6 +98,9 @@ class AreaMatcher:
         within : AddressCode | None
             Prefecture, municipality, or town the address must lie in, or ``None`` to
             search everywhere.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture, with the unread text as the remainder.
 
         Returns
         -------
@@ -99,13 +110,19 @@ class AreaMatcher:
         Raises
         ------
         AddressNotFoundError
-            If nothing matches.
+            If nothing matches, or only the municipality or prefecture does and partial
+            matches are not allowed.
         AmbiguousAddressError
             If the address fits several areas or lot numbers equally well.
         DatasetNotImportedError
             If the repository contains no towns.
         """
-        outcome = self.interpret(normalized_address, postal_code, within=within)
+        outcome = self.interpret(
+            normalized_address,
+            postal_code,
+            within=within,
+            is_partial_match_allowed=is_partial_match_allowed,
+        )
         if isinstance(outcome, AddressMatch):
             return outcome
         raise outcome
@@ -116,6 +133,7 @@ class AreaMatcher:
         postal_code: str | None,
         *,
         within: AddressCode | None = None,
+        is_partial_match_allowed: bool = False,
     ) -> MatchOutcome:
         """
         Identify the area of a normalized address, returning failures instead of raising.
@@ -129,6 +147,9 @@ class AreaMatcher:
         within : AddressCode | None
             Prefecture, municipality, or town the address must lie in, or ``None`` to
             search everywhere.
+        is_partial_match_allowed : bool
+            Whether an address whose town is not found matches its municipality or
+            prefecture, with the unread text as the remainder.
 
         Returns
         -------
@@ -141,7 +162,12 @@ class AreaMatcher:
         DatasetNotImportedError
             If the repository contains no towns.
         """
-        outcome = self._resolve(normalized_address, postal_code, within)
+        outcome = self._resolve(
+            normalized_address,
+            postal_code,
+            within,
+            is_partial_match_allowed=is_partial_match_allowed,
+        )
         if (
             within is not None
             and isinstance(outcome, AddressMatch)
@@ -176,7 +202,12 @@ class AreaMatcher:
         return outcome if isinstance(outcome, AddressMatch) else None
 
     def _resolve(
-        self, normalized_address: str, postal_code: str | None, within: AddressCode | None
+        self,
+        normalized_address: str,
+        postal_code: str | None,
+        within: AddressCode | None,
+        *,
+        is_partial_match_allowed: bool,
     ) -> MatchOutcome:
         written_matches = self._municipalities.match_all(normalized_address)
         municipality_matches = [
@@ -187,13 +218,20 @@ class AreaMatcher:
             ).municipalities
         ]
         if not municipality_matches:
-            outcome = self._match_without_municipality(normalized_address, postal_code, within)
+            outcome = self._match_without_municipality(
+                normalized_address,
+                postal_code,
+                within,
+                is_partial_match_allowed=is_partial_match_allowed,
+            )
             if within is not None and written_matches and isinstance(outcome, AddressNotFoundError):
                 return self._outside(normalized_address, within)
             return outcome
         longest_match = municipality_matches[0]
         if not NameIndex.strip_prefix(longest_match.remainder):
-            return self._match_municipality_only(normalized_address, postal_code, longest_match)
+            return self._match_municipality_only(
+                normalized_address, postal_code, longest_match, remainder=""
+            )
         for municipality_match in municipality_matches:
             is_town_required = (
                 municipality_match.is_town_required or municipality_match is not longest_match
@@ -205,29 +243,58 @@ class AreaMatcher:
                 return self._select(
                     normalized_address, postal_code, municipality_match, interpretations
                 )
+        if is_partial_match_allowed:
+            return self._match_partially(normalized_address, postal_code, within, longest_match)
         return AddressNotFoundError(
             f"No town in {self._describe_all(longest_match.municipalities)} matches "
             + f"{longest_match.remainder!r}."
+        )
+
+    def _match_partially(
+        self,
+        normalized_address: str,
+        postal_code: str | None,
+        within: AddressCode | None,
+        municipality_match: MunicipalityMatch,
+    ) -> MatchOutcome:
+        interpretations = self._towns.interpret(
+            municipality_match,
+            within,
+            is_town_required=municipality_match.is_town_required,
+            is_partial=True,
+        )
+        if interpretations:
+            outcome = self._select(
+                normalized_address, postal_code, municipality_match, interpretations
+            )
+            if isinstance(outcome, AddressMatch):
+                return outcome
+        return self._match_municipality_only(
+            normalized_address,
+            postal_code,
+            municipality_match,
+            remainder=municipality_match.remainder,
         )
 
     def _outside(self, normalized_address: str, within: AddressCode) -> AddressNotFoundError:
         return AddressNotFoundError(f"{normalized_address!r} does not lie within {within}.")
 
     def _match_without_municipality(
-        self, text: str, postal_code: str | None, within: AddressCode | None
+        self,
+        text: str,
+        postal_code: str | None,
+        within: AddressCode | None,
+        *,
+        is_partial_match_allowed: bool,
     ) -> MatchOutcome:
         prefecture, remainder = self._municipalities.match_prefecture(text)
         if prefecture is not None and not remainder:
-            return AddressMatch(
-                address=Address(prefecture=prefecture),
-                remainder="",
-                normalized_address=text,
-                postal_code=postal_code,
-                town_name_tier=None,
-            )
+            return self._match_prefecture_only(text, postal_code, prefecture, remainder="")
         town_outcome = self._match_town_only(text, remainder, postal_code, prefecture, within)
         if town_outcome is not None:
             return town_outcome
+        if prefecture is not None and is_partial_match_allowed:
+            return self._match_prefecture_only(text, postal_code, prefecture, remainder=remainder)
         if prefecture is None:
             return AddressNotFoundError(f"No prefecture, municipality, or town matches {text!r}.")
         return AddressNotFoundError(
@@ -318,11 +385,29 @@ class AreaMatcher:
             name="", municipalities=municipalities, remainder=text, is_name_abbreviated=True
         )
 
+    def _match_prefecture_only(
+        self,
+        normalized_address: str,
+        postal_code: str | None,
+        prefecture: Prefecture,
+        *,
+        remainder: str,
+    ) -> AddressMatch:
+        return AddressMatch(
+            address=Address(prefecture=prefecture),
+            remainder=remainder,
+            normalized_address=normalized_address,
+            postal_code=postal_code,
+            town_name_tier=None,
+        )
+
     def _match_municipality_only(
         self,
         normalized_address: str,
         postal_code: str | None,
         municipality_match: MunicipalityMatch,
+        *,
+        remainder: str,
     ) -> MatchOutcome:
         if municipality_match.is_town_required:
             return AmbiguousAddressError(
@@ -337,7 +422,7 @@ class AreaMatcher:
         municipality = municipality_match.municipalities[0]
         return AddressMatch(
             address=Address(prefecture=municipality.prefecture, municipality=municipality),
-            remainder="",
+            remainder=remainder,
             normalized_address=normalized_address,
             postal_code=postal_code,
             town_name_tier=None,

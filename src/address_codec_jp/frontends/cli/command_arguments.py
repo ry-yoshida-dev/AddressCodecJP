@@ -43,6 +43,7 @@ class CommandArguments(argparse.Namespace):
         self.is_kana: bool = False
         self.is_postal_code_included: bool = False
         self.is_lot_verified: bool = False
+        self.is_partial_match_allowed: bool = False
         self.is_parcel_included: bool = False
         self.is_geometry_included: bool = True
         self.crs: GeodeticCrs = GeodeticCrs.JGD2011
@@ -75,6 +76,7 @@ class CommandArguments(argparse.Namespace):
                 is_postal_code_included=self.is_postal_code_included,
             ),
             is_lot_verified=self.is_lot_verified,
+            is_partial_match_allowed=self.is_partial_match_allowed,
             crs=self.crs,
             max_distance_meters=self.max_distance,
             is_parcel_included=self.is_parcel_included,

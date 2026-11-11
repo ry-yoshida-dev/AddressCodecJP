@@ -52,6 +52,16 @@ def test_commands_parse_to_their_enums() -> None:
         assert namespace.command is command
 
 
+def test_encode_partial_match(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    arguments = ["--database", str(database), "encode", "千代田区存在しない町1-2"]
+    assert CommandLineInterface().run(arguments) == ExitStatus.INPUT_FAILURE
+    assert CommandLineInterface().run([*arguments, "--partial"]) == 0
+    assert (
+        capsys.readouterr().out.splitlines()[-1]
+        == "千代田区存在しない町1-2\t131016\t存在しない町1-2"
+    )
+
+
 def test_encode_and_decode(database: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cli = CommandLineInterface()
     assert cli.run(["--database", str(database), "encode", "千代田区丸の内1-2-3"]) == 0
@@ -299,10 +309,12 @@ def test_library_errors_do_not_stop_standard_input(
         OverflowError("Python int too large to convert to SQLite INTEGER"),
     ]
 
-    def match(codec: AddressCodec, address: str, *, is_lot_verified: bool = False) -> AddressMatch:
+    def match(
+        codec: AddressCodec, address: str, *, is_partial_match_allowed: bool = False
+    ) -> AddressMatch:
         if failures:
             raise failures.pop(0)
-        return original_match(codec, address, is_lot_verified=is_lot_verified)
+        return original_match(codec, address, is_partial_match_allowed=is_partial_match_allowed)
 
     monkeypatch.setattr(AddressCodec, "match", match)
     monkeypatch.setattr("sys.stdin", io.StringIO("東京都\n東京都\n東京都\n台東区浅草橋\n"))
