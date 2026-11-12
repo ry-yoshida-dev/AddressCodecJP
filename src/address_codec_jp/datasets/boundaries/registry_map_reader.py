@@ -121,7 +121,7 @@ class RegistryMapReader:
         )
         if match_result is None:
             return None
-        return JapanPlaneRectangularZone.from_number(int(match_result.group(1)))
+        return JapanPlaneRectangularZone(int(match_result.group(1)))
 
     def _read_points(self, geometry: ElementTree.Element) -> dict[str, PlanePosition]:
         points: dict[str, PlanePosition] = {}
