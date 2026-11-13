@@ -10,10 +10,11 @@ and town records, lot numbers, and the full `Address` they make up.
 | Component | Responsibility |
 | --- | --- |
 | [address.py](address.py) | `Address`: registered prefecture, municipality, town, and lot numbers of a code, checked to contain each other; `for_town` builds one from a town |
-| [code.py](code.py) | `AddressCode`: validated code with string parsing and rendering, its level, whether it is an oaza (`is_oaza`), its enclosing areas (`parent`, `lineage`), and containment (`contains`) |
+| [code.py](code.py) | `AddressCode`: validated code with string parsing and rendering, its level, whether it is an oaza (`is_oaza`), its enclosing areas (`parent`, `lineage`), with a designated city between its wards and the prefecture, and containment (`contains`) |
+| [designated_city.py](designated_city.py) | `DesignatedCity`: local government codes of the designated cities, which the registry records only by their wards, and of the wards under each |
 | [level.py](level.py) | `AddressLevel`: granularity from prefecture to residence |
 | [prefecture.py](prefecture.py) | `Prefecture`: validated two-digit prefecture code, name, and reading |
-| [municipality.py](municipality.py) | `Municipality`: prefecture, county, city, and ward of a local government code and their readings |
+| [municipality.py](municipality.py) | `Municipality`: prefecture, county, city, and ward of a local government code and their readings, and the designated city of a ward (`designated_city`) |
 | [town.py](town.py) | `Town`: ABR town record within its `Municipality`, with readings, numbering systems, postal codes, and whether its koaza is a Kyoto street direction |
 | [lot_number.py](lot_number.py) | `LotNumber`: block and residence numbers |
 | [lot_system.py](lot_system.py) | `LotSystem`: residence indication or land parcel numbering |

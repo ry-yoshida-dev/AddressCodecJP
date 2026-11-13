@@ -210,6 +210,23 @@ def test_reimport_removes_orphaned_positions(
     assert codec.locate_code("113247-0001000-123-4").level is AddressLevel.PREFECTURE
 
 
+def test_reimport_keeps_designated_city_positions(
+    importer: RegistryImporter, tmp_path: Path
+) -> None:
+    positions = tmp_path / "mt_city_pos_designated.csv"
+    _ = positions.write_text(
+        "lg_code,rep_lon,rep_lat,rep_srid,rep_scale\n"
+        + "141003,139.638026,35.443708,EPSG:6668,\n"
+        + "261009,135.768029,35.011636,EPSG:6668,\n",
+        encoding="utf-8",
+    )
+    _ = importer.import_file(positions)
+    _ = importer.import_file(FIXTURE_DIRECTORY / "mt_town_sample.csv")
+    codec = AddressCodec(importer.database)
+    assert codec.locate_code("141003").level is AddressLevel.MUNICIPALITY
+    assert codec.locate_code("141046").located_code == AddressCode.parse("141003")
+
+
 def test_municipality_names_must_agree(tmp_path: Path) -> None:
     master = write_csv(
         tmp_path / "conflict.csv",

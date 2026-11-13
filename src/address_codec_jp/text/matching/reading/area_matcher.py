@@ -43,15 +43,17 @@ class AreaMatcher:
     given with the address decides only between such equally ranked readings, and
     between municipalities that share a name. An area given as ``within`` discards every
     municipality and town outside it before the readings are ranked. A designated city
-    written without its ward still needs a town name when the postal code or ``within``
-    leaves only one of its wards.
+    written without its ward is read as one of its wards only through a town name, even
+    when the postal code or ``within`` leaves a single ward; with no town name, such as
+    ``札幌市`` alone, the address matches the designated city itself.
 
     A partial match, when allowed, ends at the deepest town, municipality, or prefecture
     whose name was read and keeps the rest as the remainder, where the address would
     otherwise not be found (``萩市`` with the remainder ``麻生``). Partial town readings are
     tried only for the longest municipality name, and when they point to several towns
     the match ends at the municipality. A municipality name that needs a town to decide
-    stays ambiguous.
+    stays ambiguous, except that the wards of one designated city are matched by the
+    city.
 
     Parameters
     ----------
@@ -409,7 +411,12 @@ class AreaMatcher:
         *,
         remainder: str,
     ) -> MatchOutcome:
-        if municipality_match.is_town_required:
+        municipality = (
+            self._find_common_designated_city(municipality_match)
+            if municipality_match.is_town_required
+            else municipality_match.municipalities[0]
+        )
+        if municipality is None:
             return AmbiguousAddressError(
                 f"Municipality {municipality_match.name!r} is ambiguous: "
                 + f"{self._describe_all(municipality_match.municipalities)}. "
@@ -419,7 +426,6 @@ class AreaMatcher:
                     for municipality in municipality_match.municipalities
                 ),
             )
-        municipality = municipality_match.municipalities[0]
         return AddressMatch(
             address=Address(prefecture=municipality.prefecture, municipality=municipality),
             remainder=remainder,
@@ -427,6 +433,20 @@ class AreaMatcher:
             postal_code=postal_code,
             town_name_tier=None,
         )
+
+    @staticmethod
+    def _find_common_designated_city(
+        municipality_match: MunicipalityMatch,
+    ) -> Municipality | None:
+        cities: dict[str, Municipality] = {}
+        for municipality in municipality_match.municipalities:
+            city = municipality.designated_city
+            if city is None:
+                return None
+            _ = cities.setdefault(city.lg_code, city)
+        if len(cities) != 1:
+            return None
+        return next(iter(cities.values()))
 
     def _select(
         self,

@@ -2,7 +2,7 @@ from typing import ClassVar
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.address import AddressCode
+from address_codec_jp.address import AddressCode, DesignatedCity
 from address_codec_jp.database.storage import AreaRepository, PositionRepository, TownRepository
 from address_codec_jp.errors import AddressNotFoundError, DatasetNotImportedError
 from address_codec_jp.geocoding.address_locator import AddressLocator
@@ -189,6 +189,8 @@ class Geocoder:
         """
         Find the shape of a code, adding the shapes of its municipality first.
 
+        A designated city adds the shapes of all its wards.
+
         The registry maps are added only when the shape of the code is a land parcel.
 
         Parameters
@@ -203,8 +205,13 @@ class Geocoder:
         """
         code = self._to_lot_owner(code)
         if self._supplier is not None and not AddressCode.is_prefecture_code(code.lg_code):
+            lg_codes = (
+                [ward.lg_code for ward in self._towns.list_wards(code.lg_code)]
+                if DesignatedCity.is_code(code.lg_code)
+                else [code.lg_code]
+            )
             self._supplier.ensure_areas(
-                [code.lg_code], is_parcel_included=self._area_finder.has_parcel_shape(code)
+                lg_codes, is_parcel_included=self._area_finder.has_parcel_shape(code)
             )
         return self._area_finder.find(code)
 

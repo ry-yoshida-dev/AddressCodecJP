@@ -44,9 +44,10 @@ def test_within_restricts_towns(codec: AddressCodec) -> None:
         _ = codec.encode("千代田区丸の内1-1", within="131016-0002001")
 
 
-def test_within_keeps_ward_of_designated_city_required(codec: AddressCodec) -> None:
-    with pytest.raises(AmbiguousAddressError):
+def test_designated_city_does_not_lie_within_its_ward(codec: AddressCodec) -> None:
+    with pytest.raises(AddressNotFoundError):
         _ = codec.encode("横浜市", within="141046")
+    assert str(codec.encode("横浜市", within="140007")) == "141003"
     assert str(codec.encode("横浜市山下町", within="140007")) == "141046-0001000"
 
 
@@ -112,8 +113,9 @@ def test_group_fails_when_address_stays_ambiguous_in_common_area(codec: AddressC
 
 
 def test_group_does_not_read_designated_city_as_ward(codec: AddressCodec) -> None:
-    with pytest.raises(AmbiguousAddressError):
-        _ = codec.match_group(["横浜市", "横浜市中区山下町"])
+    group = codec.match_group(["横浜市", "横浜市中区山下町"])
+    assert str(group.area) == "141003"
+    assert [str(item.code) for item in group.matches] == ["141003", "141046-0001000"]
 
 
 def test_group_fails_when_address_is_not_found(codec: AddressCodec) -> None:

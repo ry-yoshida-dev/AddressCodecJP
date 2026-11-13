@@ -3,6 +3,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import ClassVar, Self, override
 
+from address_codec_jp.address.designated_city import DesignatedCity
 from address_codec_jp.address.level import AddressLevel
 from address_codec_jp.address.lot_number import LotNumber
 
@@ -16,6 +17,7 @@ class AddressCode:
 
     - ``130001``: prefecture (東京都)
     - ``131067``: municipality (東京都台東区)
+    - ``011002``: designated city (北海道札幌市), enclosing its wards such as ``011011``
     - ``131067-0004000``: oaza (東京都台東区浅草橋)
     - ``131067-0004001-2-3``: chome with lot numbers
 
@@ -231,7 +233,8 @@ class AddressCode:
 
         A residence is enclosed by its block, a block by its town, a chome or koaza by
         its oaza (the town ID with the chome part ``000``), a town by its municipality,
-        and a municipality by its prefecture. The enclosing area need not be registered.
+        a ward of a designated city by the city, and any other municipality by its
+        prefecture. The enclosing area need not be registered.
 
         Returns
         -------
@@ -242,6 +245,9 @@ class AddressCode:
             case AddressLevel.PREFECTURE:
                 return None
             case AddressLevel.MUNICIPALITY:
+                city_code = DesignatedCity.find_code(self.lg_code)
+                if city_code is not None:
+                    return type(self)(lg_code=city_code)
                 return self.for_prefecture(self.prefecture_code)
             case AddressLevel.RESIDENCE:
                 return type(self)(

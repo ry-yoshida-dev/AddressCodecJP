@@ -12,7 +12,10 @@ from tests.fixture_paths import TOWN_MASTER
     ("code", "children"),
     [
         ("130001", ["131016", "131032", "131067", "132063"]),
-        ("140007", ["141046"]),
+        ("140007", ["141003"]),
+        ("141003", ["141046"]),
+        ("260002", ["261009"]),
+        ("261009", ["261041", "261050", "261068"]),
         ("131016", ["131016-0002000", "131016-0011000", "131016-0054000"]),
         ("131016-0011000", ["131016-0011001", "131016-0011002", "131016-0011003"]),
         ("113247-0001000", ["113247-0001001"]),
@@ -34,14 +37,23 @@ def test_children_without_a_registered_oaza_are_listed_under_the_municipality(
     assert [str(child.code) for child in codec.list_children("155861")] == ["155861-0000162"]
 
 
-@pytest.mark.parametrize("code", ["130001", "131016", "131067", "131016-0011000", "172049"])
+@pytest.mark.parametrize(
+    "code", ["130001", "131016", "131067", "131016-0011000", "172049", "260002", "261009"]
+)
 def test_every_child_has_the_code_as_parent(codec: AddressCodec, code: str) -> None:
     parent = AddressCode.parse(code)
     for child in codec.list_children(parent):
         assert child.code.parent == parent
 
 
-@pytest.mark.parametrize("code", ["131016-9999000", "139998", "450006"])
+def test_designated_city_is_resolved_by_its_wards(codec: AddressCodec) -> None:
+    city = codec.resolve("261009").municipality
+    assert city is not None
+    assert (city.city_name, city.city_kana, city.ward_name) == ("京都市", "キョウトシ", "")
+    assert codec.decode("261009") == "京都府京都市"
+
+
+@pytest.mark.parametrize("code", ["131016-9999000", "139998", "450006", "141305"])
 def test_unregistered_area_is_rejected(codec: AddressCodec, code: str) -> None:
     with pytest.raises(AddressNotFoundError):
         _ = codec.list_children(code)

@@ -1,5 +1,6 @@
 from address_codec_jp.address.address import Address
 from address_codec_jp.address.code import AddressCode
+from address_codec_jp.address.designated_city import DesignatedCity
 from address_codec_jp.address.level import AddressLevel
 from address_codec_jp.address.lot_number import LotNumber
 from address_codec_jp.address.lot_system import LotSystem
@@ -11,6 +12,7 @@ __all__ = [
     "Address",
     "AddressCode",
     "AddressLevel",
+    "DesignatedCity",
     "LotNumber",
     "LotSystem",
     "Municipality",

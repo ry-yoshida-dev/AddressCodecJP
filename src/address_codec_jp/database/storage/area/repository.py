@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import ClassVar
 
-from address_codec_jp.address import AddressCode
+from address_codec_jp.address import AddressCode, DesignatedCity
 from address_codec_jp.database.storage.area.census_record import CensusAreaRecord
 from address_codec_jp.database.storage.area.imported_file import AreaImport
 from address_codec_jp.database.storage.area.record import AreaRecord
@@ -257,6 +257,8 @@ class AreaRepository:
         """
         Combine every census area of a municipality, matched to a town or not.
 
+        A designated city is made of the areas of all its wards.
+
         Parameters
         ----------
         lg_code : str
@@ -267,6 +269,12 @@ class AreaRepository:
         AreaShape | None
             Shapes of the areas, or ``None`` when none is stored.
         """
+        if DesignatedCity.is_code(lg_code):
+            return self._combine(
+                "SELECT shape FROM census_areas WHERE lg_code > ? AND lg_code < ? "
+                + "ORDER BY lg_code, key_code",
+                DesignatedCity.ward_code_bounds(lg_code),
+            )
         return self._combine(
             "SELECT shape FROM census_areas WHERE lg_code = ? ORDER BY key_code", (lg_code,)
         )

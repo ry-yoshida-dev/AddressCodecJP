@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from geo_coordinate import GeodeticCrs
 
-from address_codec_jp.address import AddressCode, LotNumber, LotSystem
+from address_codec_jp.address import AddressCode, DesignatedCity, LotNumber, LotSystem
 from address_codec_jp.database.storage.lot_system_column import LotSystemColumn
 from address_codec_jp.database.storage.position_changes import PositionChanges
 from address_codec_jp.datasets.address_base_registry import (
@@ -301,7 +301,8 @@ class PositionRepository:
 
         Runs within the caller's transaction.
 
-        Prefecture points are kept, because prefectures have no row of their own.
+        Prefecture and designated city points are kept, because neither has a row of its
+        own: the towns of a designated city are registered under its wards.
 
         Returns
         -------
@@ -309,9 +310,12 @@ class PositionRepository:
             Number of removed rows.
         """
         removed_count = 0
+        designated_city_placeholders = ", ".join("?" * len(DesignatedCity.CODES))
         removed_count += self._connection.execute(
             "DELETE FROM area_positions WHERE substr(lg_code, 3, 3) != '000' "
-            + "AND lg_code NOT IN (SELECT lg_code FROM towns)"
+            + "AND lg_code NOT IN (SELECT lg_code FROM towns) "
+            + f"AND lg_code NOT IN ({designated_city_placeholders})",
+            DesignatedCity.CODES,
         ).rowcount
         for table in self._TOWN_KEYED_TABLES:
             removed_count += self._connection.execute(

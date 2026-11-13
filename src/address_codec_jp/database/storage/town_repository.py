@@ -4,7 +4,7 @@ from collections.abc import Collection, Iterable
 from itertools import batched
 from typing import ClassVar
 
-from address_codec_jp.address import Municipality, Prefecture, Town
+from address_codec_jp.address import DesignatedCity, Municipality, Prefecture, Town
 from address_codec_jp.database.storage.lot_system_column import LotSystemColumn
 from address_codec_jp.database.storage.town_replacement import TownReplacement
 from address_codec_jp.errors import AddressNotFoundError, RegistryFormatError
@@ -415,6 +415,28 @@ class TownRepository:
         return self._query_municipalities(
             "WHERE lg_code >= ? AND lg_code < ?", (prefecture_code, next_prefecture_code)
         )
+
+    def list_wards(self, lg_code: str) -> list[Municipality]:
+        """
+        List the wards of a designated city.
+
+        Parameters
+        ----------
+        lg_code : str
+            Six-digit local government code of a designated city.
+
+        Returns
+        -------
+        list[Municipality]
+            Wards ordered by local government code. Empty when none is registered.
+
+        Raises
+        ------
+        ValueError
+            If ``lg_code`` is not a designated city.
+        """
+        lower, upper = DesignatedCity.ward_code_bounds(lg_code)
+        return self._query_municipalities("WHERE lg_code > ? AND lg_code < ?", (lower, upper))
 
     def list_municipalities(self) -> list[Municipality]:
         """

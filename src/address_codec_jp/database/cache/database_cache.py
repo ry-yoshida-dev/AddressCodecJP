@@ -12,7 +12,7 @@ from typing import ClassVar, Self
 import platformdirs
 from progress_bar import ProgressBarSource
 
-from address_codec_jp.address import AddressCode, Prefecture
+from address_codec_jp.address import AddressCode, DesignatedCity, Prefecture
 from address_codec_jp.database.cache.area_target import AreaTarget
 from address_codec_jp.database.cache.directory import CacheDirectory
 from address_codec_jp.database.cache.file_signature import DatabaseFileSignature
@@ -382,7 +382,8 @@ class DatabaseCache:
         prefecture_codes : Sequence[str]
             Two-digit codes of prefectures whose municipalities are prepared.
         municipality_codes : Sequence[str]
-            Six-digit local government codes of further municipalities.
+            Six-digit local government codes of further municipalities. A designated
+            city prepares all its wards.
         is_area_included : bool
             Whether the census town boundaries are added.
         is_parcel_included : bool
@@ -405,6 +406,15 @@ class DatabaseCache:
             self._loader.build()
         database_path = self.path
         with AddressDatabase.open_read_only(database_path) as database:
+            lg_codes = [
+                ward_code
+                for lg_code in lg_codes
+                for ward_code in (
+                    [ward.lg_code for ward in database.towns.list_wards(lg_code)]
+                    if DesignatedCity.is_code(lg_code)
+                    else [lg_code]
+                )
+            ]
             lg_codes.extend(
                 municipality.lg_code
                 for municipality in database.towns.list_municipalities()

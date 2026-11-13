@@ -23,7 +23,9 @@ def codes_named(codec: AddressCodec, name: str, within: str | None = None) -> li
         ("東京", ["130001"]),
         ("千代田区", ["131016"]),
         ("入間郡三芳町", ["113247"]),
-        ("横浜市", ["141046"]),
+        ("横浜市", ["141003"]),
+        ("神奈川県横浜市", ["141003"]),
+        ("京都市", ["261009"]),
         ("中区", ["141046"]),
         ("横浜市中区", ["141046"]),
     ],
@@ -72,6 +74,9 @@ def test_within_narrows_areas(codec: AddressCodec) -> None:
     assert codes_named(codec, "府中市", within="340006") == ["342084"]
     assert codes_named(codec, "大曲", within="012114-0006000") == ["012114-0006000"]
     assert codes_named(codec, "府中市", within="131016") == []
+    assert codes_named(codec, "京都市", within="260002") == ["261009"]
+    assert codes_named(codec, "京都市", within="261041") == []
+    assert codes_named(codec, "山下町", within="141003") == ["141046-0001000"]
 
 
 @pytest.mark.parametrize("name", ["丸の", "の内", "府中", "丸の内1丁目", "千代田区丸の内1-2-3"])

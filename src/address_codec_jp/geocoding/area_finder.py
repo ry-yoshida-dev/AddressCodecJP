@@ -2,7 +2,7 @@ from typing import ClassVar
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.address import AddressCode, LotSystem
+from address_codec_jp.address import AddressCode, DesignatedCity, LotSystem
 from address_codec_jp.database.storage import AreaRecord, AreaRepository
 from address_codec_jp.errors import AreaNotFoundError, DatasetNotImportedError
 from address_codec_jp.geocoding.datum_converter import DatumConverter
@@ -20,7 +20,9 @@ class AreaFinder:
     residence indication have no published shapes. A town without a shape falls back to
     its oaza, an oaza without a shape of its own is made of the shapes of its chome or
     koaza, and a municipality of all its census areas, including those matched to no
-    town. Prefectures have no shape.
+    town. A designated city is made of the areas of all its wards, but a ward without a
+    shape does not fall back to its city, whose wards may be only partly imported.
+    Prefectures have no shape.
 
     Parameters
     ----------
@@ -61,6 +63,8 @@ class AreaFinder:
         if not self._areas.is_area_imported:
             raise DatasetNotImportedError("No area shapes have been imported.")
         for candidate in code.lineage():
+            if candidate != code and DesignatedCity.is_code(candidate.lg_code):
+                continue
             found = self._find_record(candidate)
             if found is not None:
                 return AddressArea(

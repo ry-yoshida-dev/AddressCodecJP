@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from address_codec_jp.address.code import AddressCode
+from address_codec_jp.address.designated_city import DesignatedCity
 from address_codec_jp.address.prefecture import Prefecture
 
 
@@ -67,4 +68,30 @@ class Municipality:
         """
         return Prefecture(
             code=self.lg_code[:2], name=self.prefecture_name, kana=self.prefecture_kana
+        )
+
+    @property
+    def designated_city(self) -> "Municipality | None":
+        """
+        Designated city that this ward belongs to.
+
+        Returns
+        -------
+        Municipality | None
+            City named and read as in this ward, without the ward, or ``None`` when this
+            is not a ward of a designated city.
+        """
+        city_code = DesignatedCity.find_code(self.lg_code)
+        if city_code is None:
+            return None
+        return Municipality(
+            lg_code=city_code,
+            prefecture_name=self.prefecture_name,
+            county_name="",
+            city_name=self.city_name,
+            ward_name="",
+            prefecture_kana=self.prefecture_kana,
+            county_kana="",
+            city_kana=self.city_kana,
+            ward_kana="",
         )

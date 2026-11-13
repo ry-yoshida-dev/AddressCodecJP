@@ -148,8 +148,6 @@ def test_match_reads_floor_and_building_numbers_as_remainder(
     [
         "府中市",
         "府中市存在しない町1",
-        "横浜市",
-        "神奈川県横浜市",
         "輪島市門前町椎木12-3",
         "千代田区丸の内9丁目",
         "千代田区一番町1丁目",
@@ -194,9 +192,22 @@ def test_match_allows_partial_match(
     assert address_match.remainder == expected_remainder
 
 
+@pytest.mark.parametrize("address", ["横浜市", "神奈川県横浜市", "〒231-0023 横浜市"])
+def test_designated_city_without_ward_matches_the_city(codec: AddressCodec, address: str) -> None:
+    address_match = codec.match(address)
+    assert str(address_match.code) == "141003"
+    assert address_match.remainder == ""
+
+
+def test_partial_match_ends_at_designated_city(codec: AddressCodec) -> None:
+    address_match = codec.match("横浜市存在しない町1-2", is_partial_match_allowed=True)
+    assert str(address_match.code) == "141003"
+    assert address_match.remainder == "存在しない町1-2"
+
+
 def test_partial_match_keeps_municipality_that_needs_a_town(codec: AddressCodec) -> None:
     with pytest.raises(AmbiguousAddressError):
-        _ = codec.match("横浜市存在しない町1-2", is_partial_match_allowed=True)
+        _ = codec.match("府中市存在しない町1-2", is_partial_match_allowed=True)
 
 
 def test_partial_match_needs_a_municipality_or_prefecture(codec: AddressCodec) -> None:

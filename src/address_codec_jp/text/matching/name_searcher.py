@@ -14,8 +14,8 @@ class NameSearcher:
     A name is the whole name of a prefecture, municipality, oaza, or koaza, compared
     after folding notation variants (``藤ヶ丘`` finds 藤が丘) and a leading ``大字``/``字``.
     Parts of a name are not searched. A municipality may be written with its prefecture
-    or county; the city of a designated city stands for all its wards, and a ward
-    written alone for every ward of that name. An oaza or koaza may follow a prefecture
+    or county; the city of a designated city is found as the city itself, and a ward
+    written alone as every ward of that name. An oaza or koaza may follow a prefecture
     or municipality that narrows it down (``府中市宮町``). An oaza is found as its
     oaza-level town, or as its chome and koaza when the oaza itself is not registered.
 
@@ -66,7 +66,7 @@ class NameSearcher:
         folded = self._normalizer.fold(normalized_name)
         addresses = [
             Address(prefecture=municipality.prefecture, municipality=municipality)
-            for municipality in self._find_municipalities(folded)
+            for municipality in self._find_named_municipalities(folded)
         ]
         prefecture = self._name_index.prefectures.get(folded)
         if prefecture is not None:
@@ -83,6 +83,16 @@ class NameSearcher:
             if within is None or within.contains(address.code)
         }
         return [unique[code] for code in sorted(unique)]
+
+    def _find_named_municipalities(self, folded_text: str) -> list[Municipality]:
+        municipalities = self._find_municipalities(folded_text)
+        if folded_text not in self._name_index.abbreviated_keys:
+            return list(municipalities)
+        named: dict[str, Municipality] = {}
+        for municipality in municipalities:
+            area = municipality.designated_city or municipality
+            _ = named.setdefault(area.lg_code, area)
+        return list(named.values())
 
     def _find_municipalities(self, folded_text: str) -> frozenset[Municipality]:
         name_index = self._name_index

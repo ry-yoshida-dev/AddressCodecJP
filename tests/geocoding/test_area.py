@@ -23,6 +23,7 @@ from address_codec_jp import (
     RegistryDownloadError,
     RegistryImporter,
 )
+from address_codec_jp.database.storage import CensusAreaRecord
 from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
 from address_codec_jp.frontends.cli import CommandLineInterface
 from address_codec_jp.geometry import Polygon, Ring
@@ -197,6 +198,29 @@ def test_municipality_keeps_the_census_areas_matched_to_no_town(
     )
     municipality = area_codec.find_area_code("131016")
     assert all(polygon in municipality.shape.polygons for polygon in unmatched.shape.polygons)
+
+
+def test_designated_city_is_made_of_its_wards_but_not_a_fallback_for_them(
+    importer: RegistryImporter,
+) -> None:
+    _ = importer.database.areas.save_census_areas(
+        [
+            CensusAreaRecord(
+                key_code="261041000",
+                lg_code="261041",
+                name="中京区",
+                shape=AreaShape((SQUARE,)),
+                is_land=True,
+                towns=frozenset(),
+            )
+        ]
+    )
+    codec = AddressCodec(importer.database)
+    city = codec.find_area_code("261009")
+    assert city.is_exact
+    assert city.shape.polygons == (SQUARE,)
+    with pytest.raises(AreaNotFoundError):
+        _ = codec.find_area_code("261050")
 
 
 def test_find_area_of_a_parcel(area_codec: AddressCodec) -> None:

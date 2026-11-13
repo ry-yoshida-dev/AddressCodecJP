@@ -382,9 +382,10 @@ class AddressCodec:
         List the registered areas directly under an area.
 
         The children are the areas whose ``AddressCode.parent`` is the code: the
-        municipalities of a prefecture, with the wards of a designated city in place of
-        the city; the oaza of a municipality, together with the chome and koaza whose oaza
-        is not registered; and the chome and koaza of an oaza. Lot numbers are not listed.
+        municipalities of a prefecture, with a designated city in place of its wards; the
+        wards of a designated city; the oaza of a municipality, together with the chome
+        and koaza whose oaza is not registered; and the chome and koaza of an oaza. Lot
+        numbers are not listed.
 
         Parameters
         ----------
@@ -471,8 +472,8 @@ class AddressCodec:
         this lists all of them: the prefecture, municipalities, oaza, and koaza whose
         whole name is ``name``. Notation variants such as ``ヶ``/``ケ``/``が`` and a leading
         ``大字``/``字`` are ignored, but parts of names are not searched. The city of a
-        designated city stands for all its wards, and a ward written alone for every ward
-        of that name. A prefecture or municipality written before an oaza or koaza
+        designated city is listed as the city itself, and a ward written alone as every
+        ward of that name. A prefecture or municipality written before an oaza or koaza
         (``府中市宮町``) narrows it down, as does ``within``. An oaza is listed as its
         oaza-level town, or as its chome and koaza when the oaza itself is not
         registered.
