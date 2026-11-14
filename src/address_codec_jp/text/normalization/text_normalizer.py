@@ -18,16 +18,19 @@ class TextNormalizer:
     without its leading ``一`` keeps that ``一`` as part of the preceding name
     (``九ノ一十二番`` becomes ``9ノ一12番``). A kanji numeral before the connective ``の``,
     ``ノ``, or ``之`` is converted whichever of them is written (``一之江`` becomes
-    ``1之江``). Whitespace between a digit and a following
-    digit or kanji numeral becomes a dash, so separate numbers are not joined
-    (``5 一番館`` becomes ``5-1番館``). Characters that the registry uses to
-    tell towns apart are kept. Sapporo-style abbreviations such as ``北3西1`` are expanded to
-    ``北3条西1丁目``. ``fold`` additionally unifies ``ヶ``/``ケ``/``が``/``ガ``,
+    ``1之江``). Whitespace between two digits becomes a dash, so separate numbers are not
+    joined (``本市１ 12番`` becomes ``本市1-12番``). Whitespace between the end of a lot
+    number (a numeral, ``番``, ``番地``, or ``号``) and a kanji numeral becomes
+    ``REMAINDER_BOUNDARY``, since the numeral starts a building name or room rather than
+    another lot number (``5 一番館`` becomes ``5 1番館``). Characters that the registry
+    uses to tell towns apart are kept. Sapporo-style abbreviations such as ``北3西1`` are
+    expanded to ``北3条西1丁目``. ``fold`` additionally unifies ``ヶ``/``ケ``/``が``/``ガ``,
     ``の``/``ノ``/``之`` and old-style kanji for a loose comparison. Folding keeps the
     text length, so positions in the strict and folded forms correspond.
     """
 
     KANJI_CHARACTERS: ClassVar[str] = "㐀-鿿豈-﫿々"
+    REMAINDER_BOUNDARY: ClassVar[str] = " "
     _NUMERALS: ClassVar[str] = "0-9" + KanjiNumeral.CHARACTERS
     _POSTAL_CODE: ClassVar[re.Pattern[str]] = re.compile(
         r"^〒?(?P<head>[0-9]{3})-?(?P<tail>[0-9]{4})"
@@ -37,8 +40,14 @@ class TextNormalizer:
     _INVISIBLE: ClassVar[re.Pattern[str]] = re.compile("[­​-‏⁠﻿︀-️\U000e0100-\U000e01ef]")
     _QUOTES: ClassVar[re.Pattern[str]] = re.compile("[\"'`“”‘’]")
     _WHITESPACE: ClassVar[re.Pattern[str]] = re.compile(r"\s+")
-    _WHITESPACE_BETWEEN_NUMBERS: ClassVar[re.Pattern[str]] = re.compile(
-        f"(?<=[0-9])\\s+(?=[{_NUMERALS}])"
+    _WHITESPACE_BETWEEN_NUMBERS: ClassVar[re.Pattern[str]] = re.compile(r"(?<=[0-9])\s+(?=[0-9])")
+    # Lot numbers end with a digit or a marker such as 番, 番地, or 号.
+    _WHITESPACE_BEFORE_KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(
+        f"(?:(?<=[{_NUMERALS}番号])|(?<=番地))\\s+(?=[{KanjiNumeral.CHARACTERS}])"
+    )
+    # Every whitespace except the single space that _WHITESPACE_BEFORE_KANJI_NUMBER leaves.
+    _WHITESPACE_OUTSIDE_BOUNDARY: ClassVar[re.Pattern[str]] = re.compile(
+        f"(?<![{_NUMERALS}番号])(?<!番地)\\s+|\\s+(?![{KanjiNumeral.CHARACTERS}])"
     )
     _KE_VARIANTS: ClassVar[re.Pattern[str]] = re.compile(
         f"(?<=[{KANJI_CHARACTERS}0-9])[ヶヵケがガ](?=[{KANJI_CHARACTERS}0-9])"
@@ -210,15 +219,16 @@ class TextNormalizer:
     def _normalize(self, text: str, *, is_trailing_number_converted: bool) -> str:
         normalized = self._prepare(text)
         normalized = self._WHITESPACE_BETWEEN_NUMBERS.sub("-", normalized)
-        normalized = self._WHITESPACE.sub("", normalized)
+        normalized = self._WHITESPACE_BEFORE_KANJI_NUMBER.sub(self.REMAINDER_BOUNDARY, normalized)
+        normalized = self._WHITESPACE_OUTSIDE_BOUNDARY.sub("", normalized)
         normalized = self._normalize_dashes(normalized)
-        normalized = self._POSTAL_CODE.sub("", normalized)
+        normalized = self._POSTAL_CODE.sub("", normalized).lstrip(self.REMAINDER_BOUNDARY)
         normalized = self._GRID_ABBREVIATION.sub(r"\g<row>条\g<column>丁目", normalized)
         normalized = self._convert_kanji_numbers(
             normalized, is_trailing_number_converted=is_trailing_number_converted
         )
         normalized = self._normalize_dashes(normalized)
-        return self._REPEATED_DASH.sub("-", normalized).strip("-")
+        return self._REPEATED_DASH.sub("-", normalized).strip("-" + self.REMAINDER_BOUNDARY)
 
     def fold(self, normalized_text: str) -> str:
         """

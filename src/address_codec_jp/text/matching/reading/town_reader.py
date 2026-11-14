@@ -23,7 +23,10 @@ class TownReader:
     building number (``一番町`` + ``3階`` is kept), leaves a chome number unread, or puts
     lot numbers on an oaza-level town that the registry divides into chome. A partial
     reading keeps such a reading as its town without lot numbers, with the text after
-    the town name as the remainder (``勝浦`` + ``字家六2094番地1``).
+    the town name as the remainder (``勝浦`` + ``字家六2094番地1``). Chome and lot numbers
+    are read only up to ``TextNormalizer.REMAINDER_BOUNDARY``, so a building name after
+    it stays in the remainder even when it starts with a numeral (``1-1-1`` +
+    ``二丁目ビル``).
 
     A street direction of Kyoto (``Town.is_street_direction``) is read both after the
     oaza name, as the registry orders them, and before it, as addresses in Kyoto are
@@ -216,6 +219,7 @@ class TownReader:
                 marker in self._EXPLICIT_CHOME_MARKERS
                 or marker in self._SEPARATOR_MARKERS
                 or matched.end() == len(candidates.remainder)
+                or candidates.remainder[matched.end()] == TextNormalizer.REMAINDER_BOUNDARY
             )
             number = int(matched.group("number"))
             selected = [town for town in candidates.towns if town.chome_number == number]
@@ -255,13 +259,17 @@ class TownReader:
     def _interpret(
         self, candidates: CandidateSet, text_length: int, *, is_partial: bool
     ) -> TownInterpretation | None:
-        lot_result = self._lot_parser.parse(candidates.remainder)
+        lot_text, _, building_text = candidates.remainder.partition(
+            TextNormalizer.REMAINDER_BOUNDARY
+        )
+        lot_result = self._lot_parser.parse(lot_text)
         if self._UNREAD_CHOME.match(lot_result.remainder) or (
             not lot_result.lot.numbers
             and not self._ASCII_DIGITS.isdisjoint(lot_result.remainder)
             and not self._lot_parser.is_building_number(lot_result.remainder)
         ):
             return self._interpret_partially(candidates, text_length) if is_partial else None
+        remainder = self._join_remainder(lot_result.remainder, building_text)
         towns = self._lot_towns(candidates.towns) if lot_result.lot.numbers else candidates.towns
         towns = [town for town in towns if town.is_registered or not lot_result.lot.numbers]
         if not towns:
@@ -270,11 +278,17 @@ class TownReader:
             towns=towns,
             lot=lot_result.lot,
             lot_notation=lot_result.notation,
-            remainder=lot_result.remainder,
+            remainder=remainder,
             name_length=text_length - len(candidates.remainder) - candidates.split_digit_count,
             penalty=candidates.penalty,
             loosest_tier=candidates.loosest_tier,
         )
+
+    @staticmethod
+    def _join_remainder(lot_remainder: str, building_text: str) -> str:
+        if not lot_remainder or not building_text:
+            return lot_remainder or building_text
+        return lot_remainder + TextNormalizer.REMAINDER_BOUNDARY + building_text
 
     def _interpret_partially(
         self, candidates: CandidateSet, text_length: int
