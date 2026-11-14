@@ -15,6 +15,7 @@ for lookup by code, municipality, postal code, or coordinate.
 | [town_replacement.py](town_replacement.py) | `TownReplacement`: numbers of stored and complemented towns of a replacement |
 | [lot_system_column.py](lot_system_column.py) | `LotSystemColumn`: compact integer stored for each `LotSystem` |
 | [position_repository.py](position_repository.py) | `PositionRepository`: points, joined from numbers and identifiers at lookup; lot existence checks, bounding-box queries, and removal of orphaned rows |
+| [point_grid.py](point_grid.py) | `PointGrid`: latitude and longitude cells that index points for bounding-box queries |
 | [position_changes.py](position_changes.py) | `PositionChanges`: numbers of stored records and removed lots |
 | [import_log_repository.py](import_log_repository.py) | `ImportLogRepository`: log of the imported registry files |
 | [area/](area/) | Area shapes, their R*Tree index, and the log of imported area files |

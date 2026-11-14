@@ -7,6 +7,7 @@ from geo_coordinate import GeodeticCrs
 
 from address_codec_jp.address import AddressCode, DesignatedCity, LotNumber
 from address_codec_jp.database.storage.lot_system_column import LotSystemColumn
+from address_codec_jp.database.storage.point_grid import PointGrid
 from address_codec_jp.database.storage.position_changes import PositionChanges
 from address_codec_jp.datasets.address_base_registry import (
     AreaPosition,
@@ -30,7 +31,8 @@ class PositionRepository:
     Lot numbers and their points are stored in separate tables keyed by registry
     identifiers, so a number master and its position extension can be imported in
     either order and prefecture by prefecture. Points keep the datum they are published
-    on.
+    on, and town and lot points are indexed by their ``PointGrid`` cell for bounding-box
+    queries.
 
     Parameters
     ----------
@@ -55,6 +57,7 @@ class PositionRepository:
             longitude REAL NOT NULL,
             latitude REAL NOT NULL,
             epsg INTEGER NOT NULL,
+            cell INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id)
         ) WITHOUT ROWID
         """,
@@ -75,8 +78,7 @@ class PositionRepository:
         ON lot_entries (lg_code, machiaza_id, lot_system, block, residence, branch)
         """,
         """
-        CREATE INDEX town_positions_by_coordinate
-        ON town_positions (latitude, longitude)
+        CREATE INDEX town_positions_by_cell ON town_positions (cell)
         """,
         """
         CREATE TABLE lot_positions (
@@ -87,12 +89,12 @@ class PositionRepository:
             longitude REAL NOT NULL,
             latitude REAL NOT NULL,
             epsg INTEGER NOT NULL,
+            cell INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id, lot_system, lot_id)
         ) WITHOUT ROWID
         """,
         """
-        CREATE INDEX lot_positions_by_coordinate
-        ON lot_positions (latitude, longitude)
+        CREATE INDEX lot_positions_by_cell ON lot_positions (cell)
         """,
     )
     _TOWN_KEYED_TABLES: ClassVar[tuple[str, ...]] = (
@@ -105,6 +107,7 @@ class PositionRepository:
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection: sqlite3.Connection = connection
+        self._grid: PointGrid = PointGrid()
 
     def create_schema(self) -> None:
         """Create the position tables."""
@@ -248,9 +251,9 @@ class PositionRepository:
 
     def _save_chunk(self, records: Sequence[PositionRecord]) -> None:
         area_rows: list[tuple[str, float, float, int]] = []
-        town_rows: list[tuple[str, str, int, float, float, int]] = []
+        town_rows: list[tuple[str, str, int, float, float, int, int]] = []
         entry_rows: list[tuple[str | int, ...]] = []
-        lot_position_rows: list[tuple[str, str, int, str, float, float, int]] = []
+        lot_position_rows: list[tuple[str, str, int, str, float, float, int, int]] = []
         for record in records:
             match record:
                 case AreaPosition(lg_code=lg_code, point=point):
@@ -264,6 +267,7 @@ class PositionRepository:
                             record.point.longitude,
                             record.point.latitude,
                             record.point.crs.epsg,
+                            self._grid.cell_of(record.point.latitude, record.point.longitude),
                         )
                     )
                 case LotEntry():
@@ -287,6 +291,7 @@ class PositionRepository:
                             record.point.longitude,
                             record.point.latitude,
                             record.point.crs.epsg,
+                            self._grid.cell_of(record.point.latitude, record.point.longitude),
                         )
                     )
                 case LotRemoval():
@@ -295,13 +300,13 @@ class PositionRepository:
             "INSERT OR REPLACE INTO area_positions VALUES (?, ?, ?, ?)", area_rows
         )
         _ = self._connection.executemany(
-            "INSERT OR REPLACE INTO town_positions VALUES (?, ?, ?, ?, ?, ?)", town_rows
+            "INSERT OR REPLACE INTO town_positions VALUES (?, ?, ?, ?, ?, ?, ?)", town_rows
         )
         _ = self._connection.executemany(
             "INSERT OR REPLACE INTO lot_entries VALUES (?, ?, ?, ?, ?, ?, ?)", entry_rows
         )
         _ = self._connection.executemany(
-            "INSERT OR REPLACE INTO lot_positions VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO lot_positions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             lot_position_rows,
         )
 
@@ -435,13 +440,14 @@ class PositionRepository:
         list[AddressPoint]
             Codes with lot numbers and their points.
         """
-        rows: list[tuple[object, ...]] = self._connection.execute(
+        rows = self._fetch_within(
             "SELECT p.lg_code, p.machiaza_id, e.lot_system, e.block, e.residence, e.branch, "
             + "p.longitude, p.latitude, p.epsg FROM lot_positions AS p "
             + "JOIN lot_entries AS e USING (lg_code, machiaza_id, lot_system, lot_id) "
-            + "WHERE p.latitude BETWEEN ? AND ? AND p.longitude BETWEEN ? AND ?",
-            self._to_bound_parameters(bounds),
-        ).fetchall()
+            + "WHERE p.cell BETWEEN ? AND ? "
+            + "AND p.latitude BETWEEN ? AND ? AND p.longitude BETWEEN ? AND ?",
+            bounds,
+        )
         return [
             AddressPoint(
                 code=AddressCode(
@@ -468,11 +474,12 @@ class PositionRepository:
         list[AddressPoint]
             Town codes and their points.
         """
-        rows: list[tuple[object, ...]] = self._connection.execute(
+        rows = self._fetch_within(
             "SELECT lg_code, machiaza_id, longitude, latitude, epsg FROM town_positions "
-            + "WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
-            self._to_bound_parameters(bounds),
-        ).fetchall()
+            + "WHERE cell BETWEEN ? AND ? "
+            + "AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
+            bounds,
+        )
         return [
             AddressPoint(
                 code=AddressCode(lg_code=str(row[0]), machiaza_id=str(row[1])),
@@ -481,13 +488,21 @@ class PositionRepository:
             for row in rows
         ]
 
-    def _to_bound_parameters(self, bounds: CoordinateBounds) -> tuple[float, float, float, float]:
-        return (
+    def _fetch_within(self, statement: str, bounds: CoordinateBounds) -> list[tuple[object, ...]]:
+        bound_parameters = (
             bounds.south_degrees,
             bounds.north_degrees,
             bounds.west_degrees,
             bounds.east_degrees,
         )
+        rows: list[tuple[object, ...]] = []
+        for first_cell, last_cell in self._grid.row_ranges(bounds):
+            rows.extend(
+                self._connection.execute(
+                    statement, (first_cell, last_cell, *bound_parameters)
+                ).fetchall()
+            )
+        return rows
 
     def _to_lot(self, lot_system: object, numbers: tuple[object, ...]) -> LotNumber:
         if not all(isinstance(number, int) for number in numbers):
