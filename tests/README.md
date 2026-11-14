@@ -4,7 +4,8 @@
 
 Pytest suite. End-to-end tests run against an in-memory database loaded with a small
 sample town master that uses the ABR column layout. Local government codes and the town
-IDs of Tokyo and Kyoto are real; other town IDs, postal codes, and some readings are illustrative.
+IDs of Tokyo, Kyoto, and the towns added for notation variants are real; other town IDs,
+postal codes, and some readings are illustrative.
 The census boundary of Chiyoda is the real e-Stat file (令和2年国勢調査 町丁・字等境界データ,
 Statistics Bureau of Japan); the registry map sheets are written by hand in the format of
 the Ministry of Justice. Tests are grouped by the package they exercise; end-to-end

@@ -11,7 +11,7 @@ from tests.fixture_paths import TOWN_MASTER
 @pytest.mark.parametrize(
     ("code", "children"),
     [
-        ("130001", ["131016", "131032", "131067", "132063"]),
+        ("130001", ["131016", "131032", "131067", "131237", "132063"]),
         ("140007", ["141003"]),
         ("141003", ["141046"]),
         ("260002", ["261009"]),
@@ -84,5 +84,6 @@ def test_children_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
         {"code": "131016", "address": "東京都千代田区", "level": "MUNICIPALITY"},
         {"code": "131032", "address": "東京都港区", "level": "MUNICIPALITY"},
         {"code": "131067", "address": "東京都台東区", "level": "MUNICIPALITY"},
+        {"code": "131237", "address": "東京都江戸川区", "level": "MUNICIPALITY"},
         {"code": "132063", "address": "東京都府中市", "level": "MUNICIPALITY"},
     ]

@@ -11,6 +11,7 @@ Tests of normalization, matching, and formatting of address text, mostly through
 | Component | Responsibility |
 | --- | --- |
 | [test_text_normalizer.py](test_text_normalizer.py) | Normalization of notation variants |
+| [test_notation_variants.py](test_notation_variants.py) | Matching of addresses written with other connectives, dashes, and spacing than the registry |
 | [test_kanji_numeral.py](test_kanji_numeral.py) | Kanji numeral conversion |
 | [test_lot_number_parser.py](test_lot_number_parser.py) | Lot number notations |
 | [test_match_details.py](test_match_details.py) | Match tiers, ambiguity candidates, `AreaMatcher.find`, error bases, `resolve`, and `Address` validation |

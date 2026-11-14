@@ -15,7 +15,9 @@ class TextNormalizer:
     kanji numeral variants are unified, and a dash after katakana becomes the long vowel
     ``ー`` (``流通センタ－`` equals ``流通センター``). A kanji numeral run that is valid only
     without its leading ``一`` keeps that ``一`` as part of the preceding name
-    (``九ノ一十二番`` becomes ``9ノ一12番``). Whitespace between a digit and a following
+    (``九ノ一十二番`` becomes ``9ノ一12番``). A kanji numeral before the connective ``の``,
+    ``ノ``, or ``之`` is converted whichever of them is written (``一之江`` becomes
+    ``1之江``). Whitespace between a digit and a following
     digit or kanji numeral becomes a dash, so separate numbers are not joined
     (``5 一番館`` becomes ``5-1番館``). Characters that the registry uses to
     tell towns apart are kept. Sapporo-style abbreviations such as ``北3西1`` are expanded to
@@ -51,7 +53,7 @@ class TextNormalizer:
     # A single katakana before a dash is an iroha koaza or lot prefix (ノ-14), not a word.
     _KATAKANA_LONG_VOWEL: ClassVar[re.Pattern[str]] = re.compile("(?<=[ァ-ヴ]{2})-")
     _KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(
-        f"[{KanjiNumeral.CHARACTERS}]+(?=丁目|丁|番|号|条|線|地割|の|ノ|-)"
+        f"[{KanjiNumeral.CHARACTERS}]+(?=丁目|丁|番|号|条|線|地割|の|ノ|之|-)"
     )
     _TRAILING_KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(f"[{KanjiNumeral.CHARACTERS}]+$")
     _NAME_ENDING_NUMERAL: ClassVar[str] = "一"
