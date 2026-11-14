@@ -148,6 +148,12 @@ class AreaRepository:
         """
         Store parcel shapes within the caller's transaction, replacing those of the same code.
 
+        A stored shape is replaced rather than merged with, so that importing a newer
+        edition of a registry map drops the shapes of the old one instead of keeping
+        both. A record must therefore carry every shape of its parcel: the shapes of one
+        parcel drawn on several sheets or in several files of one import are merged by
+        the importer before they are stored.
+
         Parameters
         ----------
         records : Iterable[AreaRecord]

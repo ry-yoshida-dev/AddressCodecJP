@@ -164,6 +164,65 @@ def test_import_matches_areas_to_registered_towns(area_importer: AreaImporter) -
     )
 
 
+def write_registry_map(path: Path, *, extra_parcels: str = "", shift: int = 0) -> Path:
+    text = REGISTRY_MAP.read_text(encoding="utf-8")
+    for northing in ("-18141", "-18121"):
+        text = text.replace(f"<zmn:X>{northing}.000", f"<zmn:X>{int(northing) + shift}.000")
+    _ = path.write_text(text.replace("</主題属性>", extra_parcels + "</主題属性>"), "utf-8")
+    return path
+
+
+def test_import_stores_parcels_under_their_koaza(
+    area_importer: AreaImporter, importer: RegistryImporter, tmp_path: Path
+) -> None:
+    koaza_parcels = (
+        '<筆 id="H3"><大字名>竹間沢</大字名><丁目名></丁目名><小字名>東</小字名>'
+        + '<地番>１２３－４</地番><形状 idref="F2"/></筆>'
+        + '<筆 id="H4"><大字名>竹間沢</大字名><丁目名></丁目名><小字名>西</小字名>'
+        + '<地番>５</地番><形状 idref="F2"/></筆>'
+    )
+    path = write_registry_map(tmp_path / "koaza.xml", extra_parcels=koaza_parcels)
+    assert [parcel.koaza_name for parcel in RegistryMapReader().read(path)] == [
+        "",
+        "",
+        "東",
+        "西",
+    ]
+    map_import = area_importer.import_file(path, "113247")
+    assert (map_import.stored_count, map_import.unmatched_count) == (3, 1)
+    areas = importer.database.areas
+    oaza_parcel = areas.find_parcel(AddressCode.parse("113247-0001000-p123-4"))
+    koaza_parcel = areas.find_parcel(AddressCode.parse("113247-0001001-p123-4"))
+    unregistered_koaza_parcel = areas.find_parcel(AddressCode.parse("113247-0001000-p5"))
+    assert oaza_parcel is not None
+    assert len(oaza_parcel.polygons) == 1
+    assert koaza_parcel is not None
+    assert len(koaza_parcel.polygons) == 1
+    assert unregistered_koaza_parcel is not None
+
+
+def test_import_merges_the_shapes_of_a_parcel_drawn_twice(
+    area_importer: AreaImporter, importer: RegistryImporter, tmp_path: Path
+) -> None:
+    shifted = write_registry_map(tmp_path / "shifted.xml", shift=100)
+    second_surface = (
+        '<筆 id="H3"><大字名>竹間沢</大字名><丁目名></丁目名>'
+        + '<地番>１２３－４</地番><形状 idref="F2"/></筆>'
+    )
+    same_file = write_registry_map(tmp_path / "same.xml", extra_parcels=second_surface)
+    _ = area_importer.import_files([REGISTRY_MAP, shifted, same_file], "113247")
+    parcel = importer.database.areas.find_parcel(AddressCode.parse("113247-0001000-p123-4"))
+    assert parcel is not None
+    expected = {
+        polygon
+        for path in (REGISTRY_MAP, shifted)
+        for polygon in RegistryMapReader().read(path)[0].shape.polygons
+    }
+    assert len(parcel.polygons) == 2
+    assert set(parcel.polygons) == expected
+    assert parcel.contains(139.5321, 35.8362)
+
+
 def test_import_rejects_other_files(area_importer: AreaImporter) -> None:
     with pytest.raises(BoundaryFormatError):
         _ = area_importer.import_file(FIXTURE_DIRECTORY / "mt_town_sample.csv", "131016")

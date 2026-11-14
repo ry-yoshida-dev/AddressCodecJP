@@ -16,6 +16,9 @@ class RegistryMapParcel:
         Name of the oaza.
     chome_name : str
         Name of the chome, such as ``４丁目``, or an empty string.
+    koaza_name : str
+        Name of the koaza (小字), such as ``東``, or an empty string. Lot numbers restart
+        per koaza in some oaza, so the koaza is part of the parcel's town.
     lot_text : str
         Parcel number as written in the map, such as ``25-1``.
     shape : AreaShape
@@ -25,5 +28,6 @@ class RegistryMapParcel:
     municipality_name: str
     oaza_name: str
     chome_name: str
+    koaza_name: str
     lot_text: str
     shape: AreaShape

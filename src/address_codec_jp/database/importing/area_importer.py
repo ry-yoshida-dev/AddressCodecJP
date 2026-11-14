@@ -16,8 +16,13 @@ from address_codec_jp.database.storage import (
     AreaRecord,
     CensusAreaRecord,
 )
-from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
+from address_codec_jp.datasets.boundaries import (
+    CensusBoundaryReader,
+    RegistryMapParcel,
+    RegistryMapReader,
+)
 from address_codec_jp.errors import BoundaryFormatError
+from address_codec_jp.geometry import AreaShape
 from address_codec_jp.results import AddressMatch, AreaSource
 from address_codec_jp.text.matching import AreaMatcher
 from address_codec_jp.text.normalization import LotNumberParser, TextNormalizer
@@ -32,7 +37,10 @@ class AreaImporter:
     stored under its census code, those that fit no town or several equally well without
     one and counted, so that a municipality is whole however its names were matched. A
     land parcel is stored under the code of its town and its parcel number; parcels that
-    fit no town are skipped and counted.
+    fit no town are skipped and counted. The town of a parcel is its koaza when the town
+    master registers one, because lot numbers restart per koaza in some oaza, and its
+    oaza or chome otherwise. A parcel drawn as several shapes, such as one split across
+    map sheets, is stored as all of them.
 
     Parameters
     ----------
@@ -47,6 +55,7 @@ class AreaImporter:
 
     _HASH_CHUNK_SIZE: ClassVar[int] = 1 << 20
     _LOT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"(\d+)(?:-(\d+)(?:-(\d+))?)?")
+    _KOAZA_PREFIX: ClassVar[str] = "字"
 
     def __init__(self, database: AddressDatabase) -> None:
         if not database.is_writable:
@@ -157,8 +166,9 @@ class AreaImporter:
             If the database contains no towns.
         """
         area_code = AddressCode(lg_code=lg_code)
+        parcels: dict[AddressCode, AreaShape] = {}
         with self._database.transaction():
-            return [self._import(path, area_code) for path in paths]
+            return [self._import(path, area_code, parcels) for path in paths]
 
     @staticmethod
     def detect(path: Path) -> AreaSource:
@@ -196,7 +206,9 @@ class AreaImporter:
             return AreaSource.REGISTRY_MAP
         raise BoundaryFormatError(f"{path} holds neither a shapefile nor map XML files.")
 
-    def _import(self, path: Path, area_code: AddressCode) -> AreaImport:
+    def _import(
+        self, path: Path, area_code: AddressCode, parcels: dict[AddressCode, AreaShape]
+    ) -> AreaImport:
         source = self.detect(path)
         match source:
             case AreaSource.CENSUS_BOUNDARY:
@@ -206,7 +218,7 @@ class AreaImporter:
                     1 for area in census_areas if area.is_land and area.name and not area.towns
                 )
             case AreaSource.REGISTRY_MAP:
-                batch = self._read_registry_map(path, area_code)
+                batch = self._read_registry_map(path, area_code, parcels)
                 stored_count = self._database.areas.save_parcels(batch.records)
                 unmatched_count = batch.unmatched_count
         area_import = AreaImport(
@@ -243,7 +255,9 @@ class AreaImporter:
             )
         return records
 
-    def _read_registry_map(self, path: Path, area_code: AddressCode) -> AreaBatch:
+    def _read_registry_map(
+        self, path: Path, area_code: AddressCode, parcels: dict[AddressCode, AreaShape]
+    ) -> AreaBatch:
         municipality = self._database.towns.get_municipality(area_code.lg_code)
         municipality_text = (
             municipality.prefecture_name
@@ -251,14 +265,14 @@ class AreaImporter:
             + municipality.city_name
             + municipality.ward_name
         )
-        towns: dict[tuple[str, str], AddressCode | None] = {}
+        towns: dict[tuple[str, str, str], AddressCode | None] = {}
         records: dict[AddressCode, AreaRecord] = {}
         unmatched_count = 0
         for parcel in RegistryMapReader().read(path):
-            town_key = (parcel.oaza_name, parcel.chome_name)
+            town_key = (parcel.oaza_name, parcel.chome_name, parcel.koaza_name)
             if town_key not in towns:
-                towns[town_key] = self._match_town(
-                    municipality_text + parcel.oaza_name + parcel.chome_name, area_code.lg_code
+                towns[town_key] = self._match_parcel_town(
+                    municipality_text, parcel, area_code.lg_code
                 )
             town = towns[town_key]
             lot = self._parse_lot(parcel.lot_text)
@@ -266,10 +280,27 @@ class AreaImporter:
                 unmatched_count += 1
                 continue
             code = AddressCode(lg_code=town.lg_code, machiaza_id=town.machiaza_id, lot=lot)
-            records[code] = AreaRecord(
-                code=code, source=AreaSource.REGISTRY_MAP, shape=parcel.shape
-            )
+            shape = parcels.get(code)
+            if shape is None:
+                shape = parcel.shape
+            elif not set(parcel.shape.polygons) <= set(shape.polygons):
+                shape = shape.merge(parcel.shape)
+            parcels[code] = shape
+            records[code] = AreaRecord(code=code, source=AreaSource.REGISTRY_MAP, shape=shape)
         return AreaBatch(records=list(records.values()), unmatched_count=unmatched_count)
+
+    def _match_parcel_town(
+        self, municipality_text: str, parcel: RegistryMapParcel, lg_code: str
+    ) -> AddressCode | None:
+        town_text = municipality_text + parcel.oaza_name + parcel.chome_name
+        if parcel.koaza_name:
+            koaza_town = self._match_town(
+                town_text + self._KOAZA_PREFIX + parcel.koaza_name.removeprefix(self._KOAZA_PREFIX),
+                lg_code,
+            )
+            if koaza_town is not None:
+                return koaza_town
+        return self._match_town(town_text, lg_code)
 
     def _match_town(self, address: str, lg_code: str) -> AddressCode | None:
         matched = self._match(address)

@@ -15,7 +15,7 @@ registry offices (map XML).
 | [census_boundary_reader.py](census_boundary_reader.py) | `CensusBoundaryReader`: every area of the census, water and unnamed areas included, with the polygons of one census code combined |
 | [census_area.py](census_area.py) | `CensusArea`: census code, address text, shape, and land or water of one area |
 | [registry_map_reader.py](registry_map_reader.py) | `RegistryMapReader`: parcels of nested map archives, chaining curves into rings and projecting them |
-| [registry_map_parcel.py](registry_map_parcel.py) | `RegistryMapParcel`: municipality, oaza, chome, parcel number, and shape of one parcel |
+| [registry_map_parcel.py](registry_map_parcel.py) | `RegistryMapParcel`: municipality, oaza, chome, koaza, parcel number, and shape of one parcel |
 
 ## Examples
 

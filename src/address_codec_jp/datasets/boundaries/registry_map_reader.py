@@ -109,6 +109,7 @@ class RegistryMapReader:
                     municipality_name=municipality_name,
                     oaza_name=self._child_text(parcel, "大字名"),
                     chome_name=self._child_text(parcel, "丁目名"),
+                    koaza_name=self._child_text(parcel, "小字名"),
                     lot_text=self._child_text(parcel, "地番"),
                     shape=AreaShape((Polygon(surface_rings[0], tuple(surface_rings[1:])),)),
                 )
