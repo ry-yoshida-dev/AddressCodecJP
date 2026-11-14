@@ -16,8 +16,8 @@ class AreaFinder:
 
     Only land parcel numbers are looked up in the registry maps, because block and
     residence numbers of the residence indication have no published shapes; they fall
-    back to their town. A town without a shape falls back to
-    its oaza, an oaza without a shape of its own is made of the shapes of its chome or
+    back to their town. A town without a shape falls back to its oaza, an oaza is made
+    of its own shape together with the shapes of its chome or
     koaza, and a municipality of all its census areas, including those matched to no
     town. A designated city is made of the areas of all its wards, but a ward without a
     shape does not fall back to its city, whose wards may be only partly imported.
@@ -130,10 +130,9 @@ class AreaFinder:
                 return None
             shape = self._areas.find_parcel(code)
             return None if shape is None else AreaRecord(code, AreaSource.REGISTRY_MAP, shape)
-        shape = self._areas.find_town(code)
-        if shape is None and code.is_oaza:
-            shape = self._areas.find_oaza(code)
-        return self._to_record(code, shape)
+        if code.is_oaza:
+            return self._to_record(code, self._areas.find_oaza(code))
+        return self._to_record(code, self._areas.find_town(code))
 
     @staticmethod
     def _to_record(code: AddressCode, shape: AreaShape | None) -> AreaRecord | None:

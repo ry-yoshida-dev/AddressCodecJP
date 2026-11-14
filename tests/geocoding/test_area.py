@@ -289,6 +289,33 @@ def test_find_area_combines_the_towns_of_an_oaza_and_a_municipality(
     assert len(municipality.shape.polygons) == census_polygon_count
 
 
+def test_oaza_with_its_own_area_includes_the_areas_of_its_koaza(
+    importer: RegistryImporter,
+) -> None:
+    koaza_square = Polygon(tuple((x + 2.0, y) for x, y in SQUARE.exterior))
+    _ = importer.database.areas.save_census_areas(
+        [
+            CensusAreaRecord(
+                key_code=key_code,
+                lg_code="113247",
+                name=name,
+                shape=AreaShape((polygon,)),
+                is_land=True,
+                towns=frozenset({AddressCode.parse(town)}),
+            )
+            for key_code, name, polygon, town in (
+                ("113240010", "竹間沢", SQUARE, "113247-0001000"),
+                ("113240020", "竹間沢東", koaza_square, "113247-0001001"),
+            )
+        ]
+    )
+    codec = AddressCodec(importer.database)
+    oaza = codec.find_area_code("113247-0001000")
+    assert oaza.is_exact
+    assert set(oaza.shape.polygons) == {SQUARE, koaza_square}
+    assert codec.find_area_code("113247-0001001").shape.polygons == (koaza_square,)
+
+
 def test_municipality_keeps_the_census_areas_matched_to_no_town(
     area_codec: AddressCodec,
 ) -> None:
