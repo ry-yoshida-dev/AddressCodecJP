@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import ClassVar
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
@@ -24,7 +25,8 @@ class Geocoder:
     The registry lists the lot numbers of a Kyoto street direction
     (``Town.is_street_direction``) under its oaza, so a street direction with lot
     numbers is verified, located, and shaped as the same lot numbers of its oaza when
-    the registry lists that oaza.
+    the registry lists that oaza. Results keep the code they were asked for, and treat
+    the oaza's lot as the code itself.
 
     Parameters
     ----------
@@ -55,7 +57,7 @@ class Geocoder:
         self._street_municipality_codes: set[str] | None = None
         self._locator: AddressLocator = AddressLocator(positions)
         self._nearest_finder: NearestAddressFinder = NearestAddressFinder(positions)
-        self._area_finder: AreaFinder = AreaFinder(areas, positions)
+        self._area_finder: AreaFinder = AreaFinder(areas)
 
     def verify_lot(self, code: AddressCode) -> None:
         """
@@ -71,13 +73,38 @@ class Geocoder:
         Raises
         ------
         AddressNotFoundError
-            If no lot of the town is imported or its lot numbers are not registered.
+            If no lot of the town is imported or its lot numbers are not registered in
+            their numbering system.
+        DatasetNotImportedError
+            If no block, residence, or parcel master has been imported.
+        """
+        if not self.is_lot_registered(code):
+            raise AddressNotFoundError(f"Lot numbers of {code} are not registered.")
+
+    def is_lot_registered(self, code: AddressCode) -> bool:
+        """
+        Tell whether the lot numbers of a code are registered in their numbering system.
+
+        Parameters
+        ----------
+        code : AddressCode
+            Code to check.
+
+        Returns
+        -------
+        bool
+            ``True`` when the code has no lot numbers or they are registered.
+
+        Raises
+        ------
+        AddressNotFoundError
+            If no lot of the town is imported.
         DatasetNotImportedError
             If no block, residence, or parcel master has been imported.
         """
         code = self._to_lot_owner(code)
         if code.machiaza_id is None or not code.is_lot:
-            return
+            return True
         self._ensure_lots(code)
         if not self._positions.is_lot_imported:
             raise DatasetNotImportedError(
@@ -87,8 +114,27 @@ class Geocoder:
             raise AddressNotFoundError(
                 f"No block, residence, or parcel of {code} has been imported."
             )
-        if not self._positions.contains_lot(code.lg_code, code.machiaza_id, code.lot):
-            raise AddressNotFoundError(f"Lot numbers of {code} are not registered.")
+        return self._positions.contains_lot(code.lg_code, code.machiaza_id, code.lot)
+
+    def find_lot_area(self, area: AddressCode) -> AddressCode:
+        """
+        Find the area that holds the lot numbers of addresses within an area.
+
+        Parameters
+        ----------
+        area : AddressCode
+            Area without lot numbers.
+
+        Returns
+        -------
+        AddressCode
+            The oaza of a Kyoto street direction whose oaza the registry lists, and
+            ``area`` itself otherwise.
+        """
+        if area.machiaza_id is None or area.is_lot:
+            return area
+        oaza = self._find_street_oaza(area.lg_code, area.machiaza_id)
+        return area if oaza is None else oaza
 
     def locate(self, code: AddressCode, crs: GeodeticCrs) -> AddressLocation:
         """
@@ -106,9 +152,13 @@ class Geocoder:
         AddressLocation
             Point of the code, or of its nearest enclosing area that has one.
         """
-        code = self._to_lot_owner(code)
-        self._ensure_lots(code)
-        return self._locator.locate(code, crs)
+        owner = self._to_lot_owner(code)
+        self._ensure_lots(owner)
+        location = self._locator.locate(owner, crs)
+        if owner == code:
+            return location
+        located_code = code if location.located_code == owner else location.located_code
+        return replace(location, code=code, located_code=located_code)
 
     def find_nearest(
         self, coordinate: GeoCoordinate, crs: GeodeticCrs, max_distance_meters: float
@@ -180,8 +230,7 @@ class Geocoder:
         Returns
         -------
         bool
-            ``True`` for lot numbers of a town numbered by land parcels, or whose
-            numbering is unknown.
+            ``True`` for land parcel numbers.
         """
         return self._area_finder.has_parcel_shape(self._to_lot_owner(code))
 
@@ -203,6 +252,7 @@ class Geocoder:
         AddressArea
             Shape of the code, or of its nearest enclosing area that has one.
         """
+        requested = code
         code = self._to_lot_owner(code)
         if self._supplier is not None and not AddressCode.is_prefecture_code(code.lg_code):
             lg_codes = (
@@ -213,7 +263,11 @@ class Geocoder:
             self._supplier.ensure_areas(
                 lg_codes, is_parcel_included=self._area_finder.has_parcel_shape(code)
             )
-        return self._area_finder.find(code)
+        area = self._area_finder.find(code)
+        if code == requested:
+            return area
+        located_code = requested if area.located_code == code else area.located_code
+        return replace(area, code=requested, located_code=located_code)
 
     def find_areas_at(
         self, coordinate: GeoCoordinate, crs: GeodeticCrs, *, is_parcel_included: bool
@@ -247,24 +301,28 @@ class Geocoder:
         return self._area_finder.list_at(coordinate, crs, is_parcel_included=is_parcel_included)
 
     def _to_lot_owner(self, code: AddressCode) -> AddressCode:
-        if self._street_municipality_codes is None:
-            self._street_municipality_codes = self._towns.list_street_municipality_codes()
-        if (
-            code.machiaza_id is None
-            or not code.is_lot
-            or code.lg_code not in self._street_municipality_codes
-        ):
+        if code.machiaza_id is None or not code.is_lot:
             return code
-        town = self._towns.find_town(code.lg_code, code.machiaza_id)
-        if town is None or not town.is_street_direction:
-            return code
-        oaza = AddressCode(lg_code=code.lg_code, machiaza_id=code.machiaza_id).parent
-        if oaza is None or oaza.machiaza_id is None:
-            return code
-        oaza_town = self._towns.find_town(oaza.lg_code, oaza.machiaza_id)
-        if oaza_town is None or not oaza_town.is_registered:
+        oaza = self._find_street_oaza(code.lg_code, code.machiaza_id)
+        if oaza is None:
             return code
         return AddressCode(lg_code=oaza.lg_code, machiaza_id=oaza.machiaza_id, lot=code.lot)
+
+    def _find_street_oaza(self, lg_code: str, machiaza_id: str) -> AddressCode | None:
+        if self._street_municipality_codes is None:
+            self._street_municipality_codes = self._towns.list_street_municipality_codes()
+        if lg_code not in self._street_municipality_codes:
+            return None
+        town = self._towns.find_town(lg_code, machiaza_id)
+        if town is None or not town.is_street_direction:
+            return None
+        oaza = AddressCode(lg_code=lg_code, machiaza_id=machiaza_id).parent
+        if oaza is None or oaza.machiaza_id is None:
+            return None
+        oaza_town = self._towns.find_town(oaza.lg_code, oaza.machiaza_id)
+        if oaza_town is None or not oaza_town.is_registered:
+            return None
+        return oaza
 
     def _ensure_lots(self, code: AddressCode) -> None:
         if self._supplier is not None and code.is_lot:

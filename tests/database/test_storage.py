@@ -207,7 +207,7 @@ def test_reimport_removes_orphaned_positions(
     codec = AddressCodec(importer.database)
     assert codec.locate("千代田区丸の内1-2-3").is_exact
     assert codec.locate("東京都").level is AddressLevel.PREFECTURE
-    assert codec.locate_code("113247-0001000-123-4").level is AddressLevel.PREFECTURE
+    assert codec.locate_code("113247-0001000-p123-4").level is AddressLevel.PREFECTURE
 
 
 def test_reimport_keeps_designated_city_positions(

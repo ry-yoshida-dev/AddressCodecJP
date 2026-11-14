@@ -1,12 +1,66 @@
 import pytest
 
-from address_codec_jp import AddressCode, AddressLevel, LotNumber, Prefecture
+from address_codec_jp import AddressCode, AddressLevel, LotNumber, LotSystem, Prefecture
 
 
 def test_round_trip() -> None:
-    code = AddressCode("131016", "0011001", LotNumber(2, 3))
+    code = AddressCode("131016", "0011001", LotNumber(2, 3, system=LotSystem.RESIDENCE_INDICATION))
     assert str(code) == "131016-0011001-2-3"
     assert AddressCode.parse(str(code)) == code
+
+
+@pytest.mark.parametrize(
+    ("text", "numbers", "system"),
+    [
+        ("113247-0001000-p124", [124], LotSystem.LAND_PARCEL),
+        ("113247-0001000-p124-1-1", [124, 1, 1], LotSystem.LAND_PARCEL),
+        ("113247-0001000-P124-1", [124, 1], LotSystem.LAND_PARCEL),
+        ("131016-0011001-2-3-4", [2, 3, 4], LotSystem.RESIDENCE_INDICATION),
+    ],
+)
+def test_lot_numbers_carry_their_numbering_system(
+    text: str, numbers: list[int], system: LotSystem
+) -> None:
+    code = AddressCode.parse(text)
+    assert code.lot.numbers == numbers
+    assert code.lot.system is system
+    assert str(code) == text.replace("P", "p")
+
+
+def test_land_parcel_and_residence_with_the_same_numbers_differ() -> None:
+    parcel = AddressCode.parse("131016-0011001-p2-3")
+    residence = AddressCode.parse("131016-0011001-2-3")
+    assert parcel != residence
+    assert parcel.lot.numbers == residence.lot.numbers
+
+
+@pytest.mark.parametrize("dash", ["‐", "−", "－", "ー"])
+def test_parse_accepts_dash_variants(dash: str) -> None:
+    text = dash.join(["131016", "0011001", "2", "3"])
+    assert str(AddressCode.parse(text)) == "131016-0011001-2-3"
+
+
+@pytest.mark.parametrize(
+    ("code", "parent"),
+    [
+        ("131016-0011001-2-3-4", "131016-0011001-2-3"),
+        ("131016-0011001-2-3", "131016-0011001-2"),
+        ("113247-0001000-p123-9", "113247-0001000"),
+        ("113247-0001000-p123-4-1", "113247-0001000"),
+        ("155861-0000162", "155861"),
+        ("113247-0001001", "113247-0001000"),
+    ],
+)
+def test_parent(code: str, parent: str) -> None:
+    found = AddressCode.parse(code).parent
+    assert found is not None
+    assert str(found) == parent
+
+
+def test_parcel_branch_is_not_inside_the_original_parcel() -> None:
+    assert not AddressCode.parse("113247-0001000-p123").contains(
+        AddressCode.parse("113247-0001000-p123-9")
+    )
 
 
 def test_without_lot() -> None:
@@ -102,7 +156,7 @@ def test_rejects_oversized_lot_numbers() -> None:
 
 def test_rejects_lot_without_town() -> None:
     with pytest.raises(ValueError, match="require a machiaza_id"):
-        _ = AddressCode("131016", None, LotNumber(1))
+        _ = AddressCode("131016", None, LotNumber(1, system=LotSystem.RESIDENCE_INDICATION))
 
 
 @pytest.mark.parametrize(

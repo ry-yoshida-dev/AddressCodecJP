@@ -1,11 +1,12 @@
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.address import Address, AddressCode
+from address_codec_jp.address import Address, AddressCode, LotSystem
 from address_codec_jp.database.cache import DatabaseCache
 from address_codec_jp.database.storage import (
     AddressDatabase,
@@ -13,6 +14,7 @@ from address_codec_jp.database.storage import (
     AreaImport,
     DatasetImport,
 )
+from address_codec_jp.errors import AddressNotFoundError
 from address_codec_jp.geocoding import Geocoder
 from address_codec_jp.results import (
     AddressArea,
@@ -165,10 +167,17 @@ class AddressCodec:
             Address in any common notation.
         is_lot_verified : bool
             Whether lot numbers must be registered in the imported block, residence, or
-            parcel masters. Without verification, any lot numbers are accepted.
+            parcel masters. Without verification, any lot numbers are accepted, in the
+            numbering system of their town (or of their notation where the town uses
+            both). With verification, the other numbering system is tried when the
+            numbers are not registered in that one, and a number after the lot numbers
+            (the ``4`` of ``2-3-4``) is read as a third lot number when that is
+            registered.
         within : AddressCode | str | None
             Prefecture, municipality, or town code the address must lie in, such as
             ``340006`` to read ``府中市`` as 広島県府中市, or ``None`` to search everywhere.
+            Lot numbers written with a Kyoto street direction belong to its oaza, so
+            they lie within the street direction when they lie within its oaza.
         is_partial_match_allowed : bool
             Whether an address whose town is not found matches its municipality or
             prefecture, with the unread text as the remainder (``萩市麻生`` gives 萩市
@@ -199,14 +208,49 @@ class AddressCodec:
             If the lots of the area have to be added to ``cache`` and a registry file
             cannot be downloaded.
         """
+        area = self._parse_area(within)
+        lot_area = None if area is None else self._geocoder.find_lot_area(area)
         address_match = self._reader.match(
-            address,
-            self._parse_area(within),
-            is_partial_match_allowed=is_partial_match_allowed,
+            address, lot_area, is_partial_match_allowed=is_partial_match_allowed
         )
+        if (
+            area is not None
+            and not area.contains(address_match.code)
+            and not address_match.code.is_lot
+        ):
+            raise AddressNotFoundError(f"{address!r} does not lie within {area}.")
         if is_lot_verified:
-            self._geocoder.verify_lot(address_match.code)
+            return self._verify_match(address_match)
         return address_match
+
+    def _verify_match(self, address_match: AddressMatch) -> AddressMatch:
+        lot = address_match.address.lot
+        if lot.system is None:
+            return address_match
+        readings = [
+            reading
+            for reading in (self._reader.extend_lot(address_match), address_match)
+            if reading is not None
+        ]
+        other_system = (
+            LotSystem.LAND_PARCEL
+            if lot.system is LotSystem.RESIDENCE_INDICATION
+            else LotSystem.RESIDENCE_INDICATION
+        )
+        for lot_system in (lot.system, other_system):
+            for reading in readings:
+                candidate = replace(
+                    reading,
+                    address=replace(
+                        reading.address, lot=reading.address.lot.with_system(lot_system)
+                    ),
+                )
+                if self._geocoder.is_lot_registered(candidate.code):
+                    return candidate
+        raise AddressNotFoundError(
+            f"Lot numbers of {address_match.code} are not registered in either numbering "
+            + "system."
+        )
 
     @staticmethod
     def _parse_code(code: AddressCode | str) -> AddressCode:
@@ -271,8 +315,10 @@ class AddressCodec:
         """
         group_match = self._reader.match_group(addresses)
         if is_lot_verified:
-            for address_match in group_match.matches:
-                self._geocoder.verify_lot(address_match.code)
+            return replace(
+                group_match,
+                matches=[self._verify_match(item) for item in group_match.matches],
+            )
         return group_match
 
     def verify_lot(self, code: AddressCode) -> None:
@@ -697,8 +743,7 @@ class AddressCodec:
         Returns
         -------
         bool
-            ``True`` for lot numbers of a town numbered by land parcels, or whose
-            numbering is unknown.
+            ``True`` for land parcel numbers.
 
         Raises
         ------

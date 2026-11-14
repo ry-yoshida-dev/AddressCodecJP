@@ -16,5 +16,5 @@ and town records, lot numbers, and the full `Address` they make up.
 | [prefecture.py](prefecture.py) | `Prefecture`: validated two-digit prefecture code, name, and reading |
 | [municipality.py](municipality.py) | `Municipality`: prefecture, county, city, and ward of a local government code and their readings, and the designated city of a ward (`designated_city`) |
 | [town.py](town.py) | `Town`: ABR town record within its `Municipality`, with readings, numbering systems, postal codes, and whether its koaza is a Kyoto street direction |
-| [lot_number.py](lot_number.py) | `LotNumber`: block and residence numbers |
+| [lot_number.py](lot_number.py) | `LotNumber`: up to three lot numbers and the numbering system they belong to |
 | [lot_system.py](lot_system.py) | `LotSystem`: residence indication or land parcel numbering |

@@ -15,8 +15,8 @@ from address_codec_jp import (
         (35.682456, 139.765123, "131016-0011001-2-3", AddressLevel.RESIDENCE),
         (35.68201, 139.76501, "131016-0011001-2", AddressLevel.BLOCK),
         (35.6795, 139.7641, "131016-0011001-2", AddressLevel.BLOCK),
-        (35.8362, 139.5321, "113247-0001000-123-4", AddressLevel.RESIDENCE),
-        (35.836, 139.532, "113247-0001000-123", AddressLevel.BLOCK),
+        (35.8362, 139.5321, "113247-0001000-p123-4", AddressLevel.RESIDENCE),
+        (35.836, 139.532, "113247-0001000-p123", AddressLevel.BLOCK),
         (35.6971, 139.7851, "131067-0004001", AddressLevel.TOWN),
     ],
 )

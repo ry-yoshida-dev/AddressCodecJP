@@ -1,7 +1,6 @@
-from collections.abc import Sequence
 from typing import Protocol
 
-from address_codec_jp.address import LotNumber, LotSystem
+from address_codec_jp.address import LotNumber
 from address_codec_jp.geometry import (
     AddressPoint,
     CoordinateBounds,
@@ -60,7 +59,7 @@ class PositionSource(Protocol):
         ...
 
     def find_lot(
-        self, lg_code: str, machiaza_id: str, lot_systems: Sequence[LotSystem], lot: LotNumber
+        self, lg_code: str, machiaza_id: str, lot: LotNumber
     ) -> RepresentativePoint | None:
         """
         Fetch the point of a block, residence, or parcel by its numbers.
@@ -71,15 +70,13 @@ class PositionSource(Protocol):
             Six-digit local government code.
         machiaza_id : str
             Seven-digit town identifier.
-        lot_systems : Sequence[LotSystem]
-            Numbering systems to search, in order of preference.
         lot : LotNumber
-            Block and residence numbers with a block.
+            Lot numbers with a block, looked up in their numbering system.
 
         Returns
         -------
         RepresentativePoint | None
-            Point of the first match, or ``None`` when none is available.
+            Point of the lot, or ``None`` when none is available.
         """
         ...
 

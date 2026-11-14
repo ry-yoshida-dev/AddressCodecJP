@@ -2,11 +2,10 @@ from typing import ClassVar
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.address import AddressCode, DesignatedCity, LotSystem
+from address_codec_jp.address import AddressCode, DesignatedCity
 from address_codec_jp.database.storage import AreaRecord, AreaRepository
 from address_codec_jp.errors import AreaNotFoundError, DatasetNotImportedError
 from address_codec_jp.geocoding.datum_converter import DatumConverter
-from address_codec_jp.geocoding.position_source import PositionSource
 from address_codec_jp.geometry import AreaShape
 from address_codec_jp.results import AddressArea, AreaSource
 
@@ -15,9 +14,9 @@ class AreaFinder:
     """
     Finder of the shape of an address code and of the shapes around a coordinate.
 
-    Lot numbers are looked up in the registry maps only for towns numbered by land
-    parcels, or whose numbering is unknown, because block and residence numbers of the
-    residence indication have no published shapes. A town without a shape falls back to
+    Only land parcel numbers are looked up in the registry maps, because block and
+    residence numbers of the residence indication have no published shapes; they fall
+    back to their town. A town without a shape falls back to
     its oaza, an oaza without a shape of its own is made of the shapes of its chome or
     koaza, and a municipality of all its census areas, including those matched to no
     town. A designated city is made of the areas of all its wards, but a ward without a
@@ -28,15 +27,12 @@ class AreaFinder:
     ----------
     areas : AreaRepository
         Imported area shapes.
-    positions : PositionSource
-        Imported points, which tell the numbering system of a town.
     """
 
     _SEARCH_DATUM: ClassVar[GeodeticCrs] = GeodeticCrs.JGD2011
 
-    def __init__(self, areas: AreaRepository, positions: PositionSource) -> None:
+    def __init__(self, areas: AreaRepository) -> None:
         self._areas: AreaRepository = areas
-        self._positions: PositionSource = positions
         self._converter: DatumConverter = DatumConverter()
 
     def find(self, code: AddressCode) -> AddressArea:
@@ -130,7 +126,7 @@ class AreaFinder:
                 return None
             return self._to_record(code, self._areas.find_municipality(code.lg_code))
         if code.lot.numbers:
-            if not self._is_parcel_numbered(code.lg_code, code.machiaza_id):
+            if not code.lot.is_land_parcel:
                 return None
             shape = self._areas.find_parcel(code)
             return None if shape is None else AreaRecord(code, AreaSource.REGISTRY_MAP, shape)
@@ -155,13 +151,6 @@ class AreaFinder:
         Returns
         -------
         bool
-            ``True`` for lot numbers of a town numbered by land parcels, or whose
-            numbering is unknown.
+            ``True`` for land parcel numbers.
         """
-        if code.machiaza_id is None or not code.lot.numbers:
-            return False
-        return self._is_parcel_numbered(code.lg_code, code.machiaza_id)
-
-    def _is_parcel_numbered(self, lg_code: str, machiaza_id: str) -> bool:
-        town = self._positions.find_town(lg_code, machiaza_id)
-        return town is None or town.lot_system is LotSystem.LAND_PARCEL
+        return code.lot.is_land_parcel

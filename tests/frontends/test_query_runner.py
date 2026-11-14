@@ -131,7 +131,7 @@ def test_area_requires_the_boundaries_of_its_municipality(located_codec: Address
 def test_pass_through_guard_admits_unprepared_lots(located_codec: AddressCodec) -> None:
     runner = QueryRunner(located_codec, InputInterpreter(), PassThroughGuard())
     record = runner.run(QueryOperation.NEAREST, NEAR_LOT, QueryOptions())
-    assert record.fields["code"] == "131016-0011001-2-3"
+    assert record.fields["code"] == "131016-0011001-2-4-1"
 
 
 def test_interpreter_decides_how_malformed_input_is_reported(codec: AddressCodec) -> None:

@@ -11,6 +11,7 @@ from address_codec_jp import (
     DigitWidth,
     LotNumber,
     LotStyle,
+    LotSystem,
     NumeralStyle,
     RegistryImporter,
     Town,
@@ -70,7 +71,11 @@ def test_decoded_address_encodes_to_the_same_code(
     residence: int,
     address_format: AddressFormat,
 ) -> None:
-    lot = LotNumber() if block is None else LotNumber(block=block, residence=residence)
+    lot = (
+        LotNumber()
+        if block is None
+        else LotNumber(block=block, residence=residence, system=LotSystem.RESIDENCE_INDICATION)
+    )
     code = AddressCode(lg_code=town.lg_code, machiaza_id=town.machiaza_id, lot=lot)
     oaza_machiaza_id = town.machiaza_id[:4] + "000"
     is_lot_on_oaza = (
@@ -79,5 +84,13 @@ def test_decoded_address_encodes_to_the_same_code(
         and (town.lg_code, oaza_machiaza_id) in TOWN_KEYS
     )
     lot_machiaza_id = oaza_machiaza_id if is_lot_on_oaza else town.machiaza_id
-    expected = AddressCode(lg_code=town.lg_code, machiaza_id=lot_machiaza_id, lot=lot)
+    if len(town.lot_systems) == 1:
+        written_system = next(iter(town.lot_systems))
+    elif address_format.lot_style is LotStyle.LAND_PARCEL:
+        written_system = LotSystem.LAND_PARCEL
+    else:
+        written_system = LotSystem.RESIDENCE_INDICATION
+    expected = AddressCode(
+        lg_code=town.lg_code, machiaza_id=lot_machiaza_id, lot=lot.with_system(written_system)
+    )
     assert shared_codec.encode(shared_codec.decode(code, address_format)) == expected

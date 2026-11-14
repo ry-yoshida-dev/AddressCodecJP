@@ -1,12 +1,9 @@
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
 from address_codec_jp import AddressCodec, RegistryImporter
-from tests.fixture_paths import FIXTURE_DIRECTORY
-
-POSITION_FIXTURES: list[Path] = sorted((FIXTURE_DIRECTORY / "positions").glob("*.csv"))
+from tests.fixture_paths import FIXTURE_DIRECTORY, POSITION_FIXTURES
 
 
 @pytest.fixture

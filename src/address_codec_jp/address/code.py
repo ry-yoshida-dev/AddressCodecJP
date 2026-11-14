@@ -6,6 +6,7 @@ from typing import ClassVar, Self, override
 from address_codec_jp.address.designated_city import DesignatedCity
 from address_codec_jp.address.level import AddressLevel
 from address_codec_jp.address.lot_number import LotNumber
+from address_codec_jp.address.lot_system import LotSystem
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,13 +14,17 @@ class AddressCode:
     """
     Address code composed of a local government code, a town identifier, and lot numbers.
 
-    The string form is ``{lg_code}[-{machiaza_id}[-{block}[-{residence}]]]``:
+    The string form is ``{lg_code}[-{machiaza_id}[-[p]{block}[-{residence}[-{branch}]]]]``:
 
     - ``130001``: prefecture (東京都)
     - ``131067``: municipality (東京都台東区)
     - ``011002``: designated city (北海道札幌市), enclosing its wards such as ``011011``
     - ``131067-0004000``: oaza (東京都台東区浅草橋)
-    - ``131067-0004001-2-3``: chome with lot numbers
+    - ``131067-0004001-2-3``: residence indication (浅草橋1丁目2番3号)
+    - ``113247-0001000-p124-1-1``: land parcel (竹間沢124番地1の1)
+
+    Land parcel numbers carry the ``p`` marker, because a town numbered by residence
+    indication keeps its land parcels, whose numbers may coincide with residences.
 
     Parameters
     ----------
@@ -30,7 +35,8 @@ class AddressCode:
         Seven-digit town identifier of the Address Base Registry.
         ``None`` for prefecture and municipality codes.
     lot : LotNumber
-        Block and residence numbers. Only allowed together with ``machiaza_id``.
+        Lot numbers and their numbering system. Only allowed together with
+        ``machiaza_id``.
 
     Raises
     ------
@@ -42,10 +48,14 @@ class AddressCode:
     _PATTERN: ClassVar[re.Pattern[str]] = re.compile(
         r"(?P<lg_code>[0-9]{6})"
         + r"(?:-(?P<machiaza_id>[0-9]{7})"
-        + r"(?:-(?P<block>[1-9][0-9]*)(?:-(?P<residence>[1-9][0-9]*))?)?)?"
+        + r"(?:-(?P<parcel_marker>[pP])?(?P<block>[1-9][0-9]*)"
+        + r"(?:-(?P<residence>[1-9][0-9]*)(?:-(?P<branch>[1-9][0-9]*))?)?)?)?"
     )
+    _DASHES: ClassVar[dict[int, int]] = str.maketrans("‐‑‒–—―−ー－", "-" * 9)
     _CHECK_DIGIT_WEIGHTS: ClassVar[tuple[int, ...]] = (6, 5, 4, 3, 2)
     _OAZA_CHOME_PART: ClassVar[str] = "000"
+    _ABSENT_OAZA_PART: ClassVar[str] = "0000"
+    _PARCEL_MARKER: ClassVar[str] = "p"
 
     lg_code: str
     machiaza_id: str | None = None
@@ -137,8 +147,9 @@ class AddressCode:
         Parameters
         ----------
         text : str
-            Code such as ``131067``, ``131067-0004000`` or ``131016-0011001-2-3``.
-            Full-width digits and hyphens are accepted.
+            Code such as ``131067``, ``131067-0004000``, ``131016-0011001-2-3`` or
+            ``113247-0001000-p124-1``. Full-width characters and dash variants such as
+            ``‐`` and ``−`` are accepted.
 
         Returns
         -------
@@ -150,18 +161,25 @@ class AddressCode:
         ValueError
             If the text does not follow the address code format.
         """
-        matched = cls._PATTERN.fullmatch(unicodedata.normalize("NFKC", text).strip())
+        matched = cls._PATTERN.fullmatch(
+            unicodedata.normalize("NFKC", text).translate(cls._DASHES).strip()
+        )
         if matched is None:
             raise ValueError(f"Invalid address code: {text!r}.")
-        block = matched.group("block")
-        residence = matched.group("residence")
+        numbers = [
+            int(number)
+            for number in matched.group("block", "residence", "branch")
+            if number is not None
+        ]
+        system = (
+            LotSystem.RESIDENCE_INDICATION
+            if matched.group("parcel_marker") is None
+            else LotSystem.LAND_PARCEL
+        )
         return cls(
             lg_code=matched.group("lg_code"),
             machiaza_id=matched.group("machiaza_id"),
-            lot=LotNumber(
-                block=int(block) if block is not None else None,
-                residence=int(residence) if residence is not None else None,
-            ),
+            lot=LotNumber.of(numbers, system),
         )
 
     @property
@@ -231,10 +249,13 @@ class AddressCode:
         """
         Code of the nearest enclosing area.
 
-        A residence is enclosed by its block, a block by its town, a chome or koaza by
-        its oaza (the town ID with the chome part ``000``), a town by its municipality,
-        a ward of a designated city by the city, and any other municipality by its
-        prefecture. The enclosing area need not be registered.
+        A residence branch is enclosed by its residence, a residence by its block, and a
+        block by its town. A land parcel and its branches are each enclosed by their
+        town, because a branch is a separate parcel split off (分筆) from the original
+        one. A chome or koaza is enclosed by its oaza (the town ID with the chome part
+        ``000``) unless its ID has no oaza part (``0000``), an oaza or such a town by its
+        municipality, a ward of a designated city by the city, and any other
+        municipality by its prefecture. The enclosing oaza need not be registered.
 
         Returns
         -------
@@ -249,16 +270,20 @@ class AddressCode:
                 if city_code is not None:
                     return type(self)(lg_code=city_code)
                 return self.for_prefecture(self.prefecture_code)
-            case AddressLevel.RESIDENCE:
+            case AddressLevel.RESIDENCE if not self.lot.is_land_parcel:
                 return type(self)(
                     lg_code=self.lg_code,
                     machiaza_id=self.machiaza_id,
-                    lot=LotNumber(block=self.lot.block),
+                    lot=self.lot.truncated(len(self.lot.numbers) - 1),
                 )
-            case AddressLevel.BLOCK:
+            case AddressLevel.RESIDENCE | AddressLevel.BLOCK:
                 return type(self)(lg_code=self.lg_code, machiaza_id=self.machiaza_id)
             case AddressLevel.TOWN:
-                if self.machiaza_id is None or self.is_oaza:
+                if (
+                    self.machiaza_id is None
+                    or self.is_oaza
+                    or self.machiaza_id.startswith(self._ABSENT_OAZA_PART)
+                ):
                     return type(self)(lg_code=self.lg_code)
                 return type(self)(
                     lg_code=self.lg_code,
@@ -301,4 +326,7 @@ class AddressCode:
         components = [self.lg_code]
         if self.machiaza_id is not None:
             components.append(self.machiaza_id)
-        return "-".join([*components, *map(str, self.lot.numbers)])
+        lot_components = [str(number) for number in self.lot.numbers]
+        if lot_components and self.lot.is_land_parcel:
+            lot_components[0] = self._PARCEL_MARKER + lot_components[0]
+        return "-".join([*components, *lot_components])

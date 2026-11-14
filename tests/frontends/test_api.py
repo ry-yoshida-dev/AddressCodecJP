@@ -439,7 +439,7 @@ def test_parcel_points_credit_the_registry_maps(cache_directory: Path) -> None:
 def test_parcel_shapes_credit_the_maps_and_their_date(tmp_path: Path) -> None:
     with_maps = build_cache(tmp_path / "maps", is_lot_included=True, is_parcel_map_included=True)
     with open_client(with_maps, is_coverage_required=False) as client:
-        area = body_of(client.get("/v1/codes/113247-0001000-123-4/area"))
+        area = body_of(client.get("/v1/codes/113247-0001000-p123-4/area"))
     credits = [str(credit) for credit in read_list(area["attribution"])]
     assert area["sources"] == "registry_map"
     assert credits[0] == REGISTRY_CREDIT
@@ -551,7 +551,7 @@ def test_nearest_requires_every_municipality_that_may_be_nearer(cache_directory:
     assert rejected.status_code == 503
     assert "131067" in str(body_of(rejected)["error"])
     assert exact.status_code == 200
-    assert body_of(accepted)["code"] == "131016-0011001-2-3"
+    assert body_of(accepted)["code"] == "131016-0011001-2-4-1"
 
 
 def test_parcels_at_a_coordinate_require_the_registry_maps(client: TestClient) -> None:

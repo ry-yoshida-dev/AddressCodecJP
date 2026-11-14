@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,10 @@ from address_codec_jp import (
     AmbiguousAddressError,
     DigitWidth,
     LotStyle,
+    LotSystem,
     NumeralStyle,
     RegistryImporter,
+    Town,
 )
 from address_codec_jp.text.matching import AreaMatcher
 from tests.fixture_paths import TOWN_MASTER
@@ -37,70 +40,70 @@ TOWN_MASTER_HEADER: str = (
         ("千代田区丸の内2丁目", "131016-0011002"),
         ("東京都千代田区霞ヶ関1-2", "131016-0002001-2"),
         ("千代田区一番町5", "131016-0054000-5"),
-        ("〒354-0044 埼玉県入間郡三芳町竹間沢123-4", "113247-0001000-123-4"),
-        ("埼玉県三芳町大字竹間沢123番地の4", "113247-0001000-123-4"),
-        ("三芳町竹間沢字東12", "113247-0001001-12"),
-        ("横浜市中区山下町279", "141046-0001000-279"),
+        ("〒354-0044 埼玉県入間郡三芳町竹間沢123-4", "113247-0001000-p123-4"),
+        ("埼玉県三芳町大字竹間沢123番地の4", "113247-0001000-p123-4"),
+        ("三芳町竹間沢字東12", "113247-0001001-p12"),
+        ("横浜市中区山下町279", "141046-0001000-p279"),
         ("北海道札幌市中央区北1条西1丁目2", "011011-0001001-2"),
         ("札幌市中央区北一条西一丁目", "011011-0001001"),
-        ("東京都府中市宮町1-1", "132063-0014001-1"),
-        ("府中市宮町1-1", "132063-0014001-1"),
-        ("広島県府中市府川町5", "342084-0001000-5"),
+        ("東京都府中市宮町1-1", "132063-0014001-p1"),
+        ("府中市宮町1-1", "132063-0014001-p1"),
+        ("広島県府中市府川町5", "342084-0001000-p5"),
         ("東京千代田区丸の内1-2-3", "131016-0011001-2-3"),
         ("東京", "130001"),
-        ("横浜市山下町279", "141046-0001000-279"),
-        ("神奈川横浜市山下町279", "141046-0001000-279"),
+        ("横浜市山下町279", "141046-0001000-p279"),
+        ("神奈川横浜市山下町279", "141046-0001000-p279"),
         ("千代田区丸の内一丁目十二番地三", "131016-0011001-12-3"),
         ("千代田区丸の内1丁目12番三", "131016-0011001-12-3"),
-        ("米沢市大字三沢字白旗九ノ一十二番三号", "062022-0036339-12-3"),
-        ("石巻市根岸字城見の一十二番三号", "042021-0093103-12-3"),
+        ("米沢市大字三沢字白旗九ノ一十二番三号", "062022-0036339-p12-3"),
+        ("石巻市根岸字城見の一十二番三号", "042021-0093103-p12-3"),
         ("東京都台東区浅草橋", "131067-0004000"),
         ("台東区浅草橋5丁目", "131067-0004005"),
         ("台東区浅草橋5-1-1", "131067-0004005-1-1"),
         ("千代田区丸の内", "131016-0011000"),
         ("東京都", "130001"),
-        ("米沢市大字三沢字白旗九ノ一12番3号", "062022-0036339-12-3"),
+        ("米沢市大字三沢字白旗九ノ一12番3号", "062022-0036339-p12-3"),
         ("米沢市三沢白旗九ノ一", "062022-0036339"),
-        ("米沢市三沢白旗12番3号", "062022-0036338-12-3"),
-        ("山形市流通センタ－1丁目12番3号", "062014-0389001-12-3"),
-        ("山形市流通センター1丁目12番3号", "062014-0389001-12-3"),
+        ("米沢市三沢白旗12番3号", "062022-0036338-p12-3"),
+        ("山形市流通センタ－1丁目12番3号", "062014-0389001-p12-3"),
+        ("山形市流通センター1丁目12番3号", "062014-0389001-p12-3"),
         ("山形市流通センター", "062014-0389000"),
         ("〒100‐0005 東京都千代田区丸の内1-2-3", "131016-0011001-2-3"),
-        ("輪島市門前町本市１ 12番3号", "172049-0196110-12-3"),
-        ("石巻市根岸字城見の一12番3号", "042021-0093103-12-3"),
-        ("粟島浦村字大畑12番3号", "155861-0000162-12-3"),
-        ("富山市笹津７区12番3号", "162019-0000590-12-3"),
-        ("富山市笹津7-12", "162019-0258000-7-12"),
-        ("輪島市門前町椎木12番3号", "172049-0144000-12-3"),
-        ("志賀町福井八12番3号", "173843-0089134-12-3"),
-        ("志賀町福井12-3", "173843-0089000-12-3"),
-        ("名古屋市北区芦辺町三丁目12番3号", "231037-0001103-12-3"),
-        ("名古屋市北区芦辺町12番3号", "231037-0001000-12-3"),
-        ("網走市大曲1", "012114-0005000-1"),
-        ("網走市字大曲1", "012114-0006000-1"),
-        ("神恵内村大字赤石村字山の上1", "014052-0001001-1"),
-        ("神恵内村赤石村山ノ上1", "014052-0001002-1"),
+        ("輪島市門前町本市１ 12番3号", "172049-0196110-p12-3"),
+        ("石巻市根岸字城見の一12番3号", "042021-0093103-p12-3"),
+        ("粟島浦村字大畑12番3号", "155861-0000162-p12-3"),
+        ("富山市笹津７区12番3号", "162019-0000590-p12-3"),
+        ("富山市笹津7-12", "162019-0258000-p7-12"),
+        ("輪島市門前町椎木12番3号", "172049-0144000-p12-3"),
+        ("志賀町福井八12番3号", "173843-0089134-p12-3"),
+        ("志賀町福井12-3", "173843-0089000-p12-3"),
+        ("名古屋市北区芦辺町三丁目12番3号", "231037-0001103-p12-3"),
+        ("名古屋市北区芦辺町12番3号", "231037-0001000-p12-3"),
+        ("網走市大曲1", "012114-0005000-p1"),
+        ("網走市字大曲1", "012114-0006000-p1"),
+        ("神恵内村大字赤石村字山の上1", "014052-0001001-p1"),
+        ("神恵内村赤石村山ノ上1", "014052-0001002-p1"),
         ("東京都台東区", "131067"),
         ("台東区", "131067"),
         ("入間郡三芳町", "113247"),
         ("北海道札幌市中央区", "011011"),
         ("函館市弁天町1丁", "012025-0007001"),
-        ("函館市弁天町1丁目2", "012025-0007001-2"),
-        ("中区山下町279", "141046-0001000-279"),
-        ("神奈川県中区山下町279", "141046-0001000-279"),
-        ("北区芦辺町12番3号", "231037-0001000-12-3"),
+        ("函館市弁天町1丁目2", "012025-0007001-p2"),
+        ("中区山下町279", "141046-0001000-p279"),
+        ("神奈川県中区山下町279", "141046-0001000-p279"),
+        ("北区芦辺町12番3号", "231037-0001000-p12-3"),
         ("霞が関1-2", "131016-0002001-2"),
         ("東京都霞ヶ関1丁目2番", "131016-0002001-2"),
         ("〒100-0013 霞が関1-2", "131016-0002001-2"),
-        ("府川町5", "342084-0001000-5"),
-        ("大字竹間沢123-4", "113247-0001000-123-4"),
-        ("新見市哲多町大字大野12", "332101-0038000-12"),
-        ("普代村第10地割羅賀12", "034851-0080000-12"),
+        ("府川町5", "342084-0001000-p5"),
+        ("大字竹間沢123-4", "113247-0001000-p123-4"),
+        ("新見市哲多町大字大野12", "332101-0038000-p12"),
+        ("普代村第10地割羅賀12", "034851-0080000-p12"),
         ('"千代田区丸の内1-2-3"', "131016-0011001-2-3"),
         ("東京\U000e0100都千代田区丸の内1─2━3", "131016-0011001-2-3"),
         ("千代田区霞ガ関1-2", "131016-0002001-2"),
-        ("寄居町鷹ノ巣52-1", "114081-0026000-52-1"),
-        ("龍ケ崎市薄倉2364", "082082-0006000-2364"),
+        ("寄居町鷹ノ巣52-1", "114081-0026000-p52-1"),
+        ("龍ケ崎市薄倉2364", "082082-0006000-p2364"),
         ("札幌市中央区北一西一", "011011-0001001"),
     ],
 )
@@ -249,10 +252,10 @@ def test_decode_formats(codec: AddressCodec, address_format: AddressFormat, expe
 
 
 def test_decode_county_and_koaza(codec: AddressCodec) -> None:
-    assert codec.decode("113247-0001001-12") == "埼玉県入間郡三芳町竹間沢東12番地"
+    assert codec.decode("113247-0001001-p12") == "埼玉県入間郡三芳町竹間沢東12番地"
     assert (
         codec.decode(
-            "113247-0001000-123-4",
+            "113247-0001000-p123-4",
             AddressFormat(is_county_included=False, lot_style=LotStyle.LAND_PARCEL),
         )
         == "埼玉県三芳町竹間沢123番地4"
@@ -263,10 +266,10 @@ def test_decode_county_and_koaza(codec: AddressCodec) -> None:
     ("code", "lot_style", "expected"),
     [
         ("131016-0011001-2-3", LotStyle.AUTOMATIC, "東京都千代田区丸の内1丁目2番3号"),
-        ("113247-0001000-123-4", LotStyle.AUTOMATIC, "埼玉県入間郡三芳町竹間沢123番地4"),
-        ("113247-0001000-123", LotStyle.AUTOMATIC, "埼玉県入間郡三芳町竹間沢123番地"),
+        ("113247-0001000-p123-4", LotStyle.AUTOMATIC, "埼玉県入間郡三芳町竹間沢123番地4"),
+        ("113247-0001000-p123", LotStyle.AUTOMATIC, "埼玉県入間郡三芳町竹間沢123番地"),
         (
-            "113247-0001000-123-4",
+            "113247-0001000-p123-4",
             LotStyle.RESIDENCE_INDICATION,
             "埼玉県入間郡三芳町竹間沢123番4号",
         ),
@@ -290,7 +293,7 @@ def test_decode_prefecture_and_municipality(codec: AddressCodec) -> None:
 
 
 def test_decode_keeps_short_chome_suffix(codec: AddressCodec) -> None:
-    assert codec.decode("012025-0007001-2") == "北海道函館市弁天町1丁2番地"
+    assert codec.decode("012025-0007001-p2") == "北海道函館市弁天町1丁2番地"
 
 
 def test_levels(codec: AddressCodec) -> None:
@@ -310,15 +313,15 @@ def test_decode_rejects_lot_on_complemented_oaza(codec: AddressCodec) -> None:
 
 
 def test_decode_half_width_normalizes_registry_digits(codec: AddressCodec) -> None:
-    assert codec.decode("162019-0000590-12-3") == "富山県富山市笹津7区12番地3"
+    assert codec.decode("162019-0000590-p12-3") == "富山県富山市笹津7区12番地3"
     assert (
-        codec.decode("162019-0000590-12-3", AddressFormat(digit_width=DigitWidth.FULL))
+        codec.decode("162019-0000590-p12-3", AddressFormat(digit_width=DigitWidth.FULL))
         == "富山県富山市笹津７区１２番地３"
     )
 
 
 def test_decode_kanji_large_lot(codec: AddressCodec) -> None:
-    decoded = codec.decode("113247-0001000-12345", AddressFormat(numeral_style=NumeralStyle.KANJI))
+    decoded = codec.decode("113247-0001000-p12345", AddressFormat(numeral_style=NumeralStyle.KANJI))
     assert decoded == "埼玉県入間郡三芳町竹間沢一二三四五番地"
 
 
@@ -362,8 +365,8 @@ def test_shorter_municipality_is_tried_when_no_town_matches(tmp_path: Path) -> N
     with RegistryImporter.open(":memory:") as importer:
         _ = importer.import_file(master)
         codec = AddressCodec(importer.database)
-        assert str(codec.encode("北市山田1-2")) == "469017-0001000-1-2"
-        assert str(codec.encode("北市山川1-2")) == "469025-0001000-1-2"
+        assert str(codec.encode("北市山田1-2")) == "469017-0001000-p1-2"
+        assert str(codec.encode("北市山川1-2")) == "469025-0001000-p1-2"
         assert str(codec.encode("北市山")) == "469025"
         with pytest.raises(LookupError, match="北市山"):
             _ = codec.encode("北市山谷1-2")
@@ -384,11 +387,11 @@ def test_town_without_municipality_shared_by_municipalities(tmp_path: Path) -> N
         with pytest.raises(AmbiguousAddressError) as raised:
             _ = codec.encode("山田1-2")
         assert [str(code) for code in raised.value.candidates] == [
-            "469017-0001000-1-2",
-            "469025-0001000-1-2",
+            "469017-0001000-p1-2",
+            "469025-0001000-p1-2",
         ]
-        assert str(codec.encode("〒999-0002 山田1-2")) == "469025-0001000-1-2"
-        assert str(codec.encode("川原1-2")) == "469025-0002000-1-2"
+        assert str(codec.encode("〒999-0002 山田1-2")) == "469025-0001000-p1-2"
+        assert str(codec.encode("川原1-2")) == "469025-0002000-p1-2"
 
 
 def test_town_without_municipality_in_too_many_municipalities(
@@ -409,7 +412,7 @@ def test_town_without_municipality_in_too_many_municipalities(
         with pytest.raises(AmbiguousAddressError, match="Add the municipality") as raised:
             _ = codec.encode("山田1-2")
         assert [str(code) for code in raised.value.candidates] == ["469017", "469025"]
-        assert str(codec.encode("山田東1-2")) == "469033-0001000-1-2"
+        assert str(codec.encode("山田東1-2")) == "469033-0001000-p1-2"
 
 
 AMBIGUOUS_TOWN_CODES: frozenset[str] = frozenset(
@@ -456,5 +459,19 @@ def test_decode_output_encodes_back(
         for lot_suffix in ["", "-5", "-12-3", "-123-45"]:
             code = AddressCode.parse(town_code + lot_suffix)
             lot_town_code = STREET_DIRECTION_OAZA_CODES.get(town_code, town_code)
-            expected = AddressCode.parse((lot_town_code if lot_suffix else town_code) + lot_suffix)
+            parsed = AddressCode.parse((lot_town_code if lot_suffix else town_code) + lot_suffix)
+            town = codec.resolve(lot_town_code).town
+            assert town is not None
+            expected = replace(
+                parsed, lot=parsed.lot.with_system(written_lot_system(town, lot_style))
+            )
             assert codec.encode(codec.decode(code, address_format)) == expected, str(code)
+
+
+def written_lot_system(town: Town, lot_style: LotStyle) -> LotSystem:
+    """Numbering system that encoding assigns to lot numbers written in a style."""
+    if len(town.lot_systems) == 1:
+        return next(iter(town.lot_systems))
+    if lot_style is LotStyle.LAND_PARCEL:
+        return LotSystem.LAND_PARCEL
+    return LotSystem.RESIDENCE_INDICATION

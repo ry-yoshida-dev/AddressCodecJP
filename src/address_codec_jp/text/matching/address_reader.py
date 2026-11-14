@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import replace
 
-from address_codec_jp.address import Address, AddressCode
+from address_codec_jp.address import Address, AddressCode, LotNumber
 from address_codec_jp.results import AddressMatch, GroupMatch
 from address_codec_jp.text.matching.group_matcher import GroupMatcher
 from address_codec_jp.text.matching.name_searcher import NameSearcher
@@ -26,7 +26,8 @@ class AddressReader:
 
     def __init__(self, towns: TownSource) -> None:
         self._normalizer: TextNormalizer = TextNormalizer()
-        self._matcher: AreaMatcher = AreaMatcher(towns, self._normalizer, LotNumberParser())
+        self._lot_parser: LotNumberParser = LotNumberParser()
+        self._matcher: AreaMatcher = AreaMatcher(towns, self._normalizer, self._lot_parser)
         self._group_matcher: GroupMatcher = GroupMatcher(self._matcher, self._normalizer)
         self._name_searcher: NameSearcher = NameSearcher(
             towns, self._normalizer, self._matcher.municipality_names
@@ -70,6 +71,45 @@ class AddressReader:
         return replace(
             address_match,
             remainder=self._normalizer.find_original_suffix(address, address_match.remainder),
+        )
+
+    def extend_lot(self, address_match: AddressMatch) -> AddressMatch | None:
+        """
+        Read a number at the start of the remainder as the third lot number.
+
+        ``match`` leaves the ``4`` of ``2-3-4`` in the remainder, because it is usually
+        a room number; a caller that can check the registry tries this reading too.
+
+        Parameters
+        ----------
+        address_match : AddressMatch
+            Match with two lot numbers.
+
+        Returns
+        -------
+        AddressMatch | None
+            Match with the number as the third lot number and the rest as remainder, or
+            ``None`` when the match does not have two lot numbers or the remainder does
+            not start with a number.
+        """
+        lot = address_match.address.lot
+        if len(lot.numbers) != 2 or lot.system is None:
+            return None
+        extension = self._lot_parser.parse_hyphenated_number(
+            self._normalizer.normalize(address_match.remainder)
+        )
+        if extension is None or extension[0] > LotNumber.MAX_NUMBER:
+            return None
+        number, rest = extension
+        return replace(
+            address_match,
+            address=replace(
+                address_match.address,
+                lot=LotNumber(
+                    block=lot.block, residence=lot.residence, branch=number, system=lot.system
+                ),
+            ),
+            remainder=self._normalizer.find_original_suffix(address_match.remainder, rest),
         )
 
     def match_group(self, addresses: Sequence[str]) -> GroupMatch:

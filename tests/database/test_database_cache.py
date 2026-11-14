@@ -238,7 +238,7 @@ def test_build_removes_obsolete_files(cache: DatabaseCache) -> None:
     _ = newer_database.write_bytes(b"newer")
     assert cache.describe().obsolete_paths == (stale, old_database)
     _ = cache.ensure()
-    assert cache_files(cache) == ["build-running", cache.path.name, newer_database.name]
+    assert cache_files(cache) == sorted(["build-running", cache.path.name, newer_database.name])
 
 
 def test_clear_deletes_the_database(cache: DatabaseCache) -> None:

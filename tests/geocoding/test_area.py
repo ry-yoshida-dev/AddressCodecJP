@@ -245,7 +245,7 @@ def test_find_areas_at_lists_towns_then_parcels(area_codec: AddressCodec) -> Non
     assert towns == ["131016-0011001"]
     assert area_codec.find_areas_at(PARCEL_CENTER) == []
     parcels = area_codec.find_areas_at(PARCEL_CENTER, is_parcel_included=True)
-    assert [str(area.code) for area in parcels] == ["113247-0001000-123-4"]
+    assert [str(area.code) for area in parcels] == ["113247-0001000-p123-4"]
 
 
 @pytest.fixture
@@ -344,7 +344,7 @@ def test_cache_adds_areas_on_demand(
         _ = importer.import_file(FIXTURE_DIRECTORY / "mt_town_sample.csv")
     with AddressCodec(AddressDatabase.open_read_only(cache.path), cache) as codec:
         assert codec.find_area("千代田区丸の内1-2-3").level is AddressLevel.TOWN
-        parcel = codec.find_area_code(AddressCode.parse("113247-0001000-123-4"))
+        parcel = codec.find_area_code(AddressCode.parse("113247-0001000-p123-4"))
         assert parcel.is_exact
     sources = {(area_import.source, area_import.lg_code) for area_import in imported_areas(cache)}
     assert sources == {
@@ -382,7 +382,7 @@ def test_area_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> No
     assert fields[5].startswith('{"type":"MultiPolygon"')
     assert cli.run(["--database", database, "areas-at", "35.8362,139.5321", "--parcels"]) == 0
     assert capsys.readouterr().out.splitlines() == [
-        "35.8362,139.5321\t113247-0001000-123-4\t埼玉県入間郡三芳町竹間沢123番地4"
+        "35.8362,139.5321\t113247-0001000-p123-4\t埼玉県入間郡三芳町竹間沢123番地4"
         + "\tRESIDENCE\tregistry_map"
     ]
     assert cli.run(["--database", database, "areas-at", "35.8362,139.5321"]) == 1

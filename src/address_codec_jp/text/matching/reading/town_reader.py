@@ -269,6 +269,7 @@ class TownReader:
         return TownInterpretation(
             towns=towns,
             lot=lot_result.lot,
+            lot_notation=lot_result.notation,
             remainder=lot_result.remainder,
             name_length=text_length - len(candidates.remainder) - candidates.split_digit_count,
             penalty=candidates.penalty,
@@ -281,6 +282,7 @@ class TownReader:
         return TownInterpretation(
             towns=candidates.towns,
             lot=LotNumber(),
+            lot_notation=None,
             remainder=candidates.remainder,
             name_length=text_length - len(candidates.remainder) - candidates.split_digit_count,
             penalty=candidates.penalty,

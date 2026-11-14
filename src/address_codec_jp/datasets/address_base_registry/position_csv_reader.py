@@ -22,8 +22,7 @@ class AbrPositionCsvReader:
     The dataset is identified by the header, so the files may be renamed. Both plain
     ``.csv`` files and ``.zip`` archives are accepted. Abolished rows of the block,
     residence, and parcel masters become ``LotRemoval`` records. Rows that address codes
-    cannot express are skipped: rows without a point, residences with a second residence
-    number, parcels with a third number, and non-numeric lot numbers.
+    cannot express are skipped: rows without a point and non-numeric lot numbers.
     """
 
     def read(self, path: Path) -> Iterator[PositionRecord]:
@@ -84,22 +83,18 @@ class AbrPositionCsvReader:
                     values, LotSystem.RESIDENCE_INDICATION, values["blk_id"], [values["blk_num"]]
                 )
             case AbrDataset.RESIDENCE:
-                if values["rsdt_num2"] and not values["ablt_date"]:
-                    return None
                 return self._to_entry(
                     values,
                     LotSystem.RESIDENCE_INDICATION,
                     self._residence_id(values),
-                    [values["blk_num"], values["rsdt_num"]],
+                    [values["blk_num"], values["rsdt_num"], values["rsdt_num2"]],
                 )
             case AbrDataset.PARCEL:
-                if values["prc_num3"] and not values["ablt_date"]:
-                    return None
                 return self._to_entry(
                     values,
                     LotSystem.LAND_PARCEL,
                     values["prc_id"],
-                    [number for number in (values["prc_num1"], values["prc_num2"]) if number],
+                    [values["prc_num1"], values["prc_num2"], values["prc_num3"]],
                 )
             case AbrDataset.BLOCK_POSITION:
                 return self._to_lot_position(
@@ -122,7 +117,9 @@ class AbrPositionCsvReader:
                 lot_system=lot_system,
                 lot_id=lot_id,
             )
-        if not all(number.isascii() and number.isdecimal() for number in numbers):
+        while numbers and not numbers[-1]:
+            numbers = numbers[:-1]
+        if not numbers or not all(number.isascii() and number.isdecimal() for number in numbers):
             return None
         parsed_numbers = [int(number) for number in numbers]
         if 0 in parsed_numbers:
@@ -132,10 +129,7 @@ class AbrPositionCsvReader:
             machiaza_id=values["machiaza_id"].zfill(7),
             lot_system=lot_system,
             lot_id=lot_id,
-            lot=LotNumber(
-                block=parsed_numbers[0],
-                residence=parsed_numbers[1] if len(parsed_numbers) > 1 else None,
-            ),
+            lot=LotNumber.of(parsed_numbers, lot_system),
         )
 
     def _to_lot_position(

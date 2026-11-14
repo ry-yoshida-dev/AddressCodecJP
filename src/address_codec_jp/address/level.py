@@ -16,7 +16,8 @@ class AddressLevel(Enum):
     BLOCK
         Block (``番``) of a residence indication, or a parcel (``番地``).
     RESIDENCE
-        Residence (``号``) of a residence indication, or a sub-parcel (``番地の4``).
+        Residence (``号``) of a residence indication or its branch (``3-4号``), or a
+        branch of a parcel (``番地の4``, ``番地1の1``).
     """
 
     PREFECTURE = auto()

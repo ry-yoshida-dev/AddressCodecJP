@@ -479,7 +479,7 @@ class AreaMatcher:
             return AmbiguousAddressError(f"{text!r} is ambiguous: {names}.", candidates)
         town = next(iter(towns.values()))
         return AddressMatch(
-            address=Address.for_town(town, best[0].lot),
+            address=Address.for_town(town, best[0].lot_for(town)),
             remainder=best[0].remainder,
             normalized_address=normalized_address,
             postal_code=postal_code,
@@ -490,7 +490,7 @@ class AreaMatcher:
         self, interpretations: list[TownInterpretation]
     ) -> tuple[AddressCode, ...]:
         codes = {
-            AddressCode(lg_code=town.lg_code, machiaza_id=town.machiaza_id, lot=item.lot)
+            AddressCode(lg_code=town.lg_code, machiaza_id=town.machiaza_id, lot=item.lot_for(town))
             for item in interpretations
             for town in item.towns
         }

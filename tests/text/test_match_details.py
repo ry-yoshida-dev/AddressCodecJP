@@ -8,6 +8,7 @@ from address_codec_jp import (
     AddressNotFoundError,
     AmbiguousAddressError,
     LotNumber,
+    LotSystem,
     MatchTier,
     RegistryImporter,
 )
@@ -60,7 +61,7 @@ def test_resolve_returns_registered_areas(codec: AddressCodec) -> None:
     assert (address.prefecture.name, address.town.oaza_name, address.lot) == (
         "東京都",
         "浅草橋",
-        LotNumber(block=2),
+        LotNumber(block=2, system=LotSystem.RESIDENCE_INDICATION),
     )
     assert str(address.code) == "131067-0004001-2"
     assert codec.resolve("130001").municipality is None
@@ -76,7 +77,11 @@ def test_address_rejects_areas_that_do_not_contain_each_other(codec: AddressCode
     with pytest.raises(ValueError, match="not in municipality"):
         _ = Address(prefecture=taito.prefecture, municipality=taito, town=marunouchi)
     with pytest.raises(ValueError, match="require a town"):
-        _ = Address(prefecture=taito.prefecture, municipality=taito, lot=LotNumber(block=1))
+        _ = Address(
+            prefecture=taito.prefecture,
+            municipality=taito,
+            lot=LotNumber(block=1, system=LotSystem.LAND_PARCEL),
+        )
 
 
 def test_find_returns_none_instead_of_raising(importer: RegistryImporter) -> None:

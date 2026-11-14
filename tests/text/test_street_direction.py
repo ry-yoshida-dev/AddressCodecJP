@@ -32,11 +32,11 @@ def test_street_direction_before_or_after_the_oaza_is_its_koaza(
 @pytest.mark.parametrize(
     ("address", "expected"),
     [
-        ("京都市下京区烏丸通塩小路下る東塩小路町721", "261068-0416000-721"),
-        ("京都市下京区東塩小路町烏丸通塩小路下る721番地", "261068-0416000-721"),
-        ("京都市中京区烏丸通御池上る二条殿町552", "261041-0369000-552"),
-        ("中京区竹屋町通烏丸西入亀屋町12-3", "261041-0102000-12-3"),
-        ("中京区竹屋町通柳馬場西入四丁目5", "261041-1337000-5"),
+        ("京都市下京区烏丸通塩小路下る東塩小路町721", "261068-0416000-p721"),
+        ("京都市下京区東塩小路町烏丸通塩小路下る721番地", "261068-0416000-p721"),
+        ("京都市中京区烏丸通御池上る二条殿町552", "261041-0369000-p552"),
+        ("中京区竹屋町通烏丸西入亀屋町12-3", "261041-0102000-p12-3"),
+        ("中京区竹屋町通柳馬場西入四丁目5", "261041-1337000-p5"),
     ],
 )
 def test_lot_numbers_belong_to_the_oaza_of_the_street_direction(
@@ -48,8 +48,8 @@ def test_lot_numbers_belong_to_the_oaza_of_the_street_direction(
 @pytest.mark.parametrize(
     ("address", "expected"),
     [
-        ("中京区烏丸通竹屋町西入亀屋町3", "261041-1355102-3"),
-        ("東山区大和大路通正面下る大和大路5", "261050-0101102-5"),
+        ("中京区烏丸通竹屋町西入亀屋町3", "261041-1355102-p3"),
+        ("東山区大和大路通正面下る大和大路5", "261050-0101102-p5"),
     ],
 )
 def test_street_direction_without_registered_oaza_keeps_its_lot_numbers(
@@ -61,8 +61,8 @@ def test_street_direction_without_registered_oaza_keeps_its_lot_numbers(
 def test_lot_numbers_of_a_street_direction_under_a_complemented_oaza_stay_on_it(
     located_codec: AddressCodec,
 ) -> None:
-    with pytest.raises(AddressNotFoundError, match="261050-0101102-5"):
-        located_codec.verify_lot(AddressCode.parse("261050-0101102-5"))
+    with pytest.raises(AddressNotFoundError, match="261050-0101102-p5"):
+        located_codec.verify_lot(AddressCode.parse("261050-0101102-p5"))
 
 
 @pytest.mark.parametrize(
@@ -83,26 +83,26 @@ def test_notation_variants_of_a_street_direction_are_folded(
 
 def test_variant_with_repeated_directions_and_lot_numbers(codec: AddressCodec) -> None:
     address_match = codec.match("下京区烏丸通り塩小路上がる西入ル東塩小路町8-1 2階")
-    assert str(address_match.code) == "261068-0416000-8-1"
+    assert str(address_match.code) == "261068-0416000-p8-1"
     assert address_match.remainder == "2階"
 
 
 def test_street_direction_decides_between_oaza_of_the_same_name(codec: AddressCodec) -> None:
-    assert str(codec.encode("中京区釜座通竹屋町上る亀屋町5")) == "261041-0106000-5"
+    assert str(codec.encode("中京区釜座通竹屋町上る亀屋町5")) == "261041-0106000-p5"
     with pytest.raises(AmbiguousAddressError) as raised:
         _ = codec.encode("中京区亀屋町5")
     assert [str(code) for code in raised.value.candidates] == [
-        "261041-0102000-5",
-        "261041-0106000-5",
+        "261041-0102000-p5",
+        "261041-0106000-p5",
     ]
 
 
 @pytest.mark.parametrize(
     ("address", "expected"),
     [
-        ("中京区烏丸通竹屋町上る亀屋町5", "261041-0102000-5"),
+        ("中京区烏丸通竹屋町上る亀屋町5", "261041-0102000-p5"),
         ("中京区釜座通夷川上る亀屋町", "261041-0106000"),
-        ("中京区丸太町通柳馬場東入四丁目5", "261041-1337000-5"),
+        ("中京区丸太町通柳馬場東入四丁目5", "261041-1337000-p5"),
     ],
 )
 def test_unregistered_street_direction_selects_the_most_similar_oaza(
@@ -118,8 +118,8 @@ def test_unregistered_street_direction_selects_the_most_similar_oaza(
     [
         ("京都市烏丸通塩小路下る東塩小路町", "261068-0416115"),
         ("烏丸通塩小路下る東塩小路町", "261068-0416115"),
-        ("京都府烏丸通塩小路下る東塩小路町721", "261068-0416000-721"),
-        ("竹屋町通烏丸西入亀屋町12-3", "261041-0102000-12-3"),
+        ("京都府烏丸通塩小路下る東塩小路町721", "261068-0416000-p721"),
+        ("竹屋町通烏丸西入亀屋町12-3", "261041-0102000-p12-3"),
         ("烏丸通り塩小路下ル東塩小路町", "261068-0416115"),
     ],
 )
@@ -134,12 +134,14 @@ def test_street_direction_without_the_ward_respects_within(codec: AddressCodec) 
         _ = codec.encode("烏丸通塩小路下る東塩小路町", within="261041")
 
 
-@pytest.mark.parametrize("code", ["261068-0416115-538-1", "261068-0416000-538-1"])
+@pytest.mark.parametrize("code", ["261068-0416115-p538-1", "261068-0416000-p538-1"])
 def test_lot_numbers_of_a_street_direction_are_located_on_its_oaza(
     located_codec: AddressCodec, code: str
 ) -> None:
     location = located_codec.locate_code(code)
-    assert str(location.code) == "261068-0416000-538-1"
+    assert str(location.code) == code
+    assert str(location.located_code) == code
+    assert location.coordinate == located_codec.locate_code("261068-0416000-p538-1").coordinate
     assert location.level is AddressLevel.RESIDENCE
     assert location.is_exact
     located_codec.verify_lot(AddressCode.parse(code))
@@ -149,8 +151,8 @@ def test_lot_numbers_of_a_street_direction_are_located_on_its_oaza(
 def test_unregistered_lot_numbers_of_a_street_direction_fail_verification(
     located_codec: AddressCodec,
 ) -> None:
-    with pytest.raises(AddressNotFoundError, match="261068-0416000-538-2"):
-        located_codec.verify_lot(AddressCode.parse("261068-0416115-538-2"))
+    with pytest.raises(AddressNotFoundError, match="261068-0416115-p538-2"):
+        located_codec.verify_lot(AddressCode.parse("261068-0416115-p538-2"))
 
 
 @pytest.mark.parametrize(
@@ -178,7 +180,7 @@ def test_street_direction_is_not_read_outside_kyoto(codec: AddressCodec) -> None
     [
         ("261068-0416115", AddressFormat(), "京都府京都市下京区烏丸通塩小路下る東塩小路町"),
         (
-            "261041-1355102-3",
+            "261041-1355102-p3",
             AddressFormat(),
             "京都府京都市中京区烏丸通竹屋町西入亀屋町3番地",
         ),
@@ -201,3 +203,14 @@ def test_town_records_whether_its_koaza_is_a_street_direction(codec: AddressCode
     assert street is not None
     assert oaza is not None
     assert (street.is_street_direction, oaza.is_street_direction) == (True, False)
+
+
+def test_lot_numbers_lie_within_their_street_direction(located_codec: AddressCodec) -> None:
+    address = "京都市下京区烏丸通塩小路下る東塩小路町538番地1"
+    within = "261068-0416115"
+    assert str(located_codec.encode(address, within=within)) == "261068-0416000-p538-1"
+    verified = located_codec.encode(address, within=within, is_lot_verified=True)
+    assert str(verified) == "261068-0416000-p538-1"
+    assert str(located_codec.encode("烏丸通塩小路下る東塩小路町", within=within)) == within
+    with pytest.raises(AddressNotFoundError, match="does not lie within"):
+        _ = located_codec.encode("京都市下京区東塩小路町", within=within)

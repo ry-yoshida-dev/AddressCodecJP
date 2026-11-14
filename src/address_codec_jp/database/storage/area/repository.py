@@ -165,7 +165,7 @@ class AreaRepository:
         """
         stored_count = 0
         for record in records:
-            if record.source is not AreaSource.REGISTRY_MAP or not record.code.lot.numbers:
+            if record.source is not AreaSource.REGISTRY_MAP or not record.code.lot.is_land_parcel:
                 raise ValueError(f"{record.code} from {record.source.value} is not a parcel.")
             rows: list[tuple[object, ...]] = self._connection.execute(
                 "INSERT INTO parcel_shapes (code, shape) VALUES (?, ?) "

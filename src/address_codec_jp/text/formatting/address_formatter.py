@@ -120,7 +120,7 @@ class AddressFormatter:
         return (
             self._format_chome(town, address_format)
             + ("" if town.is_street_direction else self._koaza_text(town, address_format))
-            + self._format_lot(town, lot_numbers, address_format)
+            + self._format_lot(lot, lot_numbers, address_format)
         )
 
     def _koaza_text(self, town: Town, address_format: AddressFormat) -> str:
@@ -141,41 +141,47 @@ class AddressFormatter:
                 suffix = "チョウメ"
         return self._format_numeral(town.chome_number, address_format) + suffix
 
-    def _format_lot(self, town: Town, lot_numbers: list[str], address_format: AddressFormat) -> str:
-        block_marker, residence_marker, parcel_marker = self._lot_markers(
+    def _format_lot(
+        self, lot: LotNumber, lot_numbers: list[str], address_format: AddressFormat
+    ) -> str:
+        block_marker, residence_marker, parcel_marker, branch_marker = self._lot_markers(
             address_format.name_script
         )
-        match self._resolve_lot_style(town, address_format.lot_style), lot_numbers:
+        match self._resolve_lot_style(lot, address_format.lot_style), lot_numbers:
             case _, []:
                 return ""
             case LotStyle.RESIDENCE_INDICATION, [block]:
                 return f"{block}{block_marker}"
             case LotStyle.RESIDENCE_INDICATION, [block, residence]:
                 return f"{block}{block_marker}{residence}{residence_marker}"
+            case LotStyle.RESIDENCE_INDICATION, [block, residence, branch]:
+                return f"{block}{block_marker}{residence}-{branch}{residence_marker}"
             case LotStyle.LAND_PARCEL, [block]:
                 return f"{block}{parcel_marker}"
             case LotStyle.LAND_PARCEL, [block, residence]:
                 return f"{block}{parcel_marker}{residence}"
+            case LotStyle.LAND_PARCEL, [block, residence, branch]:
+                return f"{block}{parcel_marker}{residence}{branch_marker}{branch}"
             case LotStyle.HYPHEN, _:
                 return "-".join(lot_numbers)
             case _:
                 raise ValueError(f"Unsupported lot numbers: {lot_numbers}.")
 
-    def _resolve_lot_style(self, town: Town, lot_style: LotStyle) -> LotStyle:
+    def _resolve_lot_style(self, lot: LotNumber, lot_style: LotStyle) -> LotStyle:
         match lot_style:
-            case LotStyle.AUTOMATIC if LotSystem.RESIDENCE_INDICATION in town.lot_systems:
-                return LotStyle.RESIDENCE_INDICATION
-            case LotStyle.AUTOMATIC:
+            case LotStyle.AUTOMATIC if lot.system is LotSystem.LAND_PARCEL:
                 return LotStyle.LAND_PARCEL
+            case LotStyle.AUTOMATIC:
+                return LotStyle.RESIDENCE_INDICATION
             case _:
                 return lot_style
 
-    def _lot_markers(self, name_script: NameScript) -> tuple[str, str, str]:
+    def _lot_markers(self, name_script: NameScript) -> tuple[str, str, str, str]:
         match name_script:
             case NameScript.KANJI:
-                return "番", "号", "番地"
+                return "番", "号", "番地", "の"
             case NameScript.KATAKANA:
-                return "バン", "ゴウ", "バンチ"
+                return "バン", "ゴウ", "バンチ", "ノ"
 
     def _format_numeral(self, number: int, address_format: AddressFormat) -> str:
         match address_format.numeral_style:

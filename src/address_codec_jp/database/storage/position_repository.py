@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from geo_coordinate import GeodeticCrs
 
-from address_codec_jp.address import AddressCode, DesignatedCity, LotNumber, LotSystem
+from address_codec_jp.address import AddressCode, DesignatedCity, LotNumber
 from address_codec_jp.database.storage.lot_system_column import LotSystemColumn
 from address_codec_jp.database.storage.position_changes import PositionChanges
 from address_codec_jp.datasets.address_base_registry import (
@@ -66,12 +66,13 @@ class PositionRepository:
             lot_id TEXT NOT NULL,
             block INTEGER NOT NULL,
             residence INTEGER NOT NULL,
+            branch INTEGER NOT NULL,
             PRIMARY KEY (lg_code, machiaza_id, lot_system, lot_id)
         ) WITHOUT ROWID
         """,
         """
         CREATE INDEX lot_entries_by_number
-        ON lot_entries (lg_code, machiaza_id, lot_system, block, residence)
+        ON lot_entries (lg_code, machiaza_id, lot_system, block, residence, branch)
         """,
         """
         CREATE INDEX town_positions_by_coordinate
@@ -99,7 +100,7 @@ class PositionRepository:
         "lot_entries",
         "lot_positions",
     )
-    _ABSENT_RESIDENCE: ClassVar[int] = 0
+    _ABSENT_NUMBER: ClassVar[int] = 0
     _BATCH_SIZE: ClassVar[int] = 10000
 
     def __init__(self, connection: sqlite3.Connection) -> None:
@@ -164,7 +165,7 @@ class PositionRepository:
 
     def contains_lot(self, lg_code: str, machiaza_id: str, lot: LotNumber) -> bool:
         """
-        Tell whether lot numbers are registered in a town under either numbering system.
+        Tell whether lot numbers are registered in a town under their numbering system.
 
         Parameters
         ----------
@@ -173,8 +174,10 @@ class PositionRepository:
         machiaza_id : str
             Seven-digit town identifier.
         lot : LotNumber
-            Block and residence numbers. Without a residence, any residence of the block
-            counts.
+            Lot numbers with a block. A residence indication block or residence without
+            its further numbers counts when any residence or branch within it is
+            registered. Land parcel numbers must match exactly, because a branch is a
+            separate parcel.
 
         Returns
         -------
@@ -186,14 +189,20 @@ class PositionRepository:
         ValueError
             If ``lot`` has no block number.
         """
-        block, residence = self._to_number_columns(lot)
-        residence_condition = "" if lot.residence is None else " AND residence = ?"
-        parameters: list[str | int] = [lg_code, machiaza_id, block]
-        if lot.residence is not None:
-            parameters.append(residence)
+        lot_system, *number_columns = self._to_number_columns(lot)
+        conditions = ["lg_code = ?", "machiaza_id = ?", "lot_system = ?", "block = ?"]
+        parameters: list[str | int] = [lg_code, machiaza_id, lot_system, number_columns[0]]
+        for column, number, value in zip(
+            ("residence", "branch"),
+            (lot.residence, lot.branch),
+            number_columns[1:],
+            strict=True,
+        ):
+            if number is not None or lot.is_land_parcel:
+                conditions.append(f"{column} = ?")
+                parameters.append(value)
         row = self._fetch_first(
-            "SELECT EXISTS (SELECT 1 FROM lot_entries WHERE lg_code = ? AND machiaza_id = ? "
-            + f"AND block = ?{residence_condition})",
+            "SELECT EXISTS (SELECT 1 FROM lot_entries WHERE " + " AND ".join(conditions) + ")",
             parameters,
         )
         return row is not None and bool(row[0])
@@ -240,7 +249,7 @@ class PositionRepository:
     def _save_chunk(self, records: Sequence[PositionRecord]) -> None:
         area_rows: list[tuple[str, float, float, int]] = []
         town_rows: list[tuple[str, str, int, float, float, int]] = []
-        entry_rows: list[tuple[str, str, int, str, int, int]] = []
+        entry_rows: list[tuple[str | int, ...]] = []
         lot_position_rows: list[tuple[str, str, int, str, float, float, int]] = []
         for record in records:
             match record:
@@ -258,13 +267,14 @@ class PositionRepository:
                         )
                     )
                 case LotEntry():
+                    _, *number_columns = self._to_number_columns(record.lot)
                     entry_rows.append(
                         (
                             record.lg_code,
                             record.machiaza_id,
                             LotSystemColumn.encode(record.lot_system),
                             record.lot_id,
-                            *self._to_number_columns(record.lot),
+                            *number_columns,
                         )
                     )
                 case LotPosition():
@@ -288,7 +298,7 @@ class PositionRepository:
             "INSERT OR REPLACE INTO town_positions VALUES (?, ?, ?, ?, ?, ?)", town_rows
         )
         _ = self._connection.executemany(
-            "INSERT OR REPLACE INTO lot_entries VALUES (?, ?, ?, ?, ?, ?)", entry_rows
+            "INSERT OR REPLACE INTO lot_entries VALUES (?, ?, ?, ?, ?, ?, ?)", entry_rows
         )
         _ = self._connection.executemany(
             "INSERT OR REPLACE INTO lot_positions VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -375,7 +385,7 @@ class PositionRepository:
         )
 
     def find_lot(
-        self, lg_code: str, machiaza_id: str, lot_systems: Sequence[LotSystem], lot: LotNumber
+        self, lg_code: str, machiaza_id: str, lot: LotNumber
     ) -> RepresentativePoint | None:
         """
         Fetch the point of a block, residence, or parcel by its numbers.
@@ -386,33 +396,28 @@ class PositionRepository:
             Six-digit local government code.
         machiaza_id : str
             Seven-digit town identifier.
-        lot_systems : Sequence[LotSystem]
-            Numbering systems to search, in order of preference.
         lot : LotNumber
-            Block and residence numbers. ``block`` must be given.
+            Lot numbers with a block, looked up in their numbering system.
 
         Returns
         -------
         RepresentativePoint | None
-            Point of the first match, or ``None`` when no point is imported.
+            Point of the lot, or ``None`` when no point is imported.
 
         Raises
         ------
         ValueError
             If ``lot`` has no block number.
         """
-        block, residence = self._to_number_columns(lot)
-        for lot_system in lot_systems:
-            row = self._fetch_first(
-                "SELECT p.longitude, p.latitude, p.epsg FROM lot_entries AS e "
-                + "JOIN lot_positions AS p USING (lg_code, machiaza_id, lot_system, lot_id) "
-                + "WHERE e.lg_code = ? AND e.machiaza_id = ? AND e.lot_system = ? "
-                + "AND e.block = ? AND e.residence = ? ORDER BY e.lot_id LIMIT 1",
-                (lg_code, machiaza_id, LotSystemColumn.encode(lot_system), block, residence),
-            )
-            if row is not None:
-                return self._to_point(row)
-        return None
+        row = self._fetch_first(
+            "SELECT p.longitude, p.latitude, p.epsg FROM lot_entries AS e "
+            + "JOIN lot_positions AS p USING (lg_code, machiaza_id, lot_system, lot_id) "
+            + "WHERE e.lg_code = ? AND e.machiaza_id = ? AND e.lot_system = ? "
+            + "AND e.block = ? AND e.residence = ? AND e.branch = ? "
+            + "ORDER BY e.lot_id LIMIT 1",
+            (lg_code, machiaza_id, *self._to_number_columns(lot)),
+        )
+        return None if row is None else self._to_point(row)
 
     def list_lot_points(self, bounds: CoordinateBounds) -> list[AddressPoint]:
         """
@@ -431,7 +436,7 @@ class PositionRepository:
             Codes with lot numbers and their points.
         """
         rows: list[tuple[object, ...]] = self._connection.execute(
-            "SELECT p.lg_code, p.machiaza_id, e.block, e.residence, "
+            "SELECT p.lg_code, p.machiaza_id, e.lot_system, e.block, e.residence, e.branch, "
             + "p.longitude, p.latitude, p.epsg FROM lot_positions AS p "
             + "JOIN lot_entries AS e USING (lg_code, machiaza_id, lot_system, lot_id) "
             + "WHERE p.latitude BETWEEN ? AND ? AND p.longitude BETWEEN ? AND ?",
@@ -442,9 +447,9 @@ class PositionRepository:
                 code=AddressCode(
                     lg_code=str(row[0]),
                     machiaza_id=str(row[1]),
-                    lot=self._to_lot(row[2], row[3]),
+                    lot=self._to_lot(row[2], row[3:6]),
                 ),
-                point=self._to_point(row[4:]),
+                point=self._to_point(row[6:]),
             )
             for row in rows
         ]
@@ -484,11 +489,12 @@ class PositionRepository:
             bounds.east_degrees,
         )
 
-    def _to_lot(self, block: object, residence: object) -> LotNumber:
-        if not (isinstance(block, int) and isinstance(residence, int)):
-            raise RuntimeError(f"Malformed lot numbers: {block!r}, {residence!r}.")
-        return LotNumber(
-            block=block, residence=None if residence == self._ABSENT_RESIDENCE else residence
+    def _to_lot(self, lot_system: object, numbers: tuple[object, ...]) -> LotNumber:
+        if not all(isinstance(number, int) for number in numbers):
+            raise RuntimeError(f"Malformed lot numbers: {numbers!r}.")
+        return LotNumber.of(
+            [number for number in numbers if isinstance(number, int) and number],
+            LotSystemColumn.decode(lot_system),
         )
 
     def _fetch_first(
@@ -499,10 +505,15 @@ class PositionRepository:
         )
         return rows[0] if rows else None
 
-    def _to_number_columns(self, lot: LotNumber) -> tuple[int, int]:
-        if lot.block is None:
+    def _to_number_columns(self, lot: LotNumber) -> tuple[int, int, int, int]:
+        if lot.block is None or lot.system is None:
             raise ValueError("A lot position requires a block number.")
-        return lot.block, self._ABSENT_RESIDENCE if lot.residence is None else lot.residence
+        return (
+            LotSystemColumn.encode(lot.system),
+            lot.block,
+            self._ABSENT_NUMBER if lot.residence is None else lot.residence,
+            self._ABSENT_NUMBER if lot.branch is None else lot.branch,
+        )
 
     def _to_point(self, row: tuple[object, ...]) -> RepresentativePoint:
         longitude, latitude, epsg = row

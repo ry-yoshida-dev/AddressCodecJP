@@ -46,8 +46,8 @@ def degrees(location: AddressLocation) -> tuple[float, float]:
         ("千代田区丸の内1-5", "131016-0011001", AddressLevel.TOWN, (35.68156, 139.767201)),
         ("千代田区丸の内1-2-4", "131016-0011001-2", AddressLevel.BLOCK, (35.682, 139.765)),
         ("千代田区丸の内3丁目", "131016", AddressLevel.MUNICIPALITY, (35.694003, 139.753634)),
-        ("三芳町竹間沢123-4", "113247-0001000-123-4", AddressLevel.RESIDENCE, (35.8362, 139.5321)),
-        ("三芳町竹間沢123-5", "113247-0001000-123", AddressLevel.BLOCK, (35.836, 139.532)),
+        ("三芳町竹間沢123-4", "113247-0001000-p123-4", AddressLevel.RESIDENCE, (35.8362, 139.5321)),
+        ("三芳町竹間沢123-5", "113247-0001000", AddressLevel.TOWN, (35.835, 139.531)),
         ("三芳町竹間沢124-1", "113247-0001000", AddressLevel.TOWN, (35.835, 139.531)),
         ("三芳町竹間沢字東12", "113247-0001000", AddressLevel.TOWN, (35.835, 139.531)),
         ("台東区浅草橋", "131067", AddressLevel.MUNICIPALITY, (35.712607, 139.779984)),
@@ -176,13 +176,17 @@ def test_dataset_is_detected_by_header(file_name: str, dataset: AbrDataset) -> N
     assert AbrCsvFile(FIXTURE_DIRECTORY / "positions" / file_name).detect_dataset() is dataset
 
 
-def test_unexpressible_lots_are_skipped_and_abolished_lots_removed() -> None:
+def test_third_lot_numbers_are_read_and_abolished_lots_removed() -> None:
     reader = AbrPositionCsvReader()
     positions = FIXTURE_DIRECTORY / "positions"
     block_records = list(reader.read(positions / "mt_rsdtdsp_blk_sample.csv"))
     assert [type(record) for record in block_records] == [LotEntry, LotRemoval]
-    assert len(list(reader.read(positions / "mt_rsdtdsp_rsdt_sample.csv"))) == 1
-    assert len(list(reader.read(positions / "mt_parcel_sample.csv"))) == 5
+    residences = list(reader.read(positions / "mt_rsdtdsp_rsdt_sample.csv"))
+    assert [record.lot.numbers for record in residences if isinstance(record, LotEntry)] == [
+        [2, 3],
+        [2, 4, 1],
+    ]
+    assert len(list(reader.read(positions / "mt_parcel_sample.csv"))) == 6
 
 
 def test_newer_master_removes_abolished_lots(

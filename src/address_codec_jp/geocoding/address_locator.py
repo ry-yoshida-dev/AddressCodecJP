@@ -1,8 +1,6 @@
-from typing import ClassVar
-
 from geo_coordinate import GeodeticCrs
 
-from address_codec_jp.address import AddressCode, LotSystem
+from address_codec_jp.address import AddressCode
 from address_codec_jp.errors import DatasetNotImportedError, PositionNotFoundError
 from address_codec_jp.geocoding.datum_converter import DatumConverter
 from address_codec_jp.geocoding.position_source import PositionSource
@@ -15,19 +13,15 @@ class AddressLocator:
     Finder of the representative point of an address code.
 
     The code itself is tried first, then its enclosing areas given by
-    ``AddressCode.lineage``: block, town, oaza (for a chome or koaza), municipality, and
-    prefecture.
+    ``AddressCode.lineage``: residence and block (for residence indication), town, oaza
+    (for a chome or koaza), municipality, and prefecture. Lot numbers are looked up in
+    their own numbering system only.
 
     Parameters
     ----------
     repository : PositionSource
         Imported representative points, such as ``PositionRepository``.
     """
-
-    _UNKNOWN_TOWN_LOT_SYSTEMS: ClassVar[tuple[LotSystem, ...]] = (
-        LotSystem.RESIDENCE_INDICATION,
-        LotSystem.LAND_PARCEL,
-    )
 
     def __init__(self, repository: PositionSource) -> None:
         self._repository: PositionSource = repository
@@ -76,8 +70,7 @@ class AddressLocator:
     def _find_point(self, code: AddressCode) -> RepresentativePoint | None:
         if code.machiaza_id is None:
             return self._repository.find_area(code.lg_code)
+        if code.lot.numbers:
+            return self._repository.find_lot(code.lg_code, code.machiaza_id, code.lot)
         town = self._repository.find_town(code.lg_code, code.machiaza_id)
-        if not code.lot.numbers:
-            return None if town is None else town.point
-        lot_systems = self._UNKNOWN_TOWN_LOT_SYSTEMS if town is None else (town.lot_system,)
-        return self._repository.find_lot(code.lg_code, code.machiaza_id, lot_systems, code.lot)
+        return None if town is None else town.point

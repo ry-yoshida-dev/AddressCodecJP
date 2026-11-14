@@ -84,8 +84,8 @@ def test_group_decides_town_without_municipality(tmp_path: Path) -> None:
         group = codec.match_group(["山田1-2", "川原1-2"])
         assert str(group.area) == "469025"
         assert [str(item.code) for item in group.matches] == [
-            "469025-0001000-1-2",
-            "469025-0002000-1-2",
+            "469025-0001000-p1-2",
+            "469025-0002000-p1-2",
         ]
 
 

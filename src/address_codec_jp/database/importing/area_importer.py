@@ -7,7 +7,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Self
 
-from address_codec_jp.address import AddressCode, LotNumber
+from address_codec_jp.address import AddressCode, LotNumber, LotSystem
 from address_codec_jp.database.importing.census_area_matcher import CensusAreaMatcher
 from address_codec_jp.database.storage import (
     AddressDatabase,
@@ -46,7 +46,7 @@ class AreaImporter:
     """
 
     _HASH_CHUNK_SIZE: ClassVar[int] = 1 << 20
-    _LOT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"(\d+)(?:-(\d+))?")
+    _LOT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"(\d+)(?:-(\d+)(?:-(\d+))?)?")
 
     def __init__(self, database: AddressDatabase) -> None:
         if not database.is_writable:
@@ -286,11 +286,10 @@ class AreaImporter:
         match_result = self._LOT_PATTERN.fullmatch(self._normalizer.normalize(lot_text))
         if match_result is None:
             return None
-        residence = match_result.group(2)
-        return LotNumber(
-            block=int(match_result.group(1)),
-            residence=None if residence is None else int(residence),
-        )
+        numbers = [int(number) for number in match_result.groups() if number is not None]
+        if 0 in numbers:
+            return None
+        return LotNumber.of(numbers, LotSystem.LAND_PARCEL)
 
     def _digest(self, path: Path) -> str:
         digest = hashlib.sha256()
