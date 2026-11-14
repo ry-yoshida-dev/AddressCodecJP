@@ -307,7 +307,7 @@ def test_locked_database_is_not_reported_as_foreign(
     _ = writer.execute("BEGIN EXCLUSIVE")
     try:
         with pytest.raises(sqlite3.OperationalError, match="locked"):
-            _ = AddressDatabase.open_read_only(database)
+            _ = AddressDatabase.open_read_only(database, busy_timeout_seconds=0.05)
         with pytest.raises(sqlite3.OperationalError, match="locked"):
             _ = AddressDatabase.open_writable(database)
     finally:

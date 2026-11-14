@@ -11,6 +11,7 @@ OpenAPI documentation is served at `/docs`.
 | `ADDRESS_CODEC_JP_API_THREADS` | `4` | Worker threads per process, each with its own codec |
 | `ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE` | `1000` | Inputs per batch request |
 | `ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH` | `1000` | Characters per input |
+| `ADDRESS_CODEC_JP_API_BUSY_TIMEOUT` | `1` | Seconds a query waits while another process writes the database before it is answered with 503 |
 | `ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED` | `true` | Answer 503 instead of falling back to an enclosing area when a municipality lacks prepared data |
 
 ## Endpoints

@@ -103,7 +103,11 @@ class ApplicationFactory:
         UnsupportedDatabaseError
             If the cache holds a database of another version.
         """
-        pool = CodecPool(self._settings.cache_directory, self._settings.thread_count)
+        pool = CodecPool(
+            self._settings.cache_directory,
+            self._settings.thread_count,
+            self._settings.busy_timeout_seconds,
+        )
         pool.check()
 
         @asynccontextmanager

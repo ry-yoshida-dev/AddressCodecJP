@@ -1,8 +1,10 @@
 import asyncio
+import math
 import re
 import shutil
 import sqlite3
 import threading
+import time
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -24,6 +26,7 @@ from address_codec_jp import (
     RegistryFormatError,
     RegistryImporter,
 )
+from address_codec_jp.database.cache import CacheStatus
 from address_codec_jp.database.storage import AddressDatabase
 from address_codec_jp.frontends.api import (
     ApplicationFactory,
@@ -129,6 +132,7 @@ def open_client(
     is_coverage_required: bool = True,
     is_server_exception_raised: bool = True,
     max_input_length: int = 1000,
+    busy_timeout_seconds: float = 1.0,
 ) -> TestClient:
     settings = ServiceSettings(
         publisher=PUBLISHER,
@@ -137,6 +141,7 @@ def open_client(
         max_batch_size=3,
         is_coverage_required=is_coverage_required,
         max_input_length=max_input_length,
+        busy_timeout_seconds=busy_timeout_seconds,
     )
     application: FastAPI = ApplicationFactory(settings).create()
     return TestClient(application, raise_server_exceptions=is_server_exception_raised)
@@ -373,6 +378,48 @@ def test_pool_reopens_a_replaced_database(cache_directory: Path, tmp_path: Path)
     pool.close()
 
 
+def test_coverage_read_does_not_stall_other_threads(
+    cache_directory: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pool = CodecPool(cache_directory, thread_count=2)
+    original_describe = DatabaseCache.describe
+    is_first_read = threading.Event()
+    is_first_read.set()
+    is_reading = threading.Event()
+    is_released = threading.Event()
+
+    def describe(cache: DatabaseCache) -> CacheStatus:
+        if is_first_read.is_set():
+            is_first_read.clear()
+            is_reading.set()
+            _ = is_released.wait(5.0)
+        return original_describe(cache)
+
+    monkeypatch.setattr(DatabaseCache, "describe", describe)
+    slow = threading.Thread(target=lambda: asyncio.run(pool.run(identify)))
+    slow.start()
+    assert is_reading.wait(5.0)
+    try:
+        _, lots = asyncio.run(asyncio.wait_for(pool.run(identify), timeout=2.0))
+        assert lots == frozenset({"131016"})
+    finally:
+        is_released.set()
+        slow.join()
+        pool.close()
+
+
+def test_busy_timeout_is_read_from_the_environment() -> None:
+    environment = {ServiceSettings.PUBLISHER_VARIABLE: PUBLISHER}
+    assert ServiceSettings.from_environment(environment).busy_timeout_seconds == 1.0
+    settings = ServiceSettings.from_environment(
+        {**environment, ServiceSettings.BUSY_TIMEOUT_VARIABLE: "0.25"}
+    )
+    assert settings.busy_timeout_seconds == 0.25
+    for timeout in (-1.0, math.inf, math.nan):
+        with pytest.raises(ValueError, match="busy_timeout_seconds"):
+            _ = ServiceSettings(publisher=PUBLISHER, busy_timeout_seconds=timeout)
+
+
 def test_pool_closes_every_thread(cache_directory: Path) -> None:
     pool = CodecPool(cache_directory, thread_count=3)
     _ = asyncio.run(pool.run(identify))
@@ -600,18 +647,20 @@ def test_cleared_cache_is_reported_as_not_prepared(cache_directory: Path) -> Non
         assert body_of(response)["error_type"] == "DatasetNotImportedError"
 
 
-def test_locked_database_asks_to_retry(
-    cache_directory: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(AddressDatabase, "BUSY_TIMEOUT_SECONDS", 0.05)
+def test_locked_database_asks_to_retry_promptly(cache_directory: Path) -> None:
     database_path = DatabaseCache.default(directory=cache_directory).path
-    with open_client(cache_directory, is_server_exception_raised=False) as client:
+    with open_client(
+        cache_directory, is_server_exception_raised=False, busy_timeout_seconds=0.05
+    ) as client:
         writer = sqlite3.connect(database_path, isolation_level=None)
         _ = writer.execute("BEGIN EXCLUSIVE")
+        started_at = time.monotonic()
         locked = client.get("/v1/codes/131016-0011001")
+        elapsed_seconds = time.monotonic() - started_at
         _ = writer.execute("ROLLBACK")
         writer.close()
         released = client.get("/v1/codes/131016-0011001")
+    assert elapsed_seconds < AddressDatabase.BUSY_TIMEOUT_SECONDS / 10
     assert locked.status_code == 503
     assert locked.headers["retry-after"] == "1"
     assert body_of(locked)["error_type"] == "DatabaseBusyError"

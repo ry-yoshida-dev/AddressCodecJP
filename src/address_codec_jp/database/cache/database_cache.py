@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import shutil
 import sqlite3
@@ -87,11 +88,15 @@ class DatabaseCache:
         Display that gets a bar for each download and import step, such as a
         ``progress_bar.ProgressBarGroup`` open for the run of a command, or ``None`` to
         show none.
+    busy_timeout_seconds : float
+        Longest wait of a read by ``open_database`` and ``describe`` while another
+        process writes the database, after which ``sqlite3.OperationalError`` is raised.
 
     Raises
     ------
     ValueError
-        If ``max_age`` is not positive, or is given while downloads are not allowed.
+        If ``max_age`` is not positive, or is given while downloads are not allowed, or
+        ``busy_timeout_seconds`` is negative or not finite.
 
     Examples
     --------
@@ -118,7 +123,12 @@ class DatabaseCache:
         is_download_allowed: bool = True,
         max_age: timedelta | None = None,
         progress: ProgressBarSource | None = None,
+        busy_timeout_seconds: float = AddressDatabase.BUSY_TIMEOUT_SECONDS,
     ) -> None:
+        if not math.isfinite(busy_timeout_seconds) or busy_timeout_seconds < 0:
+            raise ValueError(
+                f"busy_timeout_seconds must be finite and not negative, got {busy_timeout_seconds}."
+            )
         if max_age is not None and max_age <= timedelta(0):
             raise ValueError(f"max_age must be positive, got {max_age}.")
         if max_age is not None and not is_download_allowed:
@@ -132,6 +142,7 @@ class DatabaseCache:
         )
         self._is_download_allowed: bool = is_download_allowed
         self._max_age: timedelta | None = max_age
+        self._busy_timeout_seconds: float = busy_timeout_seconds
         self._is_age_checked: bool = False
         self._opened_databases: dict[int, OpenedDatabase] = {}
         self._opened_lock: threading.Lock = threading.Lock()
@@ -144,6 +155,7 @@ class DatabaseCache:
         is_download_allowed: bool = True,
         max_age: timedelta | None = None,
         progress: ProgressBarSource | None = None,
+        busy_timeout_seconds: float = AddressDatabase.BUSY_TIMEOUT_SECONDS,
     ) -> Self:
         """
         Create the cache in the configured directory, downloading from the official sites.
@@ -164,6 +176,8 @@ class DatabaseCache:
             Age after which the database is refreshed on first use, or ``None``.
         progress : ProgressBarSource | None
             Display that gets the bars of downloads and imports, or ``None``.
+        busy_timeout_seconds : float
+            Longest wait of a read while another process writes the database.
 
         Returns
         -------
@@ -173,7 +187,8 @@ class DatabaseCache:
         Raises
         ------
         ValueError
-            If ``max_age`` is not positive, or is given while downloads are not allowed.
+            If ``max_age`` is not positive, or is given while downloads are not allowed,
+            or ``busy_timeout_seconds`` is negative or not finite.
         """
         configured_directory = os.environ.get(cls.DIRECTORY_VARIABLE, "")
         if directory is not None:
@@ -198,6 +213,7 @@ class DatabaseCache:
             is_download_allowed=is_download_allowed,
             max_age=max_age,
             progress=progress,
+            busy_timeout_seconds=busy_timeout_seconds,
         )
 
     @property
@@ -292,7 +308,9 @@ class DatabaseCache:
         signature = DatabaseFileSignature.of(path)
         if signature is None:
             raise FileNotFoundError(f"Address database not found: {path}.")
-        database = AddressDatabase.open_read_only(path)
+        database = AddressDatabase.open_read_only(
+            path, busy_timeout_seconds=self._busy_timeout_seconds
+        )
         with self._opened_lock:
             self._opened_databases[threading.get_ident()] = OpenedDatabase(
                 weakref.ref(database), signature
@@ -486,7 +504,9 @@ class DatabaseCache:
                 parcel_map_municipality_codes=(),
                 obsolete_paths=obsolete_paths,
             )
-        with AddressDatabase.open_read_only(self.path) as database:
+        with AddressDatabase.open_read_only(
+            self.path, busy_timeout_seconds=self._busy_timeout_seconds
+        ) as database:
             dataset_imports = database.imports.list_all()
             area_imports = database.areas.list_imports()
         lot_codes = {

@@ -1,3 +1,4 @@
+import math
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -19,8 +20,9 @@ class AddressDatabase:
     The file is marked with an application ID and a schema version, so that a file of
     another application or of another version of this library is rejected instead of
     being misread or modified. A database holds one SQLite connection and must be used
-    only in the thread that opened it. A connection waits up to ``BUSY_TIMEOUT_SECONDS``
-    while another process writes, such as a cache adding the data of a municipality.
+    only in the thread that opened it. A connection waits up to ``BUSY_TIMEOUT_SECONDS``,
+    or the busy timeout given to ``open_read_only``, while another process writes, such
+    as a cache adding the data of a municipality.
     A write interrupted by a killed process leaves a hot journal, which a read-only
     connection cannot roll back; ``open_read_only`` then rolls it back with a brief
     writable connection, as SQLite would on the next write.
@@ -48,7 +50,9 @@ class AddressDatabase:
         self._areas: AreaRepository = AreaRepository(connection)
 
     @classmethod
-    def open_read_only(cls, database_path: Path | str) -> Self:
+    def open_read_only(
+        cls, database_path: Path | str, *, busy_timeout_seconds: float = BUSY_TIMEOUT_SECONDS
+    ) -> Self:
         """
         Open an existing database without permission to modify it.
 
@@ -56,6 +60,9 @@ class AddressDatabase:
         ----------
         database_path : Path | str
             SQLite file created by ``open_writable``.
+        busy_timeout_seconds : float
+            Longest wait of each statement while another process writes, e.g. short for a
+            service that would rather answer "busy" promptly than keep a request waiting.
 
         Returns
         -------
@@ -64,26 +71,32 @@ class AddressDatabase:
 
         Raises
         ------
+        ValueError
+            If ``busy_timeout_seconds`` is negative or not finite.
         FileNotFoundError
             If the file does not exist.
         UnsupportedDatabaseError
             If the file is not a database of this version of the library.
         sqlite3.OperationalError
-            If the database stays locked for ``BUSY_TIMEOUT_SECONDS``, or holds an
+            If the database stays locked for ``busy_timeout_seconds``, or holds an
             interrupted write that cannot be rolled back because the file or its
             directory is not writable.
         """
+        if not math.isfinite(busy_timeout_seconds) or busy_timeout_seconds < 0:
+            raise ValueError(
+                f"busy_timeout_seconds must be finite and not negative, got {busy_timeout_seconds}."
+            )
         path = Path(database_path)
         if not path.is_file():
             raise FileNotFoundError(f"Address database not found: {database_path}.")
-        database = cls._connect_read_only(path)
+        database = cls._connect_read_only(path, busy_timeout_seconds)
         try:
             database._check_version(str(database_path))
         except sqlite3.OperationalError as error:
             if error.sqlite_errorcode != sqlite3.SQLITE_READONLY_ROLLBACK:
                 raise
             cls._roll_back_journal(path)
-            database = cls._connect_read_only(path)
+            database = cls._connect_read_only(path, busy_timeout_seconds)
             database._check_version(str(database_path))
         return database
 
@@ -239,9 +252,9 @@ class AddressDatabase:
         self._is_closed = True
 
     @classmethod
-    def _connect_read_only(cls, path: Path) -> Self:
+    def _connect_read_only(cls, path: Path, busy_timeout_seconds: float) -> Self:
         connection = sqlite3.connect(
-            path.resolve().as_uri() + "?mode=ro", uri=True, timeout=cls.BUSY_TIMEOUT_SECONDS
+            path.resolve().as_uri() + "?mode=ro", uri=True, timeout=busy_timeout_seconds
         )
         return cls(connection, is_writable=False)
 

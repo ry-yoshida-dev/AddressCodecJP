@@ -1,3 +1,4 @@
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,12 +31,16 @@ class ServiceSettings:
     max_input_length : int
         Largest number of characters of one input, such as an address; longer inputs
         are rejected with HTTP 400, because matching slows down quickly with length.
+    busy_timeout_seconds : float
+        Longest wait of a query while another process writes the database, such as
+        ``cache prepare``, after which it is answered with HTTP 503 and ``Retry-After``.
 
     Raises
     ------
     ValueError
-        If ``publisher`` is blank, or ``thread_count``, ``max_batch_size``, or
-        ``max_input_length`` is not positive.
+        If ``publisher`` is blank, ``thread_count``, ``max_batch_size``, or
+        ``max_input_length`` is not positive, or ``busy_timeout_seconds`` is negative or
+        not finite.
     """
 
     PUBLISHER_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_PUBLISHER"
@@ -44,6 +49,7 @@ class ServiceSettings:
     MAX_BATCH_SIZE_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE"
     COVERAGE_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED"
     MAX_INPUT_LENGTH_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH"
+    BUSY_TIMEOUT_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_BUSY_TIMEOUT"
     _TRUE_TEXTS: ClassVar[frozenset[str]] = frozenset({"1", "true", "yes"})
     _FALSE_TEXTS: ClassVar[frozenset[str]] = frozenset({"0", "false", "no"})
 
@@ -53,6 +59,7 @@ class ServiceSettings:
     max_batch_size: int = 1000
     is_coverage_required: bool = True
     max_input_length: int = 1000
+    busy_timeout_seconds: float = 1.0
 
     def __post_init__(self) -> None:
         if not self.publisher.strip():
@@ -63,6 +70,11 @@ class ServiceSettings:
             raise ValueError(f"max_batch_size must be positive, got {self.max_batch_size}.")
         if self.max_input_length <= 0:
             raise ValueError(f"max_input_length must be positive, got {self.max_input_length}.")
+        if not math.isfinite(self.busy_timeout_seconds) or self.busy_timeout_seconds < 0:
+            raise ValueError(
+                "busy_timeout_seconds must be finite and not negative, got "
+                + f"{self.busy_timeout_seconds}."
+            )
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> Self:
@@ -71,8 +83,9 @@ class ServiceSettings:
 
         ``ADDRESS_CODEC_JP_API_PUBLISHER`` is required. ``ADDRESS_CODEC_JP_API_THREADS``,
         ``ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE``, ``ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH``,
-        and ``ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED`` (``true`` or ``false``) override
-        the defaults; the cache directory follows ``ADDRESS_CODEC_JP_CACHE_DIR``.
+        ``ADDRESS_CODEC_JP_API_BUSY_TIMEOUT`` (seconds), and
+        ``ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED`` (``true`` or ``false``) override the
+        defaults; the cache directory follows ``ADDRESS_CODEC_JP_CACHE_DIR``.
 
         Parameters
         ----------
@@ -107,6 +120,9 @@ class ServiceSettings:
             ),
             max_input_length=int(
                 environment.get(cls.MAX_INPUT_LENGTH_VARIABLE, defaults.max_input_length)
+            ),
+            busy_timeout_seconds=float(
+                environment.get(cls.BUSY_TIMEOUT_VARIABLE, defaults.busy_timeout_seconds)
             ),
         )
 

@@ -35,20 +35,32 @@ class CodecPool:
         Directory of the prepared cache, or ``None`` for the default directory.
     thread_count : int
         Number of worker threads.
+    busy_timeout_seconds : float
+        Longest wait of a query while another process writes the database, after which
+        it fails with ``DatabaseBusyError``.
 
     Raises
     ------
     ValueError
-        If ``thread_count`` is not positive.
+        If ``thread_count`` is not positive, or ``busy_timeout_seconds`` is negative or
+        not finite.
     """
 
     CLOSE_TIMEOUT_SECONDS: ClassVar[float] = 30.0
+    DEFAULT_BUSY_TIMEOUT_SECONDS: ClassVar[float] = 1.0
 
-    def __init__(self, cache_directory: Path | None, thread_count: int) -> None:
+    def __init__(
+        self,
+        cache_directory: Path | None,
+        thread_count: int,
+        busy_timeout_seconds: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
+    ) -> None:
         if thread_count <= 0:
             raise ValueError(f"thread_count must be positive, got {thread_count}.")
         self._cache: DatabaseCache = DatabaseCache.default(
-            directory=cache_directory, is_download_allowed=False
+            directory=cache_directory,
+            is_download_allowed=False,
+            busy_timeout_seconds=busy_timeout_seconds,
         )
         self._thread_count: int = thread_count
         self._executor: ThreadPoolExecutor = ThreadPoolExecutor(
@@ -175,12 +187,13 @@ class CodecPool:
         with self._lock:
             if self._coverage_signature == signature:
                 return self._coverage
-            coverage = DatasetCoverage.from_status(
-                self._cache.describe(), codec.list_area_imports()
-            )
+        # Read outside the lock, so that a read waiting on a writer does not stall the
+        # queries of other threads; threads that miss together each read it once.
+        coverage = DatasetCoverage.from_status(self._cache.describe(), codec.list_area_imports())
+        with self._lock:
             self._coverage = coverage
             self._coverage_signature = signature
-            return coverage
+        return coverage
 
     def _close_thread_codec(self, barrier: threading.Barrier) -> None:
         try:
