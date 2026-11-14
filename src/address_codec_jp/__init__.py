@@ -10,8 +10,7 @@ from address_codec_jp.address import (
 )
 from address_codec_jp.address_codec import AddressCodec
 from address_codec_jp.database.cache import CacheStatus, DatabaseCache
-from address_codec_jp.database.importing.area_importer import AreaImporter
-from address_codec_jp.database.importing.registry_importer import RegistryImporter
+from address_codec_jp.database.importing import AreaImporter, RegistryImporter
 from address_codec_jp.database.storage import AddressDatabase, AreaImport, DatasetImport
 from address_codec_jp.datasets.address_base_registry import (
     AbrDataset,
