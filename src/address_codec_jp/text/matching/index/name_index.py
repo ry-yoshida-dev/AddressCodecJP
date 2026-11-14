@@ -1,5 +1,6 @@
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from typing import ClassVar
 
 from address_codec_jp.address import Town
@@ -16,8 +17,9 @@ class NameIndex:
     by ``の``/``ノ`` (e.g. ``大曲`` and ``字大曲``) as different towns. Addresses also add or
     leave out these markers inside a name (``哲多町大字大野`` for ``哲多町大野``,
     ``第10地割羅賀`` for ``第10地割字羅賀``), and at the folded tier a ``ノ`` or ``ケ``
-    between kanji (``鷹ノ巣`` for ``鷹巣``) or a trailing ``町`` of a name when a number
-    or the end of the text follows (``薄倉2364`` for ``薄倉町``). Each name is therefore
+    between kanji or after a numeral (``鷹ノ巣`` for ``鷹巣``, ``四ノ宮`` for ``四宮``) or
+    a trailing ``町`` of a name when a number or the end of the text follows
+    (``薄倉2364`` for ``薄倉町``). Each name is therefore
     indexed at every ``MatchTier``, and every prefix match is reported with the penalty of
     its tier so that the caller can rank complete readings. A match that ends in the middle
     of a number (koaza ``１`` before ``2番``) or right before a hyphenated number (koaza
@@ -40,6 +42,11 @@ class NameIndex:
 
     _FOLDED_CONNECTIVES: ClassVar[re.Pattern[str]] = re.compile(
         f"(?<=[{TextNormalizer.KANJI_CHARACTERS}])[のケ](?=[{TextNormalizer.KANJI_CHARACTERS}])"
+    )
+    # Normalization converts a numeral before の (四ノ宮 becomes 4ノ宮) but not before
+    # other kanji (四宮), so the number is written back in kanji before の is dropped.
+    _NUMBER_BEFORE_CONNECTIVE: ClassVar[re.Pattern[str]] = re.compile(
+        f"(?<![0-9])[0-9]+(?=の(?![{KanjiNumeral.CHARACTERS}])[{TextNormalizer.KANJI_CHARACTERS}])"
     )
     _OPTIONAL_NAME_SUFFIX: ClassVar[str] = "町"
     _MIN_STEM_LENGTH: ClassVar[int] = 2
@@ -159,19 +166,55 @@ class NameIndex:
             return normalized_text, positions
         comparable_text, positions = self._remove(normalized_text, positions, self._NAME_MARKERS)
         if tier is MatchTier.FOLDED:
+            comparable_text, positions = self._substitute(
+                self._normalizer.fold(comparable_text),
+                positions,
+                self._NUMBER_BEFORE_CONNECTIVE,
+                self._to_kanji_numeral,
+            )
             comparable_text, positions = self._remove(
-                self._normalizer.fold(comparable_text), positions, self._FOLDED_CONNECTIVES
+                comparable_text, positions, self._FOLDED_CONNECTIVES
             )
         return comparable_text, positions
 
     @staticmethod
-    def _remove(text: str, positions: list[int], pattern: re.Pattern[str]) -> tuple[str, list[int]]:
+    def _to_kanji_numeral(matched: re.Match[str]) -> str:
+        return KanjiNumeral.from_int(int(matched.group()))
+
+    @classmethod
+    def _remove(
+        cls, text: str, positions: list[int], pattern: re.Pattern[str]
+    ) -> tuple[str, list[int]]:
+        return cls._substitute(text, positions, pattern, lambda _: "")
+
+    @staticmethod
+    def _substitute(
+        text: str,
+        positions: list[int],
+        pattern: re.Pattern[str],
+        replace: Callable[[re.Match[str]], str],
+    ) -> tuple[str, list[int]]:
+        """
+        Replace every match of a pattern, keeping the input index of each character.
+
+        The last character of a replacement takes the index of the last replaced
+        character, so that the text after a match starts after the replaced text.
+        """
         kept_text: list[str] = []
         kept_positions: list[int] = []
         start = 0
         for matched in pattern.finditer(text):
             kept_text.append(text[start : matched.start()])
             kept_positions.extend(positions[start : matched.start()])
+            replacement = replace(matched)
+            kept_text.append(replacement)
+            last = matched.end() - 1
+            kept_positions.extend(
+                positions[min(matched.start() + offset, last)]
+                for offset in range(len(replacement) - 1)
+            )
+            if replacement:
+                kept_positions.append(positions[last])
             start = matched.end()
         kept_text.append(text[start:])
         kept_positions.extend(positions[start:])

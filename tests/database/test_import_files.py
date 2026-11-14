@@ -72,7 +72,7 @@ def test_import_command_accepts_every_dataset(
     database = str(tmp_path / "towns.sqlite3")
     sources = [str(path) for path in [*POSITION_FIXTURES, TOWN_MASTER]]
     assert CommandLineInterface().run(["--database", database, "import", *sources]) == 0
-    assert capsys.readouterr().out.splitlines()[0].startswith("Imported 66 rows of mt_town")
+    assert capsys.readouterr().out.splitlines()[0].startswith("Imported 67 rows of mt_town")
 
 
 def test_a_path_given_twice_is_imported_once(tmp_path: Path) -> None:

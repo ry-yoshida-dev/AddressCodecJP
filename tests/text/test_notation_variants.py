@@ -21,3 +21,11 @@ def test_connectives_after_a_numeral_are_interchangeable(
     codec: AddressCodec, address: str, expected: str
 ) -> None:
     assert str(codec.encode(address)) == expected
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["京都市山科区四ノ宮小金塚1", "京都市山科区四の宮小金塚1", "京都市山科区四宮小金塚1"],
+)
+def test_connective_after_a_numeral_may_be_left_out(codec: AddressCodec, address: str) -> None:
+    assert str(codec.encode(address)) == "261106-0182000-p1"
