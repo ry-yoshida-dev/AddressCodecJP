@@ -10,6 +10,9 @@ from address_codec_jp import (
     MatchTier,
     NameScript,
 )
+from address_codec_jp.text.matching.reading import StreetDirectionReader
+from address_codec_jp.text.normalization import TextNormalizer
+from tests.text.counting_normalizer import CountingNormalizer
 
 
 @pytest.mark.parametrize(
@@ -214,3 +217,17 @@ def test_lot_numbers_lie_within_their_street_direction(located_codec: AddressCod
     assert str(located_codec.encode("烏丸通塩小路下る東塩小路町", within=within)) == within
     with pytest.raises(AddressNotFoundError, match="does not lie within"):
         _ = located_codec.encode("京都市下京区東塩小路町", within=within)
+
+
+def test_text_after_a_street_direction_is_not_scanned(codec: AddressCodec) -> None:
+    town = codec.resolve("261068-0416115").town
+    assert town is not None
+    normalizer = CountingNormalizer()
+    reader = StreetDirectionReader(normalizer)
+    text = TextNormalizer().normalize("烏丸通塩小路下る" * 400)
+    split_points = reader.split_points(text, reader.fold_names([town]))
+    street_matches = reader.match_all(text, [town])
+    assert split_points[0] == len("烏丸通塩小路下る")
+    assert split_points[-1] < len(text) // 10
+    assert [candidates.towns for candidates in street_matches] == [[town]]
+    assert normalizer.fold_count < 200

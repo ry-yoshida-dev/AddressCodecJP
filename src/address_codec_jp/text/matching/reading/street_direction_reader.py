@@ -1,6 +1,7 @@
 import re
 from collections.abc import Sequence
 from dataclasses import replace
+from itertools import islice
 from typing import ClassVar
 
 from address_codec_jp.address import Town
@@ -20,7 +21,9 @@ class StreetDirectionReader:
     strictly first and then with notation variants folded: ``通`` and ``通り`` are
     dropped, ``上ル`` and ``上がる`` read as ``上る``, ``下ル`` and ``下がる`` as ``下る``,
     and ``入ル`` and ``入る`` as ``入``. A registered direction may end anywhere; a
-    written direction that is not registered is recognized only where a direction ends.
+    written direction that is not registered is recognized only where one of its first
+    few directions ends, and a registered one only up to the length of the longest, so
+    that the text after a street direction is not scanned.
 
     Parameters
     ----------
@@ -32,6 +35,8 @@ class StreetDirectionReader:
         r"(?P<direction>上がる|上ル|上る|下がる|下ル|下る|[東西南北](?:入[ルる]?|裏|側))"
         + r"(?P<count>[0-9一二三四五六七八九十]+(?:丁目|丁|筋目)(?:入[ルる]?)?)?"
     )
+    # Registered directions hold up to three (寺町通今出川上る一丁目西入三筋目上る).
+    _MAX_DIRECTION_COUNT: ClassVar[int] = 4
     _STREET_SEPARATOR: ClassVar[re.Pattern[str]] = re.compile(r"通り|通|\|")
     _VARIANTS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("通り", ""),
@@ -84,13 +89,15 @@ class StreetDirectionReader:
         Returns
         -------
         list[int]
-            End of every written direction, with and without the count of blocks after
-            it, since an oaza may be named like a count (``四丁目``), and of every
-            registered street direction that starts the text, in ascending order.
+            End of each of the first few written directions, with and without the count
+            of blocks after it, since an oaza may be named like a count (``四丁目``), and
+            of every registered street direction that starts the text, in ascending order.
         """
         ends = {
             end
-            for matched in self._DIRECTION.finditer(normalized_text)
+            for matched in islice(
+                self._DIRECTION.finditer(normalized_text), self._MAX_DIRECTION_COUNT
+            )
             for end in (matched.end("direction"), matched.end())
         }
         return sorted(ends | self._registered_ends(normalized_text, street_keys))
@@ -154,11 +161,16 @@ class StreetDirectionReader:
     def _registered_ends(self, normalized_text: str, street_keys: frozenset[str]) -> set[int]:
         if not street_keys:
             return set()
-        return {
-            end
-            for end in range(1, len(normalized_text) + 1)
-            if self._fold(normalized_text[:end]) in street_keys
-        }
+        longest_key_length = max(len(key) for key in street_keys)
+        ends: set[int] = set()
+        # Folding never shortens a longer prefix, so no key is found past the longest.
+        for end in range(1, len(normalized_text) + 1):
+            folded = self._fold(normalized_text[:end])
+            if len(folded) > longest_key_length:
+                break
+            if folded in street_keys:
+                ends.add(end)
+        return ends
 
     def find_closest_oazas(self, normalized_street: str, towns: Sequence[Town]) -> list[Town]:
         """

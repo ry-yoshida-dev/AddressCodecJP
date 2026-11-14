@@ -198,12 +198,13 @@ class TextNormalizer:
         str
             Shortest end of ``text`` that normalizes to ``normalized_suffix``, without
             surrounding whitespace, or ``normalized_suffix`` itself when no end of
-            ``text`` normalizes to it. Ends whose normalized form is clearly longer than
-            ``normalized_suffix`` are not searched.
+            ``text`` normalizes to it. Ends whose normalized form is clearly shorter or
+            longer than ``normalized_suffix`` are not searched.
         """
         if not normalized_suffix:
             return ""
-        for start in range(len(text) - 1, -1, -1):
+        last_start = self._find_last_start(text, len(normalized_suffix) - self._SUFFIX_SEARCH_SLACK)
+        for start in range(last_start, -1, -1):
             candidate = text[start:]
             normalized_candidate = self.normalize(candidate)
             if normalized_candidate == normalized_suffix:
@@ -211,6 +212,23 @@ class TextNormalizer:
             if len(normalized_candidate) > len(normalized_suffix) + self._SUFFIX_SEARCH_SLACK:
                 break
         return normalized_suffix
+
+    def _find_last_start(self, text: str, minimum_length: int) -> int:
+        """
+        Find the last start of an end of ``text`` whose normalized form is long enough.
+
+        A longer end of a text normalizes to a text at least as long, so the start is found
+        by bisection instead of normalizing every end; ``-1`` means that no end is long
+        enough.
+        """
+        low, high = -1, len(text) - 1
+        while low < high:
+            middle = (low + high + 1) // 2
+            if len(self.normalize(text[middle:])) >= minimum_length:
+                low = middle
+            else:
+                high = middle - 1
+        return low
 
     def _prepare(self, text: str) -> str:
         normalized = unicodedata.normalize("NFKC", self._INVISIBLE.sub("", text))

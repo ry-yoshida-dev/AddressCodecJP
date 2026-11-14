@@ -20,4 +20,5 @@ Tests of normalization, matching, and formatting of address text, mostly through
 | [test_name_search.py](test_name_search.py) | Every area that bears a name, narrowing by a leading area or `within`, and the `name` command |
 | [test_postal_code.py](test_postal_code.py) | Postal code extraction, disambiguation, and output |
 | [test_kana.py](test_kana.py) | Katakana readings in decoded addresses |
-| [test_street_direction.py](test_street_direction.py) | Kyoto street directions before and after the oaza, lot numbers on the oaza, notation variants, unregistered directions, and their decoding |
+| [test_street_direction.py](test_street_direction.py) | Kyoto street directions before and after the oaza, lot numbers on the oaza, notation variants, unregistered directions, their decoding, and bounded scanning of long text |
+| [counting_normalizer.py](counting_normalizer.py) | `CountingNormalizer`, a normalizer that counts its calls to check that long text is not scanned repeatedly |

@@ -1,6 +1,7 @@
 import pytest
 
 from address_codec_jp.text.normalization import TextNormalizer
+from tests.text.counting_normalizer import CountingNormalizer
 
 
 @pytest.mark.parametrize(
@@ -117,6 +118,13 @@ def test_normalize_name_returns_a_trailing_long_vowel_as_a_dash() -> None:
 )
 def test_find_original_suffix(text: str, normalized_suffix: str, expected: str) -> None:
     assert TextNormalizer().find_original_suffix(text, normalized_suffix) == expected
+
+
+def test_find_original_suffix_of_a_long_text_normalizes_few_ends() -> None:
+    normalizer = CountingNormalizer()
+    building = "ビル" * 2000
+    assert normalizer.find_original_suffix("丸の内1-2-3 " + building, building) == building
+    assert normalizer.normalize_count < 100
 
 
 @pytest.mark.parametrize(
