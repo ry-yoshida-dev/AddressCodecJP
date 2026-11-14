@@ -1,6 +1,7 @@
 import csv
 import io
 import zipfile
+import zlib
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -36,7 +37,8 @@ class AbrCsvFile:
         FileNotFoundError
             If the file does not exist.
         RegistryFormatError
-            If the file is empty or belongs to none of the datasets.
+            If the file is empty, belongs to none of the datasets, is a broken ZIP
+            archive, or is not UTF-8 text.
         """
         rows = self._read_rows()
         header = next(rows, None)
@@ -63,8 +65,9 @@ class AbrCsvFile:
         FileNotFoundError
             If the file does not exist.
         RegistryFormatError
-            If the file is empty, the archive has no CSV file, required columns are
-            missing, or a row is short. The message names the row.
+            If the file is empty, the archive has no CSV file or is broken, the text is
+            not UTF-8, required columns are missing, or a row is short. The message names
+            the row.
         """
         rows = self._read_rows()
         header = next(rows, None)
@@ -89,6 +92,14 @@ class AbrCsvFile:
     def _read_rows(self) -> Iterator[list[str]]:
         if not self._path.is_file():
             raise FileNotFoundError(f"Registry file not found: {self._path}.")
+        try:
+            yield from self._read_raw_rows()
+        except (zipfile.BadZipFile, zlib.error, EOFError) as error:
+            raise RegistryFormatError(f"{self._path} is a broken ZIP archive: {error}") from error
+        except UnicodeDecodeError as error:
+            raise RegistryFormatError(f"{self._path} is not UTF-8 text: {error}") from error
+
+    def _read_raw_rows(self) -> Iterator[list[str]]:
         if zipfile.is_zipfile(self._path):
             with zipfile.ZipFile(self._path) as archive:
                 csv_names = [name for name in archive.namelist() if name.endswith(".csv")]

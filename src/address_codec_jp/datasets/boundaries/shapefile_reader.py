@@ -56,7 +56,8 @@ class ShapefileReader:
         Raises
         ------
         BoundaryFormatError
-            If the archive lacks a file or a file is malformed.
+            If the archive lacks a file or is broken, or a file is malformed, such as
+            truncated or with attributes not in the encoding.
         """
         try:
             with zipfile.ZipFile(path) as archive:
@@ -66,8 +67,11 @@ class ShapefileReader:
             raise BoundaryFormatError(
                 f"{path} is not a valid shapefile archive: {error}"
             ) from error
-        polygons = list(self._read_shapes(shapes, path))
-        attributes = list(self._read_table(table, path))
+        try:
+            polygons = list(self._read_shapes(shapes, path))
+            attributes = list(self._read_table(table, path))
+        except (struct.error, UnicodeDecodeError) as error:
+            raise BoundaryFormatError(f"{path} has a malformed shapefile: {error}") from error
         if len(polygons) != len(attributes):
             raise BoundaryFormatError(
                 f"{path} has {len(polygons)} shapes but {len(attributes)} attribute rows."

@@ -602,3 +602,35 @@ def test_cli_import_into_the_cache_holds_its_lock(
     assert CommandLineInterface().run(["import", str(source)]) == 0
     assert lock_states[-1]
     assert source.name in imported_names(cache)
+
+
+@pytest.mark.parametrize("is_archive_broken", [True, False])
+def test_expired_cache_with_an_unreadable_release_stays_in_use(
+    cache: DatabaseCache,
+    mirror: Path,
+    caplog: pytest.LogCaptureFixture,
+    *,
+    is_archive_broken: bool,
+) -> None:
+    _ = cache.ensure()
+    content = cache.path.read_bytes()
+    time.sleep(0.01)
+    town_master = FIXTURE_DIRECTORY / FIXTURE_NAMES[AbrDataset.TOWN]
+    text = town_master.read_bytes()
+    release = mirror / "mt_town" / "mt_town_all.csv.zip"
+    with zipfile.ZipFile(release, "w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr(
+            "data.csv",
+            text if is_archive_broken else text.decode("utf-8-sig").encode("cp932"),
+        )
+    if is_archive_broken:
+        archive_bytes = bytearray(release.read_bytes())
+        archive_bytes[archive_bytes.index(text[:64]) + len(text) - 3] ^= 0x01
+        _ = release.write_bytes(bytes(archive_bytes))
+    with (
+        caplog.at_level(logging.WARNING, logger="address_codec_jp.database.cache"),
+        AddressCodec.open(cache=aging(cache, mirror)) as codec,
+    ):
+        assert str(codec.encode("千代田区丸の内1")) == "131016-0011001"
+    assert "Could not refresh" in caplog.text
+    assert cache.path.read_bytes() == content
