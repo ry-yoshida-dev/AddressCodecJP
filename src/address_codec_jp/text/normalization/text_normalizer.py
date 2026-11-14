@@ -13,7 +13,8 @@ class TextNormalizer:
     ``normalize`` produces the strict form: invisible characters such as variation
     selectors and quotes are removed, width, whitespace, postal code, dash, and
     kanji numeral variants are unified, and a dash after katakana becomes the long vowel
-    ``ー`` (``流通センタ－`` equals ``流通センター``). A kanji numeral run that is valid only
+    ``ー`` (``流通センタ－`` equals ``流通センター``) unless a digit follows it, where it
+    separates the name from a number (``ニセコ-123``). A kanji numeral run that is valid only
     without its leading ``一`` keeps that ``一`` as part of the preceding name
     (``九ノ一十二番`` becomes ``9ノ一12番``). A kanji numeral before the connective ``の``,
     ``ノ``, or ``之`` is converted whichever of them is written (``一之江`` becomes
@@ -51,7 +52,8 @@ class TextNormalizer:
     )
     _KANJI_ONE_DASH: ClassVar[re.Pattern[str]] = re.compile("(?<=[0-9])一(?=[0-9])")
     # A single katakana before a dash is an iroha koaza or lot prefix (ノ-14), not a word.
-    _KATAKANA_LONG_VOWEL: ClassVar[re.Pattern[str]] = re.compile("(?<=[ァ-ヴ]{2})-")
+    _KATAKANA_LONG_VOWEL: ClassVar[re.Pattern[str]] = re.compile("(?<=[ァ-ヴ]{2})-(?![0-9])")
+    _TRAILING_LONG_VOWEL: ClassVar[re.Pattern[str]] = re.compile("(?<=[ァ-ヴ]{2})ー$")
     _KANJI_NUMBER: ClassVar[re.Pattern[str]] = re.compile(
         f"[{KanjiNumeral.CHARACTERS}]+(?=丁目|丁|番|号|条|線|地割|の|ノ|之|-)"
     )
@@ -151,7 +153,9 @@ class TextNormalizer:
         Normalize a registry name into every strict form it can take inside an address.
 
         A trailing kanji numeral, as in ``九ノ一``, is converted when the name ends the
-        address but kept when lot numbers follow it, so both forms are returned.
+        address but kept when lot numbers follow it, so both forms are returned. A name
+        that ends in a long vowel after katakana, as in ``流通センタ－``, is also returned
+        with a dash, as it reads when a number follows (``流通センタ-1丁目``).
 
         Parameters
         ----------
@@ -161,12 +165,13 @@ class TextNormalizer:
         Returns
         -------
         set[str]
-            One or two normalized forms.
+            Every normalized form.
         """
-        return {
+        forms = {
             self._normalize(name, is_trailing_number_converted=True),
             self._normalize(name, is_trailing_number_converted=False),
         }
+        return forms | {self._TRAILING_LONG_VOWEL.sub("-", form) for form in forms}
 
     def find_original_suffix(self, text: str, normalized_suffix: str) -> str:
         """

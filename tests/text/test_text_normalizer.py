@@ -18,7 +18,10 @@ from address_codec_jp.text.normalization import TextNormalizer
         ("〒100‐0005 丸の内", "丸の内"),
         ("〒１００ー０００５丸の内", "丸の内"),
         ("流通センタ－", "流通センター"),
-        ("流通センタ-1丁目", "流通センター1丁目"),
+        ("流通センタ-1丁目", "流通センタ-1丁目"),
+        ("流通センタ-南", "流通センター南"),
+        ("ニセコ-123", "ニセコ-123"),
+        ("字ニセコ－１２３", "字ニセコ-123"),
         ("六本木", "六本木"),
         ("北一条西", "北1条西"),
         ("センター", "センター"),
@@ -93,6 +96,10 @@ def test_fold(text: str, expected: str) -> None:
 def test_normalize_name_returns_both_trailing_forms() -> None:
     assert TextNormalizer().normalize_name("白旗九ノ一") == {"白旗9ノ1", "白旗9ノ一"}
     assert TextNormalizer().normalize_name("丸の内") == {"丸の内"}
+
+
+def test_normalize_name_returns_a_trailing_long_vowel_as_a_dash() -> None:
+    assert TextNormalizer().normalize_name("流通センタ－") == {"流通センター", "流通センタ-"}
 
 
 @pytest.mark.parametrize(

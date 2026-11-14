@@ -29,3 +29,18 @@ def test_connectives_after_a_numeral_are_interchangeable(
 )
 def test_connective_after_a_numeral_may_be_left_out(codec: AddressCodec, address: str) -> None:
     assert str(codec.encode(address)) == "261106-0182000-p1"
+
+
+@pytest.mark.parametrize(
+    ("address", "expected"),
+    [
+        ("ニセコ町ニセコ-123", "013951-0013000-p123"),
+        ("ニセコ町字ニセコ-123", "013951-0013000-p123"),
+        ("ニセコ町字ニセコ－１２３", "013951-0013000-p123"),
+        ("山形市流通センタ-1丁目12番3号", "062014-0389001-p12-3"),
+    ],
+)
+def test_dash_before_a_number_after_katakana_separates_it(
+    codec: AddressCodec, address: str, expected: str
+) -> None:
+    assert str(codec.encode(address)) == expected
