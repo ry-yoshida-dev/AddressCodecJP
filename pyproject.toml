@@ -1,6 +1,6 @@
 [project]
 name = "address-codec-jp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Normalize Japanese addresses and convert them to and from address codes based on the Address Base Registry."
 readme = "README.md"
 license = { file = "LICENSE" }
