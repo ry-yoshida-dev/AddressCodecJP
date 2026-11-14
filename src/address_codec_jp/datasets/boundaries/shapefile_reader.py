@@ -1,9 +1,13 @@
+import itertools
 import struct
 import zipfile
 import zlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
+
+import numpy as np
+import numpy.typing as npt
 
 from address_codec_jp.datasets.boundaries.shapefile_record import ShapefileRecord
 from address_codec_jp.errors import BoundaryFormatError
@@ -16,7 +20,8 @@ class ShapefileReader:
 
     The archive must hold one ``.shp`` file and one ``.dbf`` file. Rings running
     clockwise are exteriors, and the others are holes of the exterior that contains
-    them, as the shapefile specification prescribes.
+    them, as the shapefile specification prescribes, also when a hole touches its
+    exterior.
 
     Parameters
     ----------
@@ -29,6 +34,7 @@ class ShapefileReader:
     _FILE_HEADER_SIZE: ClassVar[int] = 100
     _DELETED_FLAG: ClassVar[int] = 0x2A
     _FIELD_TERMINATOR: ClassVar[int] = 0x0D
+    _BOUNDARY_TOLERANCE: ClassVar[float] = 1e-9
 
     def __init__(self, encoding: str = "cp932") -> None:
         self._encoding: str = encoding
@@ -123,7 +129,7 @@ class ShapefileReader:
                 (
                     index
                     for index, exterior in enumerate(exteriors)
-                    if Polygon(exterior).contains(*ring[0])
+                    if self._encloses(exterior, ring)
                 ),
                 None,
             )
@@ -135,6 +141,37 @@ class ShapefileReader:
         return tuple(
             Polygon(exterior, tuple(holes_of[index])) for index, exterior in enumerate(exteriors)
         )
+
+    def _encloses(self, exterior: Ring, ring: Ring) -> bool:
+        # A hole may touch its exterior, and a position on the exterior's boundary can
+        # fall either side of the containment test, so the hole is judged by its first
+        # vertex or edge midpoint off that boundary. A ring lying wholly on the boundary
+        # is taken as enclosed.
+        segments: npt.NDArray[np.float64] = np.asarray(exterior, dtype=np.float64)
+        starts = segments[:-1]
+        directions = segments[1:] - starts
+        lengths = np.hypot(directions[:, 0], directions[:, 1])
+        midpoints = [
+            ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
+            for start, end in itertools.pairwise(ring)
+        ]
+        polygon = Polygon(exterior)
+        for longitude, latitude in [*ring[:-1], *midpoints]:
+            offset_longitudes = longitude - starts[:, 0]
+            offset_latitudes = latitude - starts[:, 1]
+            cross = directions[:, 0] * offset_latitudes - directions[:, 1] * offset_longitudes
+            projection = directions[:, 0] * offset_longitudes + directions[:, 1] * offset_latitudes
+            is_on_boundary = bool(
+                np.any(
+                    (lengths > 0)
+                    & (np.abs(cross) <= self._BOUNDARY_TOLERANCE * lengths)
+                    & (projection >= -self._BOUNDARY_TOLERANCE * lengths)
+                    & (projection <= lengths * (lengths + self._BOUNDARY_TOLERANCE))
+                )
+            )
+            if not is_on_boundary:
+                return polygon.contains(longitude, latitude)
+        return True
 
     def _read_table(self, data: bytes, path: Path) -> Iterator[dict[str, str]]:
         if len(data) < 32:

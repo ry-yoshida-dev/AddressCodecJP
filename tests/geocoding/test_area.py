@@ -1,4 +1,5 @@
 import json
+import struct
 import zipfile
 from pathlib import Path
 
@@ -24,7 +25,11 @@ from address_codec_jp import (
     RegistryImporter,
 )
 from address_codec_jp.database.storage import CensusAreaRecord
-from address_codec_jp.datasets.boundaries import CensusBoundaryReader, RegistryMapReader
+from address_codec_jp.datasets.boundaries import (
+    CensusBoundaryReader,
+    RegistryMapReader,
+    ShapefileReader,
+)
 from address_codec_jp.frontends.cli import CommandLineInterface
 from address_codec_jp.geometry import Polygon, Ring
 from tests.fixture_paths import FIXTURE_DIRECTORY
@@ -59,6 +64,41 @@ def test_polygon_contains_positions_outside_its_holes() -> None:
     assert not polygon.contains(0.7, 0.7)
     assert not polygon.contains(3.0, 1.0)
     assert not Polygon.is_clockwise(SQUARE.exterior)
+
+
+def write_shapefile(path: Path, rings: list[Ring]) -> Path:
+    points = [position for ring in rings for position in ring]
+    part_starts = [sum(len(ring) for ring in rings[:index]) for index in range(len(rings))]
+    content = (
+        struct.pack("<i4d2i", 5, 0.0, 0.0, 2.0, 2.0, len(rings), len(points))
+        + struct.pack(f"<{len(rings)}i", *part_starts)
+        + struct.pack(f"<{2 * len(points)}d", *(value for point in points for value in point))
+    )
+    shapes = bytes(100) + struct.pack(">2i", 1, len(content) // 2) + content
+    field = b"NAME".ljust(11, b"\0") + b"C" + bytes(4) + bytes([1]) + bytes(15)
+    table = struct.pack("<4xIHH20x", 1, 65, 2) + field + b"\r" + b" A"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("area.shp", shapes)
+        archive.writestr("area.dbf", table)
+    return path
+
+
+@pytest.mark.parametrize(
+    "hole",
+    [
+        ((2.0, 1.0), (1.4, 1.5), (1.0, 1.0), (1.4, 0.5), (2.0, 1.0)),
+        ((1.0, 2.0), (0.9, 1.0), (1.4, 0.6), (1.8, 1.0), (1.0, 2.0)),
+        ((2.0, 2.0), (1.0, 1.4), (1.4, 0.6), (2.0, 2.0)),
+    ],
+)
+def test_shapefile_holes_touching_their_exterior_stay_holes(hole: Ring, tmp_path: Path) -> None:
+    clockwise_square = SQUARE.exterior[::-1]
+    path = write_shapefile(tmp_path / "area.zip", [clockwise_square, hole])
+    [record] = ShapefileReader().read(path)
+    assert record.attributes == {"NAME": "A"}
+    assert [len(polygon.holes) for polygon in record.polygons] == [1]
+    assert not record.polygons[0].contains(1.4, 1.0)
+    assert record.polygons[0].contains(0.2, 0.2)
 
 
 def test_polygon_rejects_open_rings() -> None:
