@@ -10,7 +10,7 @@ a name.
 
 | Component | Responsibility |
 | --- | --- |
-| [address_reader.py](address_reader.py) | `AddressReader`: normalizes text, matches single addresses and groups, searches names, and restores the remainder as written |
+| [address_reader.py](address_reader.py) | `AddressReader`: normalizes text, matches single addresses and groups, searches names, restores the remainder as written, and lists the alternative readings of lot numbers |
 | [reading/](reading/README.md) | Reading of one address into its municipality, town, and lot numbers |
 | [index/](index/README.md) | Indexes of the prefecture, municipality, oaza, and koaza names |
 | [group_matcher.py](group_matcher.py) | `GroupMatcher`: finds the narrowest common area of a group of addresses and matches the ambiguous ones within it |

@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from address_codec_jp.address import Address, AddressCode, LotNumber
+from address_codec_jp.errors import AddressNotFoundError
 from address_codec_jp.results import AddressMatch, GroupMatch
 from address_codec_jp.text.matching.group_matcher import GroupMatcher
 from address_codec_jp.text.matching.name_searcher import NameSearcher
@@ -34,7 +35,12 @@ class AddressReader:
         )
 
     def match(
-        self, address: str, within: AddressCode | None, *, is_partial_match_allowed: bool = False
+        self,
+        address: str,
+        within: AddressCode | None,
+        *,
+        lot_within: AddressCode | None = None,
+        is_partial_match_allowed: bool = False,
     ) -> AddressMatch:
         """
         Interpret a free-form address.
@@ -45,6 +51,10 @@ class AddressReader:
             Address in any common notation.
         within : AddressCode | None
             Area the address must lie in, or ``None`` to search everywhere.
+        lot_within : AddressCode | None
+            Area that an address with lot numbers must lie in instead of ``within``, such
+            as the oaza that holds the lots of a Kyoto street direction, or ``None`` to
+            use ``within``.
         is_partial_match_allowed : bool
             Whether an address whose town is not found matches its municipality or
             prefecture.
@@ -58,6 +68,8 @@ class AddressReader:
         ------
         ValueError
             If the address is blank or only a postal code.
+        AddressNotFoundError
+            If the address does not lie within its area.
         """
         normalized_address = self._normalizer.normalize(address)
         if not normalized_address:
@@ -65,43 +77,46 @@ class AddressReader:
         address_match = self._matcher.match(
             normalized_address,
             self._normalizer.extract_postal_code(address),
-            within=within,
+            within=lot_within or within,
             is_partial_match_allowed=is_partial_match_allowed,
         )
+        code = address_match.code
+        if within is not None and not code.is_lot and not within.contains(code):
+            raise AddressNotFoundError(f"{address!r} does not lie within {within}.")
         return replace(
             address_match,
             remainder=self._normalizer.find_original_suffix(address, address_match.remainder),
         )
 
-    def extend_lot(self, address_match: AddressMatch) -> AddressMatch | None:
+    def list_lot_readings(self, address_match: AddressMatch) -> list[AddressMatch]:
         """
-        Read a number at the start of the remainder as the third lot number.
+        List the readings of the lot numbers of a match, the longest first.
 
         ``match`` leaves the ``4`` of ``2-3-4`` in the remainder, because it is usually
-        a room number; a caller that can check the registry tries this reading too.
+        a room number; a caller that can check the registry tries reading it as the
+        third lot number first.
 
         Parameters
         ----------
         address_match : AddressMatch
-            Match with two lot numbers.
+            Match to read again.
 
         Returns
         -------
-        AddressMatch | None
-            Match with the number as the third lot number and the rest as remainder, or
-            ``None`` when the match does not have two lot numbers or the remainder does
-            not start with a number.
+        list[AddressMatch]
+            The match with a number at the start of its remainder read as the third lot
+            number, when it has two lot numbers and such a number, then the match itself.
         """
         lot = address_match.address.lot
         if len(lot.numbers) != 2 or lot.system is None:
-            return None
+            return [address_match]
         extension = self._lot_parser.parse_hyphenated_number(
             self._normalizer.normalize(address_match.remainder)
         )
         if extension is None or extension[0] > LotNumber.MAX_NUMBER:
-            return None
+            return [address_match]
         number, rest = extension
-        return replace(
+        extended = replace(
             address_match,
             address=replace(
                 address_match.address,
@@ -111,6 +126,7 @@ class AddressReader:
             ),
             remainder=self._normalizer.find_original_suffix(address_match.remainder, rest),
         )
+        return [extended, address_match]
 
     def match_group(self, addresses: Sequence[str]) -> GroupMatch:
         """

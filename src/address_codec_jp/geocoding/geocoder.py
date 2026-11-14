@@ -1,16 +1,17 @@
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import ClassVar
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.address import AddressCode, DesignatedCity
+from address_codec_jp.address import AddressCode, DesignatedCity, LotSystem
 from address_codec_jp.database.storage import AreaRepository, PositionRepository, TownRepository
 from address_codec_jp.errors import AddressNotFoundError, DatasetNotImportedError
 from address_codec_jp.geocoding.address_locator import AddressLocator
 from address_codec_jp.geocoding.area_finder import AreaFinder
 from address_codec_jp.geocoding.dataset_supplier import DatasetSupplier
 from address_codec_jp.geocoding.nearest_address_finder import NearestAddressFinder
-from address_codec_jp.results import AddressArea, AddressLocation, NearestAddress
+from address_codec_jp.results import AddressArea, AddressLocation, AddressMatch, NearestAddress
 
 
 class Geocoder:
@@ -115,6 +116,53 @@ class Geocoder:
                 f"No block, residence, or parcel of {code} has been imported."
             )
         return self._positions.contains_lot(code.lg_code, code.machiaza_id, code.lot)
+
+    def select_registered_lot(self, readings: Sequence[AddressMatch]) -> AddressMatch:
+        """
+        Choose the reading of an address whose lot numbers are registered.
+
+        The numbering system of the first reading is tried before the other one, because
+        addresses are often written in the notation of the wrong system, and within a
+        system the readings are tried in order.
+
+        Parameters
+        ----------
+        readings : Sequence[AddressMatch]
+            Readings of one address, such as ``AddressReader.list_lot_readings`` gives.
+
+        Returns
+        -------
+        AddressMatch
+            First registered reading in its numbering system, or the first reading when it
+            has no lot numbers.
+
+        Raises
+        ------
+        ValueError
+            If no reading is given.
+        AddressNotFoundError
+            If no lot of the town is imported or no reading is registered.
+        DatasetNotImportedError
+            If no block, residence, or parcel master has been imported.
+        """
+        if not readings:
+            raise ValueError("At least one reading is required.")
+        first_system = readings[0].address.lot.system
+        if first_system is None:
+            return readings[0]
+        for lot_system in (first_system, *(set(LotSystem) - {first_system})):
+            for reading in readings:
+                candidate = replace(
+                    reading,
+                    address=replace(
+                        reading.address, lot=reading.address.lot.with_system(lot_system)
+                    ),
+                )
+                if self.is_lot_registered(candidate.code):
+                    return candidate
+        raise AddressNotFoundError(
+            f"Lot numbers of {readings[0].code} are not registered in either numbering system."
+        )
 
     def find_lot_area(self, area: AddressCode) -> AddressCode:
         """

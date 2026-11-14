@@ -6,7 +6,7 @@ from typing import ClassVar, Self
 
 from geo_coordinate import GeoCoordinate, GeodeticCrs
 
-from address_codec_jp.address import Address, AddressCode, LotSystem
+from address_codec_jp.address import Address, AddressCode
 from address_codec_jp.database.cache import DatabaseCache
 from address_codec_jp.database.storage import (
     AddressDatabase,
@@ -14,7 +14,6 @@ from address_codec_jp.database.storage import (
     AreaImport,
     DatasetImport,
 )
-from address_codec_jp.errors import AddressNotFoundError
 from address_codec_jp.geocoding import Geocoder
 from address_codec_jp.results import (
     AddressArea,
@@ -209,48 +208,16 @@ class AddressCodec:
             cannot be downloaded.
         """
         area = self._parse_area(within)
-        lot_area = None if area is None else self._geocoder.find_lot_area(area)
         address_match = self._reader.match(
-            address, lot_area, is_partial_match_allowed=is_partial_match_allowed
+            address,
+            area,
+            lot_within=None if area is None else self._geocoder.find_lot_area(area),
+            is_partial_match_allowed=is_partial_match_allowed,
         )
-        if (
-            area is not None
-            and not area.contains(address_match.code)
-            and not address_match.code.is_lot
-        ):
-            raise AddressNotFoundError(f"{address!r} does not lie within {area}.")
-        if is_lot_verified:
-            return self._verify_match(address_match)
-        return address_match
+        return self._verify(address_match) if is_lot_verified else address_match
 
-    def _verify_match(self, address_match: AddressMatch) -> AddressMatch:
-        lot = address_match.address.lot
-        if lot.system is None:
-            return address_match
-        readings = [
-            reading
-            for reading in (self._reader.extend_lot(address_match), address_match)
-            if reading is not None
-        ]
-        other_system = (
-            LotSystem.LAND_PARCEL
-            if lot.system is LotSystem.RESIDENCE_INDICATION
-            else LotSystem.RESIDENCE_INDICATION
-        )
-        for lot_system in (lot.system, other_system):
-            for reading in readings:
-                candidate = replace(
-                    reading,
-                    address=replace(
-                        reading.address, lot=reading.address.lot.with_system(lot_system)
-                    ),
-                )
-                if self._geocoder.is_lot_registered(candidate.code):
-                    return candidate
-        raise AddressNotFoundError(
-            f"Lot numbers of {address_match.code} are not registered in either numbering "
-            + "system."
-        )
+    def _verify(self, address_match: AddressMatch) -> AddressMatch:
+        return self._geocoder.select_registered_lot(self._reader.list_lot_readings(address_match))
 
     @staticmethod
     def _parse_code(code: AddressCode | str) -> AddressCode:
@@ -273,13 +240,14 @@ class AddressCodec:
         municipality, or town that every address can lie in. The group fails as a whole
         when any address cannot be decided.
 
+        Each address raises what ``match`` would raise for it.
+
         Parameters
         ----------
         addresses : Sequence[str]
             Addresses in any common notation.
         is_lot_verified : bool
-            Whether lot numbers must be registered in the imported block, residence, or
-            parcel masters.
+            Whether lot numbers must be registered, as in ``match``.
 
         Returns
         -------
@@ -291,20 +259,11 @@ class AddressCodec:
         TypeError
             If ``addresses`` is a single string instead of a sequence of addresses.
         ValueError
-            If no address is given, an address is blank or only a postal code, or a lot
-            number exceeds ``LotNumber.MAX_NUMBER``.
+            If no address is given.
         AddressNotFoundError
-            If an address does not match a registered area, no area encloses every
-            address, or verified lot numbers are not registered.
+            If no area encloses every address.
         AmbiguousAddressError
-            If the narrowest common area is not unique, or an address fits several areas
-            or lot numbers equally well within it.
-        DatasetNotImportedError
-            If the database contains no towns, or lot numbers are to be verified before
-            any block, residence, or parcel master has been imported.
-        RegistryDownloadError
-            If the lots of an area have to be added to ``cache`` and a registry file
-            cannot be downloaded.
+            If the narrowest common area is not unique.
 
         Examples
         --------
@@ -314,23 +273,15 @@ class AddressCodec:
         ('130001', ['131016-0011001-1', '132063'])
         """
         group_match = self._reader.match_group(addresses)
-        if is_lot_verified:
-            return replace(
-                group_match,
-                matches=[self._verify_match(item) for item in group_match.matches],
-            )
-        return group_match
+        if not is_lot_verified:
+            return group_match
+        return replace(group_match, matches=[self._verify(item) for item in group_match.matches])
 
     def verify_lot(self, code: AddressCode) -> None:
         """
         Fail unless the lot numbers of a code are registered.
 
         Codes without lot numbers always pass, as in ``match`` with verification.
-
-        Parameters
-        ----------
-        code : AddressCode
-            Code to verify, such as the code of an unverified ``match``.
 
         Raises
         ------
@@ -355,42 +306,13 @@ class AddressCodec:
         """
         Convert an address to its address code.
 
-        Parameters
-        ----------
-        address : str
-            Address in any common notation.
-        is_lot_verified : bool
-            Whether lot numbers must be registered in the imported block, residence, or
-            parcel masters.
-        within : AddressCode | str | None
-            Prefecture, municipality, or town code the address must lie in, or ``None``
-            to search everywhere.
-        is_partial_match_allowed : bool
-            Whether an address whose town is not found matches its municipality or
-            prefecture, as in ``match``.
+        The code of ``match``; the parameters and errors are those of ``match``.
 
         Returns
         -------
         AddressCode
             Code of the address at the most specific level it contains.
             Building names and room numbers are not encoded.
-
-        Raises
-        ------
-        ValueError
-            If the address is blank or only a postal code, a lot number exceeds
-            ``LotNumber.MAX_NUMBER``, or ``within`` is malformed or has lot numbers.
-        AddressNotFoundError
-            If the address does not match a registered area, or verified lot numbers are
-            not registered.
-        AmbiguousAddressError
-            If the address fits several areas or lot numbers equally well.
-        DatasetNotImportedError
-            If the database contains no towns, or lot numbers are to be verified before
-            any block, residence, or parcel master has been imported.
-        RegistryDownloadError
-            If the lots of the area have to be added to ``cache`` and a registry file
-            cannot be downloaded.
         """
         return self.match(
             address,
@@ -402,11 +324,6 @@ class AddressCodec:
     def resolve(self, code: AddressCode | str) -> Address:
         """
         Look up the registered areas of an address code.
-
-        Parameters
-        ----------
-        code : AddressCode | str
-            Address code or its string form.
 
         Returns
         -------
@@ -433,11 +350,6 @@ class AddressCodec:
         and koaza whose oaza is not registered; and the chome and koaza of an oaza. Lot
         numbers are not listed.
 
-        Parameters
-        ----------
-        code : AddressCode | str
-            Prefecture, municipality, or town code, or its string form.
-
         Returns
         -------
         list[Address]
@@ -463,13 +375,6 @@ class AddressCodec:
     ) -> str:
         """
         Convert an address code to address text.
-
-        Parameters
-        ----------
-        code : AddressCode | str
-            Address code or its string form.
-        address_format : AddressFormat
-            Output format.
 
         Returns
         -------
@@ -564,47 +469,20 @@ class AddressCodec:
         """
         Find the representative point of a free-form address.
 
+        ``locate_code`` of the code of ``match``; the other parameters and the errors are
+        those of the two. Without verification, unregistered lot numbers fall back to
+        the point of their town.
+
         Parameters
         ----------
-        address : str
-            Address in any common notation.
         crs : GeodeticCrs
             Datum of the returned coordinate.
-        is_lot_verified : bool
-            Whether lot numbers must be registered, as in ``match``. Without
-            verification, unregistered lot numbers fall back to the point of their town.
-        within : AddressCode | str | None
-            Prefecture, municipality, or town code the address must lie in, or ``None``
-            to search everywhere.
-        is_partial_match_allowed : bool
-            Whether an address whose town is not found matches its municipality or
-            prefecture, as in ``match``.
 
         Returns
         -------
         AddressLocation
             Point of the address, or of its nearest enclosing area when the registry has
             no point for the address itself.
-
-        Raises
-        ------
-        ValueError
-            If the address is blank or only a postal code, a lot number exceeds
-            ``LotNumber.MAX_NUMBER``, or ``within`` is malformed or has lot numbers.
-        AddressNotFoundError
-            If the address does not match a registered area, or verified lot numbers are
-            not registered.
-        AmbiguousAddressError
-            If the address fits several areas or lot numbers equally well.
-        PositionNotFoundError
-            If neither the address nor any enclosing area has an imported point.
-        DatasetNotImportedError
-            If no town or no position has been imported.
-        RuntimeError
-            If the published datum cannot be transformed to ``crs``.
-        RegistryDownloadError
-            If the lots of the area have to be added to ``cache`` and a registry file
-            cannot be downloaded.
         """
         return self.locate_code(
             self.encode(
@@ -735,11 +613,6 @@ class AddressCodec:
         """
         Tell whether the shape of a code is looked up in the registry maps.
 
-        Parameters
-        ----------
-        code : AddressCode | str
-            Address code or its string form.
-
         Returns
         -------
         bool
@@ -763,42 +636,14 @@ class AddressCodec:
         """
         Find the shape of a free-form address.
 
-        Parameters
-        ----------
-        address : str
-            Address in any common notation.
-        is_lot_verified : bool
-            Whether lot numbers must be registered, as in ``match``. Without
-            verification, unregistered lot numbers fall back to the shape of their town.
-        within : AddressCode | str | None
-            Prefecture, municipality, or town code the address must lie in, or ``None``
-            to search everywhere.
-        is_partial_match_allowed : bool
-            Whether an address whose town is not found matches its municipality or
-            prefecture, as in ``match``.
+        ``find_area_code`` of the code of ``match``; the parameters and errors are those
+        of the two. Without verification, unregistered lot numbers fall back to the shape
+        of their town.
 
         Returns
         -------
         AddressArea
             Shape of the address, or of its nearest enclosing area that has one.
-
-        Raises
-        ------
-        ValueError
-            If the address is blank or only a postal code, a lot number exceeds
-            ``LotNumber.MAX_NUMBER``, or ``within`` is malformed or has lot numbers.
-        AddressNotFoundError
-            If the address does not match a registered area, or verified lot numbers are
-            not registered.
-        AmbiguousAddressError
-            If the address fits several areas or lot numbers equally well.
-        AreaNotFoundError
-            If neither the address nor any enclosing area below the prefecture has a shape.
-        DatasetNotImportedError
-            If no town or no shape has been imported.
-        RegistryDownloadError
-            If the shapes of the municipality have to be added to ``cache`` and a file
-            cannot be downloaded.
         """
         return self.find_area_code(
             self.encode(
@@ -817,11 +662,6 @@ class AddressCodec:
         registry maps; blocks and residences of the residence indication have none and
         fall back to their town. With a ``cache``, the town boundaries of the
         municipality, and its registry maps for parcel numbers, are added first.
-
-        Parameters
-        ----------
-        code : AddressCode | str
-            Address code or its string form.
 
         Returns
         -------
