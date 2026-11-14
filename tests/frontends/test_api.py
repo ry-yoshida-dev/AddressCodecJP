@@ -14,6 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from httpx2 import Response
+from pydantic import ValidationError
 
 from address_codec_jp import (
     AbrDataset,
@@ -30,6 +31,7 @@ from address_codec_jp.database.cache import CacheStatus
 from address_codec_jp.database.storage import AddressDatabase
 from address_codec_jp.frontends.api import (
     ApplicationFactory,
+    BatchRequest,
     CodecPool,
     DatasetCoverage,
     ServiceSettings,
@@ -133,6 +135,7 @@ def open_client(
     is_server_exception_raised: bool = True,
     max_input_length: int = 1000,
     busy_timeout_seconds: float = 1.0,
+    max_request_bytes: int = 8_000_000,
 ) -> TestClient:
     settings = ServiceSettings(
         publisher=PUBLISHER,
@@ -142,6 +145,7 @@ def open_client(
         is_coverage_required=is_coverage_required,
         max_input_length=max_input_length,
         busy_timeout_seconds=busy_timeout_seconds,
+        max_request_bytes=max_request_bytes,
     )
     application: FastAPI = ApplicationFactory(settings).create()
     return TestClient(application, raise_server_exceptions=is_server_exception_raised)
@@ -586,6 +590,40 @@ def test_max_distance_limit_is_read_from_the_environment() -> None:
     for distance in (math.inf, math.nan, 999.0):
         with pytest.raises(ValueError, match="max_distance_meters"):
             _ = ServiceSettings(publisher=PUBLISHER, max_distance_meters=distance)
+
+
+def test_batch_schema_bounds_the_inputs() -> None:
+    too_many = ["東京都"] * (BatchRequest.MAX_INPUT_COUNT + 1)
+    with pytest.raises(ValidationError, match="inputs"):
+        _ = BatchRequest.model_validate({"operation": "encode", "inputs": too_many})
+    with pytest.raises(ValueError, match="max_batch_size"):
+        _ = ServiceSettings(publisher=PUBLISHER, max_batch_size=BatchRequest.MAX_INPUT_COUNT + 1)
+
+
+def test_large_request_bodies_are_rejected_before_parsing(cache_directory: Path) -> None:
+    with open_client(cache_directory, max_request_bytes=100) as client:
+        accepted = client.post("/v1/batch", json={"operation": "encode", "inputs": ["東京都"]})
+        declared = client.post("/v1/batch", json={"operation": "encode", "inputs": ["東京都"] * 50})
+        streamed = client.post(
+            "/v1/batch",
+            content=iter([b'{"operation": "encode", "inputs": [', b'"' + b"x" * 200 + b'"]}']),
+            headers={"content-type": "application/json"},
+        )
+    assert accepted.status_code == 200
+    for response in (declared, streamed):
+        assert response.status_code == 413
+        assert body_of(response)["error_type"] == "RequestTooLargeError"
+
+
+def test_request_size_limit_is_read_from_the_environment() -> None:
+    environment = {ServiceSettings.PUBLISHER_VARIABLE: PUBLISHER}
+    assert ServiceSettings.from_environment(environment).max_request_bytes == 8_000_000
+    settings = ServiceSettings.from_environment(
+        {**environment, ServiceSettings.MAX_REQUEST_BYTES_VARIABLE: "4096"}
+    )
+    assert settings.max_request_bytes == 4096
+    with pytest.raises(ValueError, match="max_request_bytes"):
+        _ = ServiceSettings(publisher=PUBLISHER, max_request_bytes=0)
 
 
 def test_malformed_json_is_an_invalid_request(client: TestClient) -> None:

@@ -15,6 +15,8 @@ from address_codec_jp.frontends.api.opened_codec import OpenedCodec
 from address_codec_jp.frontends.api.query.answer import QueryAnswer
 from address_codec_jp.frontends.api.query.coverage_guard import CoverageGuard
 from address_codec_jp.frontends.api.query.handler import QueryHandler
+from address_codec_jp.frontends.api.request_size_limit import RequestSizeLimit
+from address_codec_jp.frontends.api.request_too_large_error import RequestTooLargeError
 from address_codec_jp.frontends.api.service_settings import ServiceSettings
 from address_codec_jp.frontends.api.validation_issue import ValidationIssue
 
@@ -36,6 +38,8 @@ __all__ = [
     "OpenedCodec",
     "QueryAnswer",
     "QueryHandler",
+    "RequestSizeLimit",
+    "RequestTooLargeError",
     "ServiceSettings",
     "ValidationIssue",
 ]

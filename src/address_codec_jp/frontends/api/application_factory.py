@@ -16,6 +16,7 @@ from address_codec_jp.frontends.api.codec_pool import CodecPool
 from address_codec_jp.frontends.api.database_busy_error import DatabaseBusyError
 from address_codec_jp.frontends.api.error_status import ErrorStatus
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
+from address_codec_jp.frontends.api.request_size_limit import RequestSizeLimit
 from address_codec_jp.frontends.api.service_settings import ServiceSettings
 from address_codec_jp.frontends.api.validation_issue import ValidationIssue
 from address_codec_jp.frontends.serialization import ErrorSerializer, JsonValue
@@ -35,7 +36,8 @@ class ApplicationFactory:
 
     Errors of the request are answered with their message, including a parameter or
     body that fails validation, which is answered with 400 and ``InvalidRequestError``;
-    a database locked by another process is answered with 503 and ``Retry-After``. Any
+    a database locked by another process is answered with 503 and ``Retry-After``, and a
+    body over ``ServiceSettings.max_request_bytes`` with 413 before it is parsed. Any
     other failure is logged and answered with a generic 500 body, so that no internal
     detail leaks.
 
@@ -123,6 +125,7 @@ class ApplicationFactory:
             lifespan=lifespan,
         )
         application.include_router(AddressRoutes(pool, self._settings).build_router())
+        application.add_middleware(RequestSizeLimit, max_bytes=self._settings.max_request_bytes)
         application.add_exception_handler(AddressCodecError, self._respond_error)
         application.add_exception_handler(InvalidRequestError, self._respond_error)
         application.add_exception_handler(DatabaseBusyError, self._respond_error)

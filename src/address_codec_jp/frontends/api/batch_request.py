@@ -12,15 +12,22 @@ class BatchRequest(BaseModel):
     Body of a batch request: one operation applied to many inputs.
 
     Options default as for the GET endpoint of the operation; ``geometry`` is written
-    by default for ``area`` and ``area-code`` but not for ``areas-at``.
+    by default for ``area`` and ``area-code`` but not for ``areas-at``. ``inputs`` holds
+    at most ``MAX_INPUT_COUNT`` items, the largest batch size a service may allow.
     """
+
+    MAX_INPUT_COUNT: ClassVar[int] = 10_000
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", populate_by_name=True)
 
     operation: QueryOperation = Field(
         description="Operation applied to every input: " + ", ".join(QueryOperation.names()) + "."
     )
-    inputs: list[str] = Field(description="Addresses, codes, postal codes, or coordinates.")
+    inputs: list[str] = Field(
+        max_length=MAX_INPUT_COUNT,
+        description="Addresses, codes, postal codes, or coordinates, up to the batch size "
+        + "of the service.",
+    )
     is_lot_verified: bool = Field(default=False, alias="verify_lot")
     is_partial_match_allowed: bool = Field(
         default=False,

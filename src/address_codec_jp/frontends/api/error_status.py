@@ -7,6 +7,7 @@ from address_codec_jp.errors import (
 )
 from address_codec_jp.frontends.api.database_busy_error import DatabaseBusyError
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
+from address_codec_jp.frontends.api.request_too_large_error import RequestTooLargeError
 
 
 class ErrorStatus:
@@ -25,8 +26,9 @@ class ErrorStatus:
         -------
         HTTPStatus
             409 for an ambiguous address, 404 for anything not found, 503 for data not
-            prepared on the server or a database locked by another process, 400 for an
-            ``InvalidRequestError``, and 500 otherwise, including a library error about
+            prepared on the server or a database locked by another process, 413 for a
+            ``RequestTooLargeError``, 400 for any other ``InvalidRequestError``, and 500
+            otherwise, including a library error about
             malformed data.
         """
         match error:
@@ -36,6 +38,8 @@ class ErrorStatus:
                 return HTTPStatus.NOT_FOUND
             case DatasetNotImportedError() | UnsupportedDatabaseError() | DatabaseBusyError():
                 return HTTPStatus.SERVICE_UNAVAILABLE
+            case RequestTooLargeError():
+                return HTTPStatus.REQUEST_ENTITY_TOO_LARGE
             case InvalidRequestError():
                 return HTTPStatus.BAD_REQUEST
             case _:

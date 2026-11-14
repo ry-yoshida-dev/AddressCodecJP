@@ -9,9 +9,10 @@ OpenAPI documentation is served at `/docs`.
 | `ADDRESS_CODEC_JP_API_PUBLISHER` | required | Organization that processes and serves the data, named in every credit |
 | `ADDRESS_CODEC_JP_CACHE_DIR` | user cache directory | Prepared cache |
 | `ADDRESS_CODEC_JP_API_THREADS` | `4` | Worker threads per process, each with its own codec |
-| `ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE` | `1000` | Inputs per batch request |
+| `ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE` | `1000` | Inputs per batch request, at most `10000` |
 | `ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH` | `1000` | Characters per input |
 | `ADDRESS_CODEC_JP_API_BUSY_TIMEOUT` | `1` | Seconds a query waits while another process writes the database before it is answered with 503 |
+| `ADDRESS_CODEC_JP_API_MAX_REQUEST_BYTES` | `8000000` | Bytes per request body; keep it large enough for a full batch of the longest inputs |
 | `ADDRESS_CODEC_JP_API_MAX_DISTANCE` | `10000` | Largest `max_distance` in meters; at least the default distance of `1000` |
 | `ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED` | `true` | Answer 503 instead of falling back to an enclosing area when a municipality lacks prepared data |
 
@@ -39,8 +40,9 @@ Body: `{"error", "error_type"}`.
 
 | Status | When |
 | --- | --- |
-| 400 | `InvalidRequestError`: malformed input or option, input over the length limit, `max_distance` out of range, number too large, failed validation |
+| 400 | `InvalidRequestError`: malformed input or option, input over the length limit, `max_distance` out of range, number too large, failed validation, a batch over the batch size |
 | 404 | Not found, including a coordinate outside every prepared boundary |
 | 409 | Ambiguous, with `candidates` |
+| 413 | `RequestTooLargeError`: request body over `ADDRESS_CODEC_JP_API_MAX_REQUEST_BYTES`, rejected before it is parsed |
 | 503 | Data not prepared, database deleted, or locked during an update (with `Retry-After`) |
 | 500 | Malformed data such as `RegistryFormatError`, or an unexpected exception |

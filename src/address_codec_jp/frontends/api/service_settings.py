@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import ClassVar, Self
 
 from address_codec_jp.address_codec import AddressCodec
+from address_codec_jp.frontends.api.batch_request import BatchRequest
 from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
 
 
@@ -27,7 +28,8 @@ class ServiceSettings:
     thread_count : int
         Worker threads of a process, each with its own codec.
     max_batch_size : int
-        Largest number of inputs in one batch request.
+        Largest number of inputs in one batch request, at most
+        ``BatchRequest.MAX_INPUT_COUNT``.
     is_coverage_required : bool
         Whether a query whose municipality has not been prepared is rejected with
         HTTP 503 instead of falling back to an enclosing area.
@@ -42,13 +44,18 @@ class ServiceSettings:
         rejected with HTTP 400, because the search reads the data of every municipality
         within the distance. It must be at least
         ``AddressCodec.DEFAULT_MAX_DISTANCE_METERS``, the default of a query.
+    max_request_bytes : int
+        Largest request body in bytes; a larger body is rejected with HTTP 413 before it
+        is parsed. Keep it large enough for a full batch of the longest inputs.
 
     Raises
     ------
     ValueError
-        If ``publisher`` is blank, ``thread_count``, ``max_batch_size``, or
-        ``max_input_length`` is not positive, ``busy_timeout_seconds`` is negative or not
-        finite, or ``max_distance_meters`` is not finite or below the default distance.
+        If ``publisher`` is blank, ``thread_count``, ``max_batch_size``,
+        ``max_input_length``, or ``max_request_bytes`` is not positive, ``max_batch_size``
+        exceeds ``BatchRequest.MAX_INPUT_COUNT``, ``busy_timeout_seconds`` is negative or
+        not finite, or ``max_distance_meters`` is not finite or below the default
+        distance.
     """
 
     PUBLISHER_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_PUBLISHER"
@@ -59,6 +66,7 @@ class ServiceSettings:
     MAX_INPUT_LENGTH_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH"
     BUSY_TIMEOUT_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_BUSY_TIMEOUT"
     MAX_DISTANCE_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_DISTANCE"
+    MAX_REQUEST_BYTES_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_REQUEST_BYTES"
     _TRUE_TEXTS: ClassVar[frozenset[str]] = frozenset({"1", "true", "yes"})
     _FALSE_TEXTS: ClassVar[frozenset[str]] = frozenset({"0", "false", "no"})
 
@@ -70,6 +78,7 @@ class ServiceSettings:
     max_input_length: int = 1000
     busy_timeout_seconds: float = 1.0
     max_distance_meters: float = 10_000.0
+    max_request_bytes: int = 8_000_000
 
     def __post_init__(self) -> None:
         if not self.publisher.strip():
@@ -78,6 +87,13 @@ class ServiceSettings:
             raise ValueError(f"thread_count must be positive, got {self.thread_count}.")
         if self.max_batch_size <= 0:
             raise ValueError(f"max_batch_size must be positive, got {self.max_batch_size}.")
+        if self.max_batch_size > BatchRequest.MAX_INPUT_COUNT:
+            raise ValueError(
+                f"max_batch_size must be at most {BatchRequest.MAX_INPUT_COUNT}, "
+                + f"got {self.max_batch_size}."
+            )
+        if self.max_request_bytes <= 0:
+            raise ValueError(f"max_request_bytes must be positive, got {self.max_request_bytes}.")
         if self.max_input_length <= 0:
             raise ValueError(f"max_input_length must be positive, got {self.max_input_length}.")
         if not math.isfinite(self.busy_timeout_seconds) or self.busy_timeout_seconds < 0:
@@ -122,7 +138,8 @@ class ServiceSettings:
         ``ADDRESS_CODEC_JP_API_PUBLISHER`` is required. ``ADDRESS_CODEC_JP_API_THREADS``,
         ``ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE``, ``ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH``,
         ``ADDRESS_CODEC_JP_API_BUSY_TIMEOUT`` (seconds),
-        ``ADDRESS_CODEC_JP_API_MAX_DISTANCE`` (meters), and
+        ``ADDRESS_CODEC_JP_API_MAX_DISTANCE`` (meters),
+        ``ADDRESS_CODEC_JP_API_MAX_REQUEST_BYTES``, and
         ``ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED`` (``true`` or ``false``) override the
         defaults; the cache directory follows ``ADDRESS_CODEC_JP_CACHE_DIR``.
 
@@ -165,6 +182,9 @@ class ServiceSettings:
             ),
             max_distance_meters=float(
                 environment.get(cls.MAX_DISTANCE_VARIABLE, defaults.max_distance_meters)
+            ),
+            max_request_bytes=int(
+                environment.get(cls.MAX_REQUEST_BYTES_VARIABLE, defaults.max_request_bytes)
             ),
         )
 
