@@ -16,4 +16,5 @@ default database cache. Fixtures come from [fixture_paths.py](../fixture_paths.p
 | [test_import_files.py](test_import_files.py) | Dataset detection, ordering and deduplication of `import_files`, transaction rollback, and the `import` command |
 | [test_census_area_matcher.py](test_census_area_matcher.py) | Census area names written with variant kanji, without a shared leading part, or without a trailing `町`, against [mt_town_census_names.csv](../fixtures/mt_town_census_names.csv) |
 | [test_import_log.py](test_import_log.py) | Import log of datasets, digests, and the `info` command |
+| [test_point_grid.py](test_point_grid.py) | Grid cell row ranges that cover every point in a bounding box |
 | [test_database_cache.py](test_database_cache.py) | Building, reusing, and failed builds of the default database, lots added on demand, preparation, offline use, expiry and failed expiry refreshes, unpublished files not requested again, concurrent writers, logging, description, refresh, clearing, removal of obsolete files while keeping newer schema versions, and its use by `AddressCodec.open` and the `cache` command |
