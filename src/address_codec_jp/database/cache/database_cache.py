@@ -4,7 +4,8 @@ import shutil
 import sqlite3
 import threading
 import weakref
-from collections.abc import Iterable, Sequence
+from collections.abc import Generator, Iterable, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import ClassVar, Self
@@ -297,6 +298,35 @@ class DatabaseCache:
                 weakref.ref(database), signature
             )
         return database
+
+    @contextmanager
+    def locked_for_import(self) -> Generator[Path]:
+        """
+        Build the database if needed and hold the write lock of the cache around imports.
+
+        Use it to import files of your own into the cache with ``RegistryImporter`` or
+        ``AreaImporter``, so that the import does not interleave with the writes of other
+        caches on the directory, in this or other processes. What the cache remembers
+        about the imported files is forgotten afterwards, so that it reads them again.
+
+        Yields
+        ------
+        Path
+            Path of the database to import into while the lock is held.
+
+        Raises
+        ------
+        DatasetNotImportedError
+            If the database has not been built and downloads are not allowed.
+        RegistryDownloadError
+            If a registry file cannot be downloaded while building.
+        """
+        with self._directory.locked():
+            path = self.ensure()
+            try:
+                yield path
+            finally:
+                self._loader.reset()
 
     def ensure_lots(self, lg_codes: Iterable[str]) -> None:
         """

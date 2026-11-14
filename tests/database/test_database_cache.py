@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+from filelock import FileLock, Timeout
 from geo_coordinate import GeoCoordinate
 from progress_bar import ProgressBarBackend, ProgressBarGroup, RenderEnvironment
 
@@ -25,6 +26,7 @@ from address_codec_jp import (
     DistributionScope,
     RegistryDownloader,
     RegistryDownloadError,
+    RegistryImporter,
 )
 from address_codec_jp.database.cache import CacheDirectory, CacheLoader
 from address_codec_jp.frontends.cli import CommandLineInterface
@@ -551,3 +553,52 @@ def test_ledger_is_read_again_after_another_process_rebuilds(
     assert cache.describe().lot_municipality_codes == ()
     cache.ensure_lots(["113247"])
     assert cache.describe().lot_municipality_codes == ("113247",)
+
+
+def use_as_default(cache: DatabaseCache, mirror: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(DatabaseCache.DIRECTORY_VARIABLE, str(cache.path.parent))
+    monkeypatch.setenv(DatabaseCache.BASE_URL_VARIABLE, mirror.as_uri())
+
+
+def test_cli_queries_add_lots_on_demand(
+    cache: DatabaseCache,
+    mirror: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    use_as_default(cache, mirror, monkeypatch)
+    assert CommandLineInterface().run(["locate", "千代田区丸の内1-2-3"]) == 0
+    assert "\tRESIDENCE\t" in capsys.readouterr().out
+    assert "mt_rsdtdsp_rsdt_pos_city131016.csv.zip" in imported_names(cache)
+
+
+def test_cli_download_without_import_leaves_the_cache_unbuilt(
+    cache: DatabaseCache, mirror: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    use_as_default(cache, mirror, monkeypatch)
+    arguments = ["download", str(tmp_path / "downloads"), "--base-url", mirror.as_uri()]
+    assert CommandLineInterface().run(arguments) == 0
+    assert not cache.is_built
+    assert any((tmp_path / "downloads").iterdir())
+
+
+def test_cli_import_into_the_cache_holds_its_lock(
+    cache: DatabaseCache, mirror: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_as_default(cache, mirror, monkeypatch)
+    original_open = RegistryImporter.open
+    lock_states: list[bool] = []
+
+    def open_importer(database_path: Path | str) -> RegistryImporter:
+        try:
+            with FileLock(cache.path.parent / "cache.lock", timeout=0):
+                lock_states.append(False)
+        except Timeout:
+            lock_states.append(True)
+        return original_open(database_path)
+
+    monkeypatch.setattr(RegistryImporter, "open", open_importer)
+    source = FIXTURE_DIRECTORY / FIXTURE_NAMES[AbrDataset.BLOCK]
+    assert CommandLineInterface().run(["import", str(source)]) == 0
+    assert lock_states[-1]
+    assert source.name in imported_names(cache)

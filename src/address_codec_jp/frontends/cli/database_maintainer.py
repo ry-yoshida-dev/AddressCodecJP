@@ -84,16 +84,19 @@ class DatabaseMaintainer:
             + f"{summary.source}{complemented}; removed {summary.removed_count} rows."
         )
 
-    def download(self, namespace: CommandArguments, database_path: Path) -> None:
+    def download(self, namespace: CommandArguments) -> list[Path]:
         """
-        Download registry files, and import them when asked.
+        Download registry files.
 
         Parameters
         ----------
         namespace : CommandArguments
             Parsed options of the ``download`` command.
-        database_path : Path
-            Database to import into with ``--import``.
+
+        Returns
+        -------
+        list[Path]
+            Downloaded files, to be imported when ``--import`` is given.
         """
         downloader = RegistryDownloader(namespace.base_url)
         directory = Path(namespace.directory)
@@ -104,8 +107,7 @@ class DatabaseMaintainer:
             )
             print(f"Downloaded {downloader.url_of(target)} to {path}")
             paths.append(path)
-        if namespace.is_imported:
-            self.import_registry_files(database_path, paths)
+        return paths
 
     def import_areas(self, database_path: Path, sources: list[Path], lg_code: str) -> None:
         """

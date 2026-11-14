@@ -37,7 +37,8 @@ class ParserFactory:
         _ = parser.add_argument(
             "--database",
             help="SQLite address database path. By default, a database of all towns is "
-            + "downloaded and built once in the user cache directory.",
+            + "downloaded and built once in the user cache directory, and queries add "
+            + "the points and shapes of each municipality looked up.",
         )
         subparsers = parser.add_subparsers(dest=argparse.SUPPRESS, metavar="command", required=True)
 
@@ -360,7 +361,7 @@ class ParserFactory:
             "--import",
             dest="is_imported",
             action="store_true",
-            help="Import the downloaded files into --database.",
+            help="Import the downloaded files into --database, or into the default database.",
         )
         _ = parser.add_argument(
             "--keep-existing",

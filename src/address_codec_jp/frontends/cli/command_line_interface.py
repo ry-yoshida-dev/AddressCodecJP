@@ -1,7 +1,8 @@
 import argparse
 import sqlite3
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import ClassVar, assert_never
 
@@ -79,46 +80,66 @@ class CommandLineInterface:
 
     def _execute(self, namespace: CommandArguments, progress: ProgressBarGroup) -> ExitStatus:
         command = namespace.command
-        if command is MaintenanceCommand.CACHE:
-            if namespace.database is not None:
-                raise ValueError("cache manages the default database; omit --database.")
-            self._maintainer.manage_cache(DatabaseCache.default(progress=progress), namespace)
-            return ExitStatus.SUCCESS
-        database_path = self._resolve_database(namespace, progress)
         match command:
+            case MaintenanceCommand.CACHE:
+                if namespace.database is not None:
+                    raise ValueError("cache manages the default database; omit --database.")
+                self._maintainer.manage_cache(DatabaseCache.default(progress=progress), namespace)
             case MaintenanceCommand.IMPORT:
-                self._maintainer.import_registry_files(
-                    database_path, [Path(source) for source in namespace.sources]
-                )
-                return ExitStatus.SUCCESS
+                with self._open_for_import(namespace, progress) as database_path:
+                    self._maintainer.import_registry_files(
+                        database_path, [Path(source) for source in namespace.sources]
+                    )
             case MaintenanceCommand.IMPORT_AREA:
-                self._maintainer.import_areas(
-                    database_path, [Path(source) for source in namespace.sources], namespace.lg_code
-                )
-                return ExitStatus.SUCCESS
+                with self._open_for_import(namespace, progress) as database_path:
+                    self._maintainer.import_areas(
+                        database_path,
+                        [Path(source) for source in namespace.sources],
+                        namespace.lg_code,
+                    )
             case MaintenanceCommand.DOWNLOAD:
-                self._maintainer.download(namespace, database_path)
-                return ExitStatus.SUCCESS
+                paths = self._maintainer.download(namespace)
+                if namespace.is_imported:
+                    with self._open_for_import(namespace, progress) as database_path:
+                        self._maintainer.import_registry_files(database_path, paths)
             case MaintenanceCommand.INFO:
+                database_path = (
+                    Path(namespace.database)
+                    if namespace.database is not None
+                    else self._default_cache(progress).ensure()
+                )
                 self._maintainer.print_imports(database_path)
-                return ExitStatus.SUCCESS
             case QueryOperation() as operation:
-                with AddressCodec.open(database_path) as codec:
+                with self._open_codec(namespace, progress) as codec:
                     runner = QueryRunner(codec, DirectInterpreter(), PassThroughGuard())
                     return self._query(operation, runner, namespace)
             case _:
                 assert_never(command)
+        return ExitStatus.SUCCESS
 
-    def _resolve_database(self, namespace: CommandArguments, progress: ProgressBarGroup) -> Path:
+    def _open_codec(self, namespace: CommandArguments, progress: ProgressBarGroup) -> AddressCodec:
         if namespace.database is not None:
-            return Path(namespace.database)
+            return AddressCodec.open(namespace.database)
+        return AddressCodec.open(cache=self._default_cache(progress))
+
+    @contextmanager
+    def _open_for_import(
+        self, namespace: CommandArguments, progress: ProgressBarGroup
+    ) -> Generator[Path]:
+        if namespace.database is not None:
+            yield Path(namespace.database)
+            return
+        with self._default_cache(progress).locked_for_import() as database_path:
+            yield database_path
+
+    def _default_cache(self, progress: ProgressBarGroup) -> DatabaseCache:
         cache = DatabaseCache.default(progress=progress)
         if not cache.is_built:
             print(
                 f"Building the address database in {cache.path}; this runs only once.",
                 file=sys.stderr,
             )
-        return cache.ensure()
+        return cache
 
     def _query(
         self,
