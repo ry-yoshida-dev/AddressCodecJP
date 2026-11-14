@@ -24,7 +24,7 @@ settings.
 | [database_busy_error.py](database_busy_error.py) | `DatabaseBusyError`: database locked by another process (503 with `Retry-After`) |
 | [validation_issue.py](validation_issue.py) | `ValidationIssue`: one problem found by FastAPI's request validation, written into the 400 message |
 | [input_interpreter.py](input_interpreter.py) | `InputInterpreter`: parses request values, turning their `ValueError` into `InvalidRequestError` |
-| [service_settings.py](service_settings.py) | `ServiceSettings`: publisher, threads, batch size, input length, busy timeout, and coverage policy, read from the environment |
+| [service_settings.py](service_settings.py) | `ServiceSettings`: publisher, threads, batch size, input length, busy timeout, distance limit, and coverage policy, read from the environment |
 | [format_parameters.py](format_parameters.py) | `FormatParameters`: request parameters of the address format |
 | [batch_request.py](batch_request.py) | `BatchRequest`: body of `POST /v1/batch` |
 | [opened_codec.py](opened_codec.py) | `OpenedCodec`: codec of a thread and the file it was opened on |

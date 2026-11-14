@@ -30,7 +30,12 @@ class BatchRequest(BaseModel):
     )
     crs: str = Field(default="jgd2011", description="tokyo, jgd2000, jgd2011, or wgs84.")
     max_distance_meters: float = Field(
-        default=AddressCodec.DEFAULT_MAX_DISTANCE_METERS, gt=0, alias="max_distance"
+        default=AddressCodec.DEFAULT_MAX_DISTANCE_METERS,
+        gt=0,
+        allow_inf_nan=False,
+        alias="max_distance",
+        description="Largest accepted distance in meters for nearest, up to the limit of "
+        + "the service.",
     )
     is_parcel_included: bool = Field(default=False, alias="parcels")
     is_geometry_included: bool | None = Field(

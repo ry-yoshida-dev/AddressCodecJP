@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Self
 
+from address_codec_jp.address_codec import AddressCodec
+from address_codec_jp.frontends.api.invalid_request_error import InvalidRequestError
+
 
 @dataclass(frozen=True, slots=True)
 class ServiceSettings:
@@ -34,13 +37,18 @@ class ServiceSettings:
     busy_timeout_seconds : float
         Longest wait of a query while another process writes the database, such as
         ``cache prepare``, after which it is answered with HTTP 503 and ``Retry-After``.
+    max_distance_meters : float
+        Largest ``max_distance`` a nearest-address query accepts; larger ones are
+        rejected with HTTP 400, because the search reads the data of every municipality
+        within the distance. It must be at least
+        ``AddressCodec.DEFAULT_MAX_DISTANCE_METERS``, the default of a query.
 
     Raises
     ------
     ValueError
         If ``publisher`` is blank, ``thread_count``, ``max_batch_size``, or
-        ``max_input_length`` is not positive, or ``busy_timeout_seconds`` is negative or
-        not finite.
+        ``max_input_length`` is not positive, ``busy_timeout_seconds`` is negative or not
+        finite, or ``max_distance_meters`` is not finite or below the default distance.
     """
 
     PUBLISHER_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_PUBLISHER"
@@ -50,6 +58,7 @@ class ServiceSettings:
     COVERAGE_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED"
     MAX_INPUT_LENGTH_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH"
     BUSY_TIMEOUT_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_BUSY_TIMEOUT"
+    MAX_DISTANCE_VARIABLE: ClassVar[str] = "ADDRESS_CODEC_JP_API_MAX_DISTANCE"
     _TRUE_TEXTS: ClassVar[frozenset[str]] = frozenset({"1", "true", "yes"})
     _FALSE_TEXTS: ClassVar[frozenset[str]] = frozenset({"0", "false", "no"})
 
@@ -60,6 +69,7 @@ class ServiceSettings:
     is_coverage_required: bool = True
     max_input_length: int = 1000
     busy_timeout_seconds: float = 1.0
+    max_distance_meters: float = 10_000.0
 
     def __post_init__(self) -> None:
         if not self.publisher.strip():
@@ -75,6 +85,34 @@ class ServiceSettings:
                 "busy_timeout_seconds must be finite and not negative, got "
                 + f"{self.busy_timeout_seconds}."
             )
+        if not (
+            math.isfinite(self.max_distance_meters)
+            and self.max_distance_meters >= AddressCodec.DEFAULT_MAX_DISTANCE_METERS
+        ):
+            raise ValueError(
+                "max_distance_meters must be finite and at least "
+                + f"{AddressCodec.DEFAULT_MAX_DISTANCE_METERS}, got {self.max_distance_meters}."
+            )
+
+    def check_distance(self, max_distance_meters: float) -> None:
+        """
+        Reject a ``max_distance`` of a request beyond the largest accepted one.
+
+        Parameters
+        ----------
+        max_distance_meters : float
+            Distance requested, already known to be finite and positive.
+
+        Raises
+        ------
+        InvalidRequestError
+            If the distance exceeds ``max_distance_meters``.
+        """
+        if max_distance_meters > self.max_distance_meters:
+            raise InvalidRequestError(
+                f"max_distance takes at most {self.max_distance_meters} meters, "
+                + f"got {max_distance_meters}."
+            )
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> Self:
@@ -83,7 +121,8 @@ class ServiceSettings:
 
         ``ADDRESS_CODEC_JP_API_PUBLISHER`` is required. ``ADDRESS_CODEC_JP_API_THREADS``,
         ``ADDRESS_CODEC_JP_API_MAX_BATCH_SIZE``, ``ADDRESS_CODEC_JP_API_MAX_INPUT_LENGTH``,
-        ``ADDRESS_CODEC_JP_API_BUSY_TIMEOUT`` (seconds), and
+        ``ADDRESS_CODEC_JP_API_BUSY_TIMEOUT`` (seconds),
+        ``ADDRESS_CODEC_JP_API_MAX_DISTANCE`` (meters), and
         ``ADDRESS_CODEC_JP_API_COVERAGE_REQUIRED`` (``true`` or ``false``) override the
         defaults; the cache directory follows ``ADDRESS_CODEC_JP_CACHE_DIR``.
 
@@ -123,6 +162,9 @@ class ServiceSettings:
             ),
             busy_timeout_seconds=float(
                 environment.get(cls.BUSY_TIMEOUT_VARIABLE, defaults.busy_timeout_seconds)
+            ),
+            max_distance_meters=float(
+                environment.get(cls.MAX_DISTANCE_VARIABLE, defaults.max_distance_meters)
             ),
         )
 

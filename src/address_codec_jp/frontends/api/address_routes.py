@@ -206,7 +206,14 @@ class AddressRoutes:
         coordinate: CoordinateQuery,
         crs: CrsName = "jgd2011",
         max_distance_meters: Annotated[
-            float, Query(alias="max_distance", gt=0)
+            float,
+            Query(
+                alias="max_distance",
+                gt=0,
+                allow_inf_nan=False,
+                description="Largest accepted distance in meters, up to the limit of the "
+                + "service.",
+            ),
         ] = AddressCodec.DEFAULT_MAX_DISTANCE_METERS,
     ) -> JSONResponse:
         """
@@ -226,7 +233,13 @@ class AddressRoutes:
         JSONResponse
             ``code``, ``address``, ``level``, ``latitude``, ``longitude``,
             ``distance_meters``, and ``crs``.
+
+        Raises
+        ------
+        InvalidRequestError
+            If ``max_distance`` exceeds ``ServiceSettings.max_distance_meters``.
         """
+        self._settings.check_distance(max_distance_meters)
         options = QueryOptions(crs=self._parse_crs(crs), max_distance_meters=max_distance_meters)
         return await self._respond(QueryOperation.NEAREST, coordinate, options)
 
@@ -410,14 +423,16 @@ class AddressRoutes:
         Raises
         ------
         InvalidRequestError
-            If there are more inputs than ``ServiceSettings.max_batch_size``, or an
-            option names no member.
+            If there are more inputs than ``ServiceSettings.max_batch_size``,
+            ``max_distance`` exceeds ``ServiceSettings.max_distance_meters``, or an option
+            names no member.
         """
         if len(request.inputs) > self._settings.max_batch_size:
             raise InvalidRequestError(
                 f"A batch takes at most {self._settings.max_batch_size} inputs, "
                 + f"got {len(request.inputs)}."
             )
+        self._settings.check_distance(request.max_distance_meters)
         operation = request.operation
         options = QueryOptions(
             address_format=request.address_format.to_address_format(),

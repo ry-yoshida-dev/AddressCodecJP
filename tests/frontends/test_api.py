@@ -533,6 +533,9 @@ def test_numbers_too_large_are_invalid_requests(
         ("/v1/areas", {"address": "千代田区丸の内1", "geometry": "maybe"}),
         ("/v1/areas", {}),
         ("/v1/nearest", {"coordinate": "35.6822,139.7660", "max_distance": "0"}),
+        ("/v1/nearest", {"coordinate": "35.6822,139.7660", "max_distance": "inf"}),
+        ("/v1/nearest", {"coordinate": "35.6822,139.7660", "max_distance": "nan"}),
+        ("/v1/nearest", {"coordinate": "35.6822,139.7660", "max_distance": "10001"}),
     ],
 )
 def test_invalid_parameters_follow_the_error_contract(
@@ -552,6 +555,7 @@ def test_invalid_parameters_follow_the_error_contract(
         {"operation": "encode", "inputs": "東京都"},
         {"operation": "areas_at", "inputs": []},
         {"operation": "nearest", "inputs": [], "max_distance": 0},
+        {"operation": "nearest", "inputs": [], "max_distance": 10001},
         {"operation": "encode", "inputs": [], "unknown": True},
     ],
 )
@@ -561,6 +565,27 @@ def test_invalid_batch_bodies_follow_the_error_contract(
     response = client.post("/v1/batch", json=body)
     assert response.status_code == 400
     assert body_of(response)["error_type"] == "InvalidRequestError"
+
+
+@pytest.mark.parametrize("distance", ["Infinity", "-Infinity", "NaN"])
+def test_batch_rejects_a_distance_that_is_not_finite(client: TestClient, distance: str) -> None:
+    content = '{"operation": "nearest", "inputs": [], "max_distance": ' + distance + "}"
+    response = client.post(
+        "/v1/batch", content=content.encode(), headers={"content-type": "application/json"}
+    )
+    assert (response.status_code, body_of(response)["error_type"]) == (400, "InvalidRequestError")
+
+
+def test_max_distance_limit_is_read_from_the_environment() -> None:
+    environment = {ServiceSettings.PUBLISHER_VARIABLE: PUBLISHER}
+    assert ServiceSettings.from_environment(environment).max_distance_meters == 10_000.0
+    settings = ServiceSettings.from_environment(
+        {**environment, ServiceSettings.MAX_DISTANCE_VARIABLE: "5000"}
+    )
+    assert settings.max_distance_meters == 5000.0
+    for distance in (math.inf, math.nan, 999.0):
+        with pytest.raises(ValueError, match="max_distance_meters"):
+            _ = ServiceSettings(publisher=PUBLISHER, max_distance_meters=distance)
 
 
 def test_malformed_json_is_an_invalid_request(client: TestClient) -> None:
